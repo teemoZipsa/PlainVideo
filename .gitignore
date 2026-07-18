@@ -1,0 +1,38 @@
+# Editors and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# JavaScript / frontend
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Rust / native
+target/
+**/target/
+
+# Build and packaging output
+artifacts/
+release/
+*.msi
+*.msix
+*.exe
+*.pdb
+
+# Local runtime state
+*.log
+*.tmp
+.env
+.env.*
+!.env.example
+
+# Media fixtures are opt-in; do not accidentally commit large or licensed videos
+fixtures/local/
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.m2ts
+*.ts
