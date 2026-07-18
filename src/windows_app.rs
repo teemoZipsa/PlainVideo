@@ -31,13 +31,13 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, HTCAPTION, HWND_NOTOPMOST,
     HWND_TOPMOST, IDC_ARROW, IDC_SIZEALL, KillTimer, LoadCursorW, MF_CHECKED, MF_GRAYED, MF_POPUP,
     MF_SEPARATOR, MF_STRING, MSG, PostMessageW, PostQuitMessage, RegisterClassExW, SM_CXSCREEN,
-    SM_CYSCREEN, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
-    SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, ShowCursor, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
-    TranslateMessage, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DPICHANGED, WM_DROPFILES, WM_ERASEBKGND,
-    WM_EXITSIZEMOVE, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WM_NCLBUTTONDOWN, WM_PAINT, WM_QUIT, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES,
-    WS_EX_APPWINDOW, WS_POPUP,
+    SM_CYSCREEN, SW_MINIMIZE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetForegroundWindow, SetTimer,
+    SetWindowLongPtrW, SetWindowPos, ShowCursor, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    TrackPopupMenu, TranslateMessage, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DPICHANGED,
+    WM_DROPFILES, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCLBUTTONDOWN, WM_PAINT, WM_QUIT, WM_SIZE, WM_TIMER,
+    WNDCLASSEXW, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_POPUP,
 };
 
 use crate::locale::{Locale, UiText};
@@ -88,6 +88,7 @@ impl SurfaceTheme {
 enum WindowControl {
     Theme,
     Pin,
+    Minimize,
     Close,
 }
 
@@ -96,6 +97,7 @@ impl WindowControl {
         match self {
             Self::Theme => "theme",
             Self::Pin => "pin",
+            Self::Minimize => "minimize",
             Self::Close => "close",
         }
     }
@@ -439,6 +441,9 @@ impl App {
                 self.save_preferences();
             }
             WindowControl::Pin => self.toggle_always_on_top(hwnd),
+            WindowControl::Minimize => unsafe {
+                ShowWindow(hwnd, SW_MINIMIZE);
+            },
             WindowControl::Close => unsafe { PostQuitMessage(0) },
         }
     }
@@ -988,7 +993,7 @@ fn window_control_at(hwnd: HWND, lparam: LPARAM) -> Option<WindowControl> {
 }
 
 fn window_control_at_point(client_width: i32, point: POINT) -> Option<WindowControl> {
-    let total_width = WINDOW_CONTROL_SIZE * 3 + WINDOW_CONTROL_GAP * 2;
+    let total_width = WINDOW_CONTROL_SIZE * 4 + WINDOW_CONTROL_GAP * 3;
     let left = client_width - WINDOW_CONTROL_MARGIN - total_width;
     if client_width <= total_width + WINDOW_CONTROL_MARGIN * 2
         || point.y < WINDOW_CONTROL_MARGIN
@@ -1008,7 +1013,8 @@ fn window_control_at_point(client_width: i32, point: POINT) -> Option<WindowCont
     match column {
         0 => Some(WindowControl::Theme),
         1 => Some(WindowControl::Pin),
-        2 => Some(WindowControl::Close),
+        2 => Some(WindowControl::Minimize),
+        3 => Some(WindowControl::Close),
         _ => None,
     }
 }
@@ -1247,12 +1253,16 @@ mod tests {
     #[test]
     fn plainview_style_window_controls_are_top_right_only() {
         assert_eq!(
-            window_control_at_point(1280, POINT { x: 1173, y: 27 }),
+            window_control_at_point(1280, POINT { x: 1133, y: 27 }),
             Some(WindowControl::Theme)
         );
         assert_eq!(
-            window_control_at_point(1280, POINT { x: 1213, y: 27 }),
+            window_control_at_point(1280, POINT { x: 1173, y: 27 }),
             Some(WindowControl::Pin)
+        );
+        assert_eq!(
+            window_control_at_point(1280, POINT { x: 1213, y: 27 }),
+            Some(WindowControl::Minimize)
         );
         assert_eq!(
             window_control_at_point(1280, POINT { x: 1253, y: 27 }),

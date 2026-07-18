@@ -23,6 +23,7 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     dark_mode = "다크 모드",
     pin = "항상 위",
     unpin = "고정 해제",
+    minimize = "최소화",
     close = "닫기",
 } or {
     idle_title = "Drop a video here",
@@ -32,6 +33,7 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     dark_mode = "Dark mode",
     pin = "Always on top",
     unpin = "Unpin",
+    minimize = "Minimize",
     close = "Close",
 }
 
@@ -407,18 +409,29 @@ local function draw_close_icon(center_x, center_y, palette)
     return path_event(first .. " " .. second, palette.text, "&H08&")
 end
 
+local function draw_minimize_icon(center_x, center_y, palette)
+    return box_event(
+        center_x - 8, center_y + 6,
+        center_x + 8, center_y + 8,
+        1, palette.text, "&H08&"
+    )
+end
+
 local function draw_window_controls(width, height)
-    if width < 150 or height < 60 then
+    if height < 60 then
         return ""
     end
     local palette = theme_palette()
     local size = 34
     local gap = 6
     local margin = 10
-    local total_width = size * 3 + gap * 2
+    local total_width = size * 4 + gap * 3
+    if width <= total_width + margin * 2 then
+        return ""
+    end
     local left = width - margin - total_width
     local top = margin
-    local controls = { "theme", "pin", "close" }
+    local controls = { "theme", "pin", "minimize", "close" }
     local events = {}
 
     for index, name in ipairs(controls) do
@@ -444,6 +457,8 @@ local function draw_window_controls(width, height)
                 or draw_moon_icon(center_x, center_y, palette))
         elseif name == "pin" then
             table.insert(events, draw_pin_icon(center_x, center_y - 1, palette))
+        elseif name == "minimize" then
+            table.insert(events, draw_minimize_icon(center_x, center_y, palette))
         else
             table.insert(events, draw_close_icon(center_x, center_y, palette))
         end
@@ -458,9 +473,12 @@ local function draw_window_controls(width, height)
         elseif window_control_hover == "pin" then
             label = window_pinned and copy.unpin or copy.pin
             index = 2
+        elseif window_control_hover == "minimize" then
+            label = copy.minimize
+            index = 3
         else
             label = copy.close
-            index = 3
+            index = 4
         end
         local tooltip_width = 126
         local center_x = left + (index - 1) * (size + gap) + math.floor(size / 2)

@@ -35,7 +35,7 @@ Display synchronization and AI frame generation are intentionally treated as dif
 - Translucent play, seek, and volume feedback that appears only after input; no permanent toolbar
 - A pointer that hides after 1.6 seconds during playback and returns on mouse movement
 - A PlainView-style six-dot move handle revealed only at the top center
-- PlainView-style top-right theme, always-on-top, and close controls revealed only after pointer activity, with saved theme and pin state
+- PlainView-style top-right theme, always-on-top, minimize, and close controls revealed only after pointer activity, with saved theme and pin state
 - Automatic discovery of same-name external SRT subtitles, plus context-menu off, track selection, and external subtitle loading
 - A localized empty state with no Korean/English mixing and a `Ctrl+O` open path
 - Real file-drop replacement, plus a progressively disclosed right-click menu for open, subtitles, and close

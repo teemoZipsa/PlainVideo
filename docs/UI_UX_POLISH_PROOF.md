@@ -22,7 +22,7 @@ The direction follows Microsoft's current Windows guidance: keep the experience 
 - The pointer hides 1.6 seconds after mouse activity while media is loaded, reappears on mouse movement or before menus/dialogs, and is restored during shutdown.
 - A PlainView-style invisible `96×44` top-center move zone reveals a `64×28` six-dot handle on hover. Dragging that handle invokes the native Windows move loop without turning an ordinary video click into a window drag.
 - The native context menu keeps `Open video`/`영상 열기` and `Close`/`닫기` at the first level. A contextual `Subtitles`/`자막` submenu reads libmpv's current track list and selection, checks the active item, and provides off and external subtitle-file commands.
-- A PlainView-matched top-right group appears only after pointer activity: theme, always-on-top, and close in that order. The three `34×34` buttons use a 10 px edge inset and 6 px gaps, expose localized hover labels, and disappear with the pointer chrome after 1.6 seconds.
+- A PlainView-matched top-right group appears only after pointer activity: theme, always-on-top, minimize, and close in that order. The four `34×34` buttons use a 10 px edge inset and 6 px gaps, expose localized hover labels, and disappear with the pointer chrome after 1.6 seconds.
 - Theme switching updates the empty surface, transient feedback, move handle, window controls, and libmpv background. Always-on-top uses the native `HWND_TOPMOST`/`HWND_NOTOPMOST` path and is also available through `T`.
 - Theme and always-on-top state persist in `%LOCALAPPDATA%\PlainVideo\settings.ini`; the diagnostic-only `PLAINVIDEO_SETTINGS_PATH` override keeps portable verification from changing the user's preference file.
 - `OFN_EXPLORER` is enabled for the native file chooser, and its app-provided title and filter names use the selected language.
@@ -46,7 +46,7 @@ Covered app copy includes the empty state, volume label, context-menu and subtit
 | Playback feedback | Seek, volume, and pause captures showed the intended translucent hierarchy with no permanent toolbar. |
 | Pointer lifecycle | A real `GetCursorInfo` probe reported the pointer hidden after the 1.6-second playback delay; clean shutdown restored it. |
 | Locale tests | Rust tests cover Korean selection, English fallback for all non-Korean tags, and completeness of both native resource sets. |
-| Portable regression | The rebuilt developer portable directory played both MP4 and MKV, selected the matching external SRT, showed the first frame, applied light/pinned control state, and exited 0 for both. The copied Lua asset SHA-256 is `5319b3da7ccf0a26f8773a9a51d5baf53f72e9a493ee096704c156ee5a34f9f8`. |
+| Portable regression | The rebuilt developer portable directory played both MP4 and MKV, selected the matching external SRT, showed the first frame, applied light/pinned control state, and exited 0 for both. The four-control minimize regression also exited 0 without a Lua error. The copied Lua asset SHA-256 is `e5cb32c9ee3a9ce8c391949cc6f7d5ec96f08c5f62d5f0bcfe913d7340c8b0d0`. |
 
 The `.runtime` captures and logs are local ignored evidence, not release files.
 
