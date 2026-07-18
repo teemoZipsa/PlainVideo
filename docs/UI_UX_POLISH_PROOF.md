@@ -3,6 +3,8 @@
 Date: 2026-07-18
 Status: locally verified UI refinement, pre-alpha, not distributable
 
+> Historical note: the 96×44 six-dot move handle described in this proof was replaced on 2026-07-19 by a full-width invisible 56 px native move zone and responsive playback controls. See [Windows window-behavior proof](WINDOW_BEHAVIOR_PROOF.md) for the current implementation and evidence.
+
 ## Baseline and intent
 
 Slice 0B was first frozen in commit `27d7a23` (`Embed libmpv in native playback shell`). This pass deliberately postpones physical cross-DPI testing, the long replacement/resize soak, and redistribution closure. It changes only the playback shell's presentation, localization, and pointer behavior while preserving the borderless, content-first surface.

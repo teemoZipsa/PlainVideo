@@ -20,6 +20,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 const MPV_EVENT_NONE: c_int = 0;
 const MPV_EVENT_SHUTDOWN: c_int = 1;
+const MPV_EVENT_FILE_LOADED: c_int = 8;
+const MPV_EVENT_VIDEO_RECONFIG: c_int = 17;
 const MPV_RENDER_PARAM_INVALID: c_int = 0;
 const MPV_RENDER_PARAM_API_TYPE: c_int = 1;
 const MPV_RENDER_PARAM_OPENGL_INIT_PARAMS: c_int = 2;
@@ -362,6 +364,12 @@ pub struct SubtitleTrack {
     pub external_filename: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct EventSummary {
+    pub keep_running: bool,
+    pub media_ready: bool,
+}
+
 impl Player {
     pub fn create(
         libmpv_path: &Path,
@@ -588,6 +596,25 @@ impl Player {
         command_with(self.api.command, self.handle, &["sub-add", &path, "cached"])
     }
 
+    pub fn video_dimensions(&self) -> Option<(u32, u32)> {
+        let width = self
+            .property_string("video-params/dw")
+            .or_else(|| self.property_string("video-params/w"))?
+            .parse::<u32>()
+            .ok()?;
+        let height = self
+            .property_string("video-params/dh")
+            .or_else(|| self.property_string("video-params/h"))?
+            .parse::<u32>()
+            .ok()?;
+        (width > 0 && height > 0).then_some((width, height))
+    }
+
+    pub fn seek_absolute_percent(&self, percent: f64) -> Result<(), String> {
+        let percent = percent.clamp(0.0, 100.0).to_string();
+        self.command(&["seek", &percent, "absolute-percent+exact"])
+    }
+
     fn property_string(&self, name: &str) -> Option<String> {
         let name = CString::new(name).ok()?;
         let value = unsafe { (self.api.get_property_string)(self.handle, name.as_ptr()) };
@@ -612,16 +639,24 @@ impl Player {
             .take()
     }
 
-    pub fn drain_events(&self) -> bool {
+    pub fn drain_events(&self) -> EventSummary {
         self.event_wake.clear();
+        let mut summary = EventSummary {
+            keep_running: true,
+            media_ready: false,
+        };
         loop {
             let event = unsafe { (self.api.wait_event)(self.handle, 0.0) };
             if event.is_null() {
-                return true;
+                return summary;
             }
             match unsafe { (*event).event_id } {
-                MPV_EVENT_NONE => return true,
-                MPV_EVENT_SHUTDOWN => return false,
+                MPV_EVENT_NONE => return summary,
+                MPV_EVENT_SHUTDOWN => {
+                    summary.keep_running = false;
+                    return summary;
+                }
+                MPV_EVENT_FILE_LOADED | MPV_EVENT_VIDEO_RECONFIG => summary.media_ready = true,
                 _ => {}
             }
         }

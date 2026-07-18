@@ -18,7 +18,7 @@ This proves the content-first interaction against a real playback engine. It doe
 
 The current prototype replaces the child-process window with a Rust-owned native shell:
 
-- PlainVideo creates a per-monitor-DPI-aware `WS_POPUP` window and owns drag/drop, keyboard, mouse, fullscreen, and contextual menu behavior;
+- PlainVideo creates a per-monitor-DPI-aware opaque `WS_POPUP | WS_THICKFRAME` window, extends its client area through the native frame, and owns drag/drop, keyboard, mouse, fullscreen, and contextual menu behavior;
 - the pinned `libmpv-2.dll` is loaded dynamically, and the core is configured from PlainVideo's isolated assets;
 - libmpv's OpenGL render API runs on a dedicated thread that exclusively owns the WGL context;
 - the UI thread issues asynchronous playback commands and drains client events without calling render functions;
@@ -74,11 +74,11 @@ Visual similarity to PlainView is a design-token and interaction requirement, no
 
 1. **Verified:** render through libmpv's render API in a PlainVideo-owned native window.
 2. **Verified:** preserve click, seek, fullscreen, subtitle, localized idle, and no-permanent-UI behavior.
-3. **Implemented:** expose open, move, and close through a right-click menu, plus direct `Alt`+drag movement.
+3. **Verified:** expose open, subtitle, and close through a right-click menu; use the full-width top 56 logical pixels as the only native window-move zone, without a visible handle or `Alt`+drag override.
 4. **Mostly verified:** real rapid file replacement, both connected displays, a synthetic DPI message, and clean GPU teardown pass. Both physical displays are 96 DPI, so a real cross-scale transition and a longer soak remain.
 5. **Partial:** a reproducible local developer portable directory exists, but the complete licensed component/source inventory is not yet sufficient for redistribution.
 
-Exact evidence and limits are recorded in [`SLICE_0B_LIBMPV_PROOF.md`](SLICE_0B_LIBMPV_PROOF.md).
+Exact embedding evidence is recorded in [`SLICE_0B_LIBMPV_PROOF.md`](SLICE_0B_LIBMPV_PROOF.md). The later DWM, physical-pixel placement, responsive-control, and window-state evidence is recorded in [`WINDOW_BEHAVIOR_PROOF.md`](WINDOW_BEHAVIOR_PROOF.md).
 
 ## Smooth motion ladder
 

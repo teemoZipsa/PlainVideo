@@ -21,9 +21,9 @@ Actual input reveals only the feedback needed for that action:
 - volume adjustment briefly shows a percentage;
 - the empty surface shows one localized drop hint.
 
-Pointer movement by itself does not need to cover the video. Track selection and advanced actions can live in a contextual surface that appears only when explicitly requested.
+Pointer movement reveals one compact, time-limited playback bar and the top-right window controls. Track selection and advanced actions remain in contextual surfaces and all overlays disappear again after inactivity.
 
-Close, always-on-top, and window movement must remain discoverable without recreating a conventional title bar. Slice 0B now uses a right-click contextual menu for open, move, and close, while `Alt`+drag remains the direct movement path. Always-on-top and broader first-time-user usability remain later contextual-shell work.
+Close, always-on-top, and window movement remain discoverable without recreating a conventional title bar. The top-right controls appear on activity, while the full-width top 56 logical pixels form an invisible native move zone with only a move cursor. The right-click menu is reserved for open, subtitle, and close actions.
 
 ## Interaction defaults
 
@@ -34,7 +34,7 @@ Close, always-on-top, and window movement must remain discoverable without recre
 | Space | Play or pause |
 | Left / Right | Short seek backward / forward |
 | Up / Down | Volume |
-| Esc | Leave fullscreen first, then close only when already windowed |
+| Esc | Leave fullscreen; no action when already windowed |
 | Drop a media file | Open and play |
 
 These are hypotheses for usability testing, not immutable shortcuts. In particular, window dragging and single-click playback can conflict in a borderless window and need a prototype.

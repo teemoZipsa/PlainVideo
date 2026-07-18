@@ -3,6 +3,8 @@
 Date: 2026-07-18
 Status: locally verified architecture slice, pre-alpha, not distributable
 
+> Historical note: the right-click move command and `Alt`+drag path in this Slice 0B snapshot were removed by the later PlainView window-behavior port. See [Windows window-behavior proof](WINDOW_BEHAVIOR_PROOF.md) for the current move zone, DWM, DPI, and responsive-control behavior.
+
 ## What this slice proves
 
 PlainVideo now owns the Windows playback window, input routing, fullscreen state, DPI handling, and OpenGL presentation surface. Playback runs in-process through `libmpv-2.dll`; no `mpv.exe` child process owns the window.

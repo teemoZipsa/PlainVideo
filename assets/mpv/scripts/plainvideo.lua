@@ -3,11 +3,12 @@ local mp = require("mp")
 local overlay = mp.create_osd_overlay("ass-events")
 local feedback_kind = nil
 local feedback_timer = nil
-local move_handle_visible = false
 local window_controls_visible = false
 local surface_theme = "dark"
 local window_pinned = false
 local window_control_hover = "none"
+local ui_scale = 1.0
+local text_scale = 1.0
 
 local TYPE_SIZE = {
     primary = 22,
@@ -78,9 +79,20 @@ local function clamp(value, low, high)
     return math.min(high, math.max(low, value))
 end
 
+local function px(value)
+    return math.max(1, math.floor(value * ui_scale + 0.5))
+end
+
 local function type_size(tier, width, height)
-    local scale = clamp(math.min(width / 1280, height / 720), 0.78, 1.35)
-    return math.floor(TYPE_SIZE[tier] * scale + 0.5)
+    local viewport_scale = clamp(math.min(width / 1280, height / 720), 0.78, 1.35)
+    local accessibility_cap = 2.0
+    if width < 520 * ui_scale or height < 320 * ui_scale then
+        accessibility_cap = tier == "primary" and 1.28 or 1.20
+    elseif width < 760 * ui_scale then
+        accessibility_cap = tier == "primary" and 1.55 or 1.40
+    end
+    local accessibility_scale = math.min(text_scale, accessibility_cap)
+    return math.floor(TYPE_SIZE[tier] * viewport_scale * accessibility_scale + 0.5)
 end
 
 local function ass_escape(value)
@@ -330,101 +342,85 @@ local function draw_volume(width, height)
     return table.concat(events, "\n")
 end
 
-local function draw_move_handle(width)
-    local palette = theme_palette()
-    local center_x = math.floor(width / 2)
-    local left = center_x - 32
-    local top = 8
-    local right = center_x + 32
-    local bottom = 36
-    local events = {
-        box_event(left, top, right, bottom, 14, palette.surface, palette.surface_alpha),
-    }
-    for row = 0, 1 do
-        for column = -1, 1 do
-            local dot_x = center_x + column * 12
-            local dot_y = 17 + row * 10
-            table.insert(events, box_event(
-                dot_x - 2, dot_y - 2, dot_x + 2, dot_y + 2,
-                2, palette.secondary, "&H18&"
-            ))
-        end
-    end
-    return table.concat(events, "\n")
-end
-
 local function draw_sun_icon(center_x, center_y, palette)
+    local core = px(5)
+    local ray_inner = px(7)
+    local ray_outer = px(10)
+    local thin = px(1)
     local events = {
-        box_event(center_x - 5, center_y - 5, center_x + 5, center_y + 5, 5, palette.text, "&H08&"),
-        box_event(center_x - 1, center_y - 10, center_x + 1, center_y - 7, 1, palette.text, "&H08&"),
-        box_event(center_x - 1, center_y + 7, center_x + 1, center_y + 10, 1, palette.text, "&H08&"),
-        box_event(center_x - 10, center_y - 1, center_x - 7, center_y + 1, 1, palette.text, "&H08&"),
-        box_event(center_x + 7, center_y - 1, center_x + 10, center_y + 1, 1, palette.text, "&H08&"),
+        box_event(center_x - core, center_y - core, center_x + core, center_y + core, core, palette.text, "&H08&"),
+        box_event(center_x - thin, center_y - ray_outer, center_x + thin, center_y - ray_inner, thin, palette.text, "&H08&"),
+        box_event(center_x - thin, center_y + ray_inner, center_x + thin, center_y + ray_outer, thin, palette.text, "&H08&"),
+        box_event(center_x - ray_outer, center_y - thin, center_x - ray_inner, center_y + thin, thin, palette.text, "&H08&"),
+        box_event(center_x + ray_inner, center_y - thin, center_x + ray_outer, center_y + thin, thin, palette.text, "&H08&"),
     }
     return table.concat(events, "\n")
 end
 
 local function draw_moon_icon(center_x, center_y, palette)
+    local four, seven, eight, nine, ten = px(4), px(7), px(8), px(9), px(10)
     local path = string.format(
         "m %d %d b %d %d %d %d %d %d b %d %d %d %d %d %d",
-        center_x + 4, center_y - 10,
-        center_x - 7, center_y - 8, center_x - 9, center_y + 6, center_x + 2, center_y + 10,
-        center_x - 3, center_y + 5, center_x - 2, center_y - 4, center_x + 4, center_y - 10
+        center_x + four, center_y - ten,
+        center_x - seven, center_y - eight, center_x - nine, center_y + px(6), center_x + px(2), center_y + ten,
+        center_x - px(3), center_y + px(5), center_x - px(2), center_y - four, center_x + four, center_y - ten
     )
     return path_event(path, palette.text, "&H08&")
 end
 
 local function draw_pin_icon(center_x, center_y, palette)
+    local one, five, six, seven, eight, nine, twelve = px(1), px(5), px(6), px(7), px(8), px(9), px(12)
     local events = {
-        box_event(center_x - 7, center_y - 9, center_x + 7, center_y - 5, 2, palette.text, "&H08&"),
+        box_event(center_x - seven, center_y - nine, center_x + seven, center_y - five, px(2), palette.text, "&H08&"),
         path_event(string.format(
             "m %d %d l %d %d %d %d %d %d %d %d %d %d",
-            center_x - 5, center_y - 5,
-            center_x - 4, center_y + 1,
-            center_x - 8, center_y + 6,
-            center_x + 8, center_y + 6,
-            center_x + 4, center_y + 1,
-            center_x + 5, center_y - 5
+            center_x - five, center_y - five,
+            center_x - px(4), center_y + one,
+            center_x - eight, center_y + six,
+            center_x + eight, center_y + six,
+            center_x + px(4), center_y + one,
+            center_x + five, center_y - five
         ), palette.text, "&H08&"),
-        box_event(center_x - 1, center_y + 6, center_x + 1, center_y + 12, 1, palette.text, "&H08&"),
+        box_event(center_x - one, center_y + six, center_x + one, center_y + twelve, one, palette.text, "&H08&"),
     }
     return table.concat(events, "\n")
 end
 
 local function draw_close_icon(center_x, center_y, palette)
+    local six, eight = px(6), px(8)
     local first = string.format(
         "m %d %d l %d %d %d %d %d %d",
-        center_x - 8, center_y - 6,
-        center_x - 6, center_y - 8,
-        center_x + 8, center_y + 6,
-        center_x + 6, center_y + 8
+        center_x - eight, center_y - six,
+        center_x - six, center_y - eight,
+        center_x + eight, center_y + six,
+        center_x + six, center_y + eight
     )
     local second = string.format(
         "m %d %d l %d %d %d %d %d %d",
-        center_x + 6, center_y - 8,
-        center_x + 8, center_y - 6,
-        center_x - 6, center_y + 8,
-        center_x - 8, center_y + 6
+        center_x + six, center_y - eight,
+        center_x + eight, center_y - six,
+        center_x - six, center_y + eight,
+        center_x - eight, center_y + six
     )
     return path_event(first .. " " .. second, palette.text, "&H08&")
 end
 
 local function draw_minimize_icon(center_x, center_y, palette)
     return box_event(
-        center_x - 8, center_y + 6,
-        center_x + 8, center_y + 8,
-        1, palette.text, "&H08&"
+        center_x - px(8), center_y + px(6),
+        center_x + px(8), center_y + px(8),
+        px(1), palette.text, "&H08&"
     )
 end
 
 local function draw_window_controls(width, height)
-    if height < 60 then
+    if height < px(60) then
         return ""
     end
     local palette = theme_palette()
-    local size = 34
-    local gap = 6
-    local margin = 10
+    local size = px(34)
+    local gap = px(6)
+    local margin = px(10)
     local total_width = size * 4 + gap * 3
     if width <= total_width + margin * 2 then
         return ""
@@ -447,7 +443,7 @@ local function draw_window_controls(width, height)
             background = name == "close" and palette.danger or palette.hover
             alpha = "&H24&"
         end
-        table.insert(events, box_event(button_left, top, button_right, top + size, 8, background, alpha))
+        table.insert(events, box_event(button_left, top, button_right, top + size, px(8), background, alpha))
 
         local center_x = button_left + math.floor(size / 2)
         local center_y = top + math.floor(size / 2)
@@ -480,19 +476,134 @@ local function draw_window_controls(width, height)
             label = copy.close
             index = 4
         end
-        local tooltip_width = 126
+        local tooltip_width = math.min(px(150), width - margin * 2)
         local center_x = left + (index - 1) * (size + gap) + math.floor(size / 2)
         center_x = clamp(center_x, math.floor(tooltip_width / 2) + margin, width - math.floor(tooltip_width / 2) - margin)
-        local tooltip_top = top + size + 7
+        local tooltip_top = top + size + px(7)
+        local tooltip_height = px(30)
         table.insert(events, box_event(
             center_x - math.floor(tooltip_width / 2), tooltip_top,
-            center_x + math.floor(tooltip_width / 2), tooltip_top + 28,
-            8, palette.panel, palette.panel_alpha
+            center_x + math.floor(tooltip_width / 2), tooltip_top + tooltip_height,
+            px(8), palette.panel, palette.panel_alpha
         ))
         table.insert(events, text_event(
-            5, center_x, tooltip_top + 14, type_size("secondary", width, height),
+            5, center_x, tooltip_top + math.floor(tooltip_height / 2), type_size("secondary", width, height),
             palette.text, "&H08&", false, label
         ))
+    end
+    return table.concat(events, "\n")
+end
+
+local function draw_play_pause_icon(center_x, center_y, palette)
+    if mp.get_property_bool("pause", false) then
+        local half = px(10)
+        return string.format(
+            "{\\an7\\pos(0,0)\\bord0\\shad0\\p1\\1c%s\\1a&H08&}m %d %d l %d %d %d %d{\\p0}",
+            palette.text,
+            center_x - px(7), center_y - half,
+            center_x + px(9), center_y,
+            center_x - px(7), center_y + half
+        )
+    end
+    return box_event(center_x - px(7), center_y - px(10), center_x - px(2), center_y + px(10), px(1), palette.text, "&H08&") ..
+        "\n" .. box_event(center_x + px(2), center_y - px(10), center_x + px(7), center_y + px(10), px(1), palette.text, "&H08&")
+end
+
+local function draw_speaker_icon(center_x, center_y, palette)
+    local path = string.format(
+        "m %d %d l %d %d %d %d %d %d %d %d %d %d",
+        center_x - px(10), center_y - px(4),
+        center_x - px(5), center_y - px(4),
+        center_x + px(2), center_y - px(10),
+        center_x + px(2), center_y + px(10),
+        center_x - px(5), center_y + px(4),
+        center_x - px(10), center_y + px(4)
+    )
+    local events = { path_event(path, palette.text, "&H08&") }
+    if mp.get_property_bool("mute", false) then
+        table.insert(events, path_event(string.format(
+            "m %d %d l %d %d %d %d %d %d m %d %d l %d %d %d %d %d %d",
+            center_x + px(6), center_y - px(7), center_x + px(8), center_y - px(9),
+            center_x + px(17), center_y + px(7), center_x + px(15), center_y + px(9),
+            center_x + px(15), center_y - px(9), center_x + px(17), center_y - px(7),
+            center_x + px(8), center_y + px(9), center_x + px(6), center_y + px(7)
+        ), palette.danger, "&H08&"))
+    end
+    return table.concat(events, "\n")
+end
+
+local function draw_fullscreen_icon(center_x, center_y, palette)
+    local outer, inner = px(10), px(4)
+    local path = string.format(
+        "m %d %d l %d %d %d %d m %d %d l %d %d %d %d " ..
+        "m %d %d l %d %d %d %d m %d %d l %d %d %d %d",
+        center_x - outer, center_y - inner, center_x - outer, center_y - outer, center_x - inner, center_y - outer,
+        center_x + inner, center_y - outer, center_x + outer, center_y - outer, center_x + outer, center_y - inner,
+        center_x - outer, center_y + inner, center_x - outer, center_y + outer, center_x - inner, center_y + outer,
+        center_x + inner, center_y + outer, center_x + outer, center_y + outer, center_x + outer, center_y + inner
+    )
+    return path_event(path, palette.text, "&H08&")
+end
+
+local function draw_playback_controls(width, height)
+    local outer_margin = px(12)
+    local bar_height = px(56)
+    local button = px(36)
+    local gap = px(6)
+    local inner_margin = px(10)
+    local bar_width = math.min(width - outer_margin * 2, px(860))
+    local minimum_width = button * 4 + gap * 4 + inner_margin * 2 + px(32)
+    if bar_width < minimum_width or height < bar_height + outer_margin * 2 then
+        return ""
+    end
+
+    local palette = theme_palette()
+    local left = math.floor((width - bar_width) / 2)
+    local top = height - outer_margin - bar_height
+    local right = left + bar_width
+    local bottom = top + bar_height
+    local control_top = top + math.floor((bar_height - button) / 2)
+    local inner_left = left + inner_margin
+    local inner_right = right - inner_margin
+    local play_left = inner_left
+    local fullscreen_left = inner_right - button
+    local subtitle_left = fullscreen_left - gap - button
+    local mute_left = subtitle_left - gap - button
+    local seek_left = play_left + button + gap
+    local seek_right = mute_left - gap
+    local center_y = control_top + math.floor(button / 2)
+    local duration = mp.get_property_number("duration", 0)
+    local position = mp.get_property_number("time-pos", 0)
+    local progress = duration > 0 and clamp(position / duration, 0, 1) or 0
+    local track_left = seek_left + px(4)
+    local track_right = seek_right - px(4)
+    local track_top = center_y - px(2)
+    local track_bottom = center_y + px(1)
+    local filled = track_left + math.floor((track_right - track_left) * progress)
+    local events = {
+        box_event(left, top, right, bottom, px(16), palette.panel, palette.panel_alpha),
+        box_event(play_left, control_top, play_left + button, control_top + button, px(9), palette.surface, palette.surface_alpha),
+        box_event(mute_left, control_top, mute_left + button, control_top + button, px(9), palette.surface, palette.surface_alpha),
+        box_event(subtitle_left, control_top, subtitle_left + button, control_top + button, px(9), palette.surface, palette.surface_alpha),
+        box_event(fullscreen_left, control_top, fullscreen_left + button, control_top + button, px(9), palette.surface, palette.surface_alpha),
+        box_event(track_left, track_top, track_right, track_bottom, px(2), palette.track, "&H58&"),
+    }
+    if filled > track_left then
+        table.insert(events, box_event(track_left, track_top, filled, track_bottom, px(2), palette.accent, "&H08&"))
+    end
+    table.insert(events, draw_play_pause_icon(play_left + math.floor(button / 2), center_y, palette))
+    table.insert(events, draw_speaker_icon(mute_left + math.floor(button / 2), center_y, palette))
+    table.insert(events, text_event(
+        5, subtitle_left + math.floor(button / 2), center_y,
+        type_size("secondary", width, height), palette.text, "&H08&", true, "CC"
+    ))
+    table.insert(events, draw_fullscreen_icon(fullscreen_left + math.floor(button / 2), center_y, palette))
+    if seek_right - seek_left >= px(180) then
+        local label_y = top + px(42)
+        table.insert(events, text_event(4, seek_left + px(4), label_y,
+            type_size("secondary", width, height), palette.secondary, "&H10&", false, format_time(position)))
+        table.insert(events, text_event(6, seek_right - px(4), label_y,
+            type_size("secondary", width, height), palette.secondary, "&H10&", false, format_time(duration)))
     end
     return table.concat(events, "\n")
 end
@@ -503,7 +614,7 @@ local function draw_surface()
     -- not flash an unexplained black surface.
     local is_idle = mp.get_property_bool("idle-active", false) or mp.get_property("path") == nil
 
-    if not is_idle and feedback_kind == nil and not move_handle_visible and not window_controls_visible then
+    if not is_idle and feedback_kind == nil and not window_controls_visible then
         overlay:remove()
         return
     end
@@ -522,16 +633,14 @@ local function draw_surface()
         table.insert(events, draw_idle(width, height))
     elseif feedback_kind == "pause" or feedback_kind == "play" then
         table.insert(events, draw_playback_feedback(width, height, feedback_kind))
-    elseif feedback_kind == "seek" then
+    elseif feedback_kind == "seek" and not window_controls_visible then
         table.insert(events, draw_seek(width, height))
-    elseif feedback_kind == "volume" then
+    elseif feedback_kind == "volume" and not window_controls_visible then
         table.insert(events, draw_volume(width, height))
-    end
-    if move_handle_visible then
-        table.insert(events, draw_move_handle(width))
     end
     if window_controls_visible then
         table.insert(events, draw_window_controls(width, height))
+        table.insert(events, draw_playback_controls(width, height))
     end
     overlay.data = table.concat(events, "\n")
     overlay:update()
@@ -566,19 +675,13 @@ local function change_volume(amount)
     show_feedback("volume", 0.9)
 end
 
-local function set_move_handle(visible)
-    if move_handle_visible == visible then
-        return
-    end
-    move_handle_visible = visible
-    draw_surface()
-end
-
-local function set_window_controls(visible, theme, pinned, hovered)
+local function set_window_controls(visible, theme, pinned, hovered, next_ui_scale, next_text_scale)
     window_controls_visible = visible == "yes"
     surface_theme = theme == "light" and "light" or "dark"
     window_pinned = pinned == "yes"
     window_control_hover = hovered or "none"
+    ui_scale = clamp(tonumber(next_ui_scale) or 1.0, 0.75, 4.0)
+    text_scale = clamp(tonumber(next_text_scale) or 1.0, 1.0, 2.25)
     draw_surface()
 end
 
@@ -589,17 +692,24 @@ mp.add_key_binding(nil, "seek-back-large", function() seek(-30) end)
 mp.add_key_binding(nil, "seek-forward-large", function() seek(30) end)
 mp.add_key_binding(nil, "volume-up", function() change_volume(2) end)
 mp.add_key_binding(nil, "volume-down", function() change_volume(-2) end)
-mp.add_key_binding(nil, "show-move-handle", function() set_move_handle(true) end)
-mp.add_key_binding(nil, "hide-move-handle", function() set_move_handle(false) end)
 mp.register_script_message("plainvideo-window-controls", set_window_controls)
 
 mp.observe_property("idle-active", "bool", draw_surface)
 mp.observe_property("path", "string", draw_surface)
 mp.observe_property("osd-dimensions", "native", draw_surface)
 mp.observe_property("time-pos", "number", function()
-    if feedback_kind == "seek" then
+    if feedback_kind == "seek" or window_controls_visible then
         draw_surface()
     end
+end)
+mp.observe_property("pause", "bool", function()
+    if window_controls_visible then draw_surface() end
+end)
+mp.observe_property("volume", "number", function()
+    if window_controls_visible then draw_surface() end
+end)
+mp.observe_property("mute", "bool", function()
+    if window_controls_visible then draw_surface() end
 end)
 mp.register_event("file-loaded", draw_surface)
 mp.register_event("shutdown", function()
