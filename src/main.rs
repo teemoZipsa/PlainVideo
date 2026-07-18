@@ -7,7 +7,11 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[cfg(target_os = "windows")]
+mod locale;
+#[cfg(target_os = "windows")]
 mod mpv;
+#[cfg(target_os = "windows")]
+mod preferences;
 #[cfg(target_os = "windows")]
 mod windows_app;
 
@@ -136,9 +140,18 @@ fn show_error(message: &str) {
         ) -> i32;
     }
 
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn OutputDebugStringW(output_string: *const u16);
+    }
+
     const MB_OK: u32 = 0x0000_0000;
     const MB_ICONERROR: u32 = 0x0000_0010;
-    let text: Vec<u16> = OsStr::new(message)
+    let text: Vec<u16> = OsStr::new(locale::Locale::detect().text().fatal_error)
+        .encode_wide()
+        .chain(iter::once(0))
+        .collect();
+    let diagnostic: Vec<u16> = OsStr::new(&format!("PlainVideo: {message}\n"))
         .encode_wide()
         .chain(iter::once(0))
         .collect();
@@ -148,6 +161,7 @@ fn show_error(message: &str) {
         .collect();
 
     unsafe {
+        OutputDebugStringW(diagnostic.as_ptr());
         MessageBoxW(
             ptr::null_mut(),
             text.as_ptr(),

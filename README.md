@@ -32,10 +32,13 @@ Display synchronization and AI frame generation are intentionally treated as dif
 - A Rust-owned native Windows shell around a pinned libmpv developer runtime
 - In-process render-API playback in a titleless, borderless window
 - Click to play/pause, double-click fullscreen, arrow-key seek and volume, and `Esc` to return
-- PlainVideo's own transient play, seek, and volume feedback; no permanent toolbar
-- Automatic discovery of a same-name external SRT subtitle
-- A single localized drop hint on the empty surface
-- Real file-drop replacement, plus a right-click menu for open, move, and close
+- Translucent play, seek, and volume feedback that appears only after input; no permanent toolbar
+- A pointer that hides after 1.6 seconds during playback and returns on mouse movement
+- A PlainView-style six-dot move handle revealed only at the top center
+- PlainView-style top-right theme, always-on-top, and close controls revealed only after pointer activity, with saved theme and pin state
+- Automatic discovery of same-name external SRT subtitles, plus context-menu off, track selection, and external subtitle loading
+- A localized empty state with no Korean/English mixing and a `Ctrl+O` open path
+- Real file-drop replacement, plus a progressively disclosed right-click menu for open, subtitles, and close
 - A reproducible local developer portable directory with per-file hashes
 
 The evidence currently covers an H.264/AAC MP4 fixture, a Matroska remux of the same streams, and external SRT. The embedded Slice 0B build selected `nvdec` hardware decoding on the development machine; the older child-process Slice 0A build observed `d3d11va-copy`. Neither observation is a broader hardware guarantee.
@@ -47,7 +50,7 @@ The evidence currently covers an H.264/AAC MP4 fixture, a Matroska remux of the 
 cargo run --release -- "C:\path\to\video.mkv"
 ```
 
-With FFmpeg installed, `.\scripts\generate-smoke-media.ps1` recreates the deterministic fixtures. `.\scripts\build-portable.ps1` creates a local developer portable proof under `.runtime`; it is not approved for redistribution. See the [Slice 0A playback proof](docs/SLICE_0_PLAYBACK_PROOF.md) and [Slice 0B libmpv proof](docs/SLICE_0B_LIBMPV_PROOF.md) for the exact evidence and limits.
+With FFmpeg installed, `.\scripts\generate-smoke-media.ps1` recreates the deterministic fixtures. `.\scripts\build-portable.ps1` creates a local developer portable proof under `.runtime`; it is not approved for redistribution. See the [Slice 0A playback proof](docs/SLICE_0_PLAYBACK_PROOF.md), [Slice 0B libmpv proof](docs/SLICE_0B_LIBMPV_PROOF.md), and [UI/UX polish proof](docs/UI_UX_POLISH_PROOF.md) for the exact evidence and limits.
 
 ## Technical direction
 

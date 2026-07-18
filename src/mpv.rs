@@ -72,6 +72,8 @@ type MpvSetOptionString =
     unsafe extern "C" fn(*mut MpvHandle, *const c_char, *const c_char) -> c_int;
 type MpvCommandAsync = unsafe extern "C" fn(*mut MpvHandle, u64, *const *const c_char) -> c_int;
 type MpvCommand = unsafe extern "C" fn(*mut MpvHandle, *const *const c_char) -> c_int;
+type MpvGetPropertyString = unsafe extern "C" fn(*mut MpvHandle, *const c_char) -> *mut c_char;
+type MpvFree = unsafe extern "C" fn(*mut c_void);
 type MpvSetWakeupCallback =
     unsafe extern "C" fn(*mut MpvHandle, Option<unsafe extern "C" fn(*mut c_void)>, *mut c_void);
 type MpvWaitEvent = unsafe extern "C" fn(*mut MpvHandle, c_double) -> *const MpvEvent;
@@ -97,6 +99,8 @@ struct Api {
     set_option_string: MpvSetOptionString,
     command: MpvCommand,
     command_async: MpvCommandAsync,
+    get_property_string: MpvGetPropertyString,
+    free: MpvFree,
     set_wakeup_callback: MpvSetWakeupCallback,
     wait_event: MpvWaitEvent,
     error_string: MpvErrorString,
@@ -121,6 +125,8 @@ impl Api {
                 set_option_string: load_symbol(&library, b"mpv_set_option_string\0")?,
                 command: load_symbol(&library, b"mpv_command\0")?,
                 command_async: load_symbol(&library, b"mpv_command_async\0")?,
+                get_property_string: load_symbol(&library, b"mpv_get_property_string\0")?,
+                free: load_symbol(&library, b"mpv_free\0")?,
                 set_wakeup_callback: load_symbol(&library, b"mpv_set_wakeup_callback\0")?,
                 wait_event: load_symbol(&library, b"mpv_wait_event\0")?,
                 error_string: load_symbol(&library, b"mpv_error_string\0")?,
@@ -348,6 +354,14 @@ pub struct Player {
     event_wake: Box<EventWake>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubtitleTrack {
+    pub id: i64,
+    pub title: Option<String>,
+    pub language: Option<String>,
+    pub external_filename: Option<String>,
+}
+
 impl Player {
     pub fn create(
         libmpv_path: &Path,
@@ -532,6 +546,61 @@ impl Player {
         self.command(&["script-binding", name])
     }
 
+    pub fn subtitle_tracks(&self) -> Vec<SubtitleTrack> {
+        let count = self
+            .property_string("track-list/count")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(0);
+
+        (0..count)
+            .filter_map(|index| {
+                let property =
+                    |field: &str| self.property_string(&format!("track-list/{index}/{field}"));
+                if property("type").as_deref() != Some("sub") {
+                    return None;
+                }
+                let id = property("id")?.parse::<i64>().ok()?;
+                Some(SubtitleTrack {
+                    id,
+                    title: non_empty(property("title")),
+                    language: non_empty(property("lang")),
+                    external_filename: non_empty(property("external-filename")),
+                })
+            })
+            .collect()
+    }
+
+    pub fn current_subtitle_id(&self) -> Option<i64> {
+        self.property_string("sid")?.parse::<i64>().ok()
+    }
+
+    pub fn select_subtitle(&self, id: i64) -> Result<(), String> {
+        let id = id.to_string();
+        command_with(self.api.command, self.handle, &["set", "sid", &id])
+    }
+
+    pub fn disable_subtitles(&self) -> Result<(), String> {
+        command_with(self.api.command, self.handle, &["set", "sid", "no"])
+    }
+
+    pub fn add_subtitle(&self, path: &Path) -> Result<(), String> {
+        let path = utf8_path(path)?;
+        command_with(self.api.command, self.handle, &["sub-add", &path, "cached"])
+    }
+
+    fn property_string(&self, name: &str) -> Option<String> {
+        let name = CString::new(name).ok()?;
+        let value = unsafe { (self.api.get_property_string)(self.handle, name.as_ptr()) };
+        if value.is_null() {
+            return None;
+        }
+        let result = unsafe { CStr::from_ptr(value) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { (self.api.free)(value.cast()) };
+        Some(result)
+    }
+
     pub fn request_render(&self, width: i32, height: i32, force: bool) {
         self.render_wake.request(width, height, force);
     }
@@ -557,6 +626,13 @@ impl Player {
             }
         }
     }
+}
+
+fn non_empty(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    })
 }
 
 impl Drop for Player {

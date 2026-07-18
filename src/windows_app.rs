@@ -8,50 +8,105 @@ use std::ptr;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     BeginPaint, EndPaint, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO,
-    MonitorFromWindow, PAINTSTRUCT, UpdateWindow,
+    MonitorFromWindow, PAINTSTRUCT, ScreenToClient, UpdateWindow,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::Dialogs::{
-    GetOpenFileNameW, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY, OFN_NOCHANGEDIR, OFN_PATHMUSTEXIST,
-    OPENFILENAMEW,
+    GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY, OFN_NOCHANGEDIR,
+    OFN_PATHMUSTEXIST, OPENFILENAMEW,
 };
+use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows_sys::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    GetDoubleClickTime, GetKeyState, ReleaseCapture, VK_DOWN, VK_ESCAPE, VK_F, VK_LEFT, VK_MENU,
-    VK_RETURN, VK_RIGHT, VK_S, VK_SPACE, VK_UP,
+    GetDoubleClickTime, GetKeyState, ReleaseCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
+    VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_F, VK_LEFT, VK_MENU, VK_O, VK_RETURN, VK_RIGHT, VK_S,
+    VK_SPACE, VK_UP,
 };
 use windows_sys::Win32::UI::Shell::{DragAcceptFiles, DragFinish, DragQueryFileW, HDROP};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CS_DBLCLKS, CS_OWNDC, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
     DestroyMenu, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
-    GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, HTCAPTION, IDC_ARROW,
-    KillTimer, LoadCursorW, MF_SEPARATOR, MF_STRING, MSG, PostQuitMessage, RegisterClassExW,
-    SC_MOVE, SM_CXSCREEN, SM_CYSCREEN, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-    SWP_NOOWNERZORDER, SendMessageW, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage,
-    WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DPICHANGED, WM_DROPFILES, WM_ERASEBKGND, WM_KEYDOWN,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_NCLBUTTONDOWN, WM_PAINT, WM_QUIT, WM_SIZE,
-    WM_SYSCOMMAND, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_POPUP,
+    GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, HTCAPTION, HWND_NOTOPMOST,
+    HWND_TOPMOST, IDC_ARROW, IDC_SIZEALL, KillTimer, LoadCursorW, MF_CHECKED, MF_GRAYED, MF_POPUP,
+    MF_SEPARATOR, MF_STRING, MSG, PostMessageW, PostQuitMessage, RegisterClassExW, SM_CXSCREEN,
+    SM_CYSCREEN, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
+    SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
+    SetWindowPos, ShowCursor, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    TranslateMessage, WM_APP, WM_CLOSE, WM_CONTEXTMENU, WM_DPICHANGED, WM_DROPFILES, WM_ERASEBKGND,
+    WM_EXITSIZEMOVE, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    WM_NCLBUTTONDOWN, WM_PAINT, WM_QUIT, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES,
+    WS_EX_APPWINDOW, WS_POPUP,
 };
 
-use crate::mpv::{Player, diagnostic_replacement};
+use crate::locale::{Locale, UiText};
+use crate::mpv::{Player, SubtitleTrack, diagnostic_replacement};
+use crate::preferences::{Preferences, PreferencesStore};
 
 const WM_APP_RENDER_ERROR: u32 = WM_APP + 1;
 const WM_APP_MPV_EVENT: u32 = WM_APP + 2;
 const TIMER_SINGLE_CLICK: usize = 1;
 const TIMER_DIAGNOSTIC_REPLACE: usize = 2;
 const TIMER_DIAGNOSTIC_EXIT: usize = 3;
+const TIMER_HIDE_CURSOR: usize = 4;
+const CURSOR_HIDE_DELAY_MS: u32 = 1_600;
+const MOVE_ZONE_WIDTH: i32 = 96;
+const MOVE_ZONE_HEIGHT: i32 = 44;
+const WINDOW_CONTROL_SIZE: i32 = 34;
+const WINDOW_CONTROL_GAP: i32 = 6;
+const WINDOW_CONTROL_MARGIN: i32 = 10;
 const MENU_OPEN: usize = 100;
-const MENU_MOVE: usize = 101;
+const MENU_SUBTITLE_OFF: usize = 200;
+const MENU_SUBTITLE_OPEN: usize = 201;
+const MENU_SUBTITLE_TRACK_BASE: usize = 1_000;
 const MENU_CLOSE: usize = 102;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SurfaceTheme {
+    Dark,
+    Light,
+}
+
+impl SurfaceTheme {
+    fn message_name(self) -> &'static str {
+        match self {
+            Self::Dark => "dark",
+            Self::Light => "light",
+        }
+    }
+
+    fn background_color(self) -> &'static str {
+        match self {
+            Self::Dark => "#1a1a1e",
+            Self::Light => "#f4f4f5",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WindowControl {
+    Theme,
+    Pin,
+    Close,
+}
+
+impl WindowControl {
+    fn message_name(self) -> &'static str {
+        match self {
+            Self::Theme => "theme",
+            Self::Pin => "pin",
+            Self::Close => "close",
+        }
+    }
+}
 
 pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), String> {
     unsafe {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
-    set_locale_environment();
+    let locale = Locale::detect();
+    set_locale_environment(locale);
 
     let window = Window::create()?;
     let player = Player::create(
@@ -64,6 +119,29 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
     // With the render context now ready, create the idle VO so libmpv can
     // draw PlainVideo's localized empty-surface overlay before the first file.
     player.command(&["set", "force-window", "immediate"])?;
+    let preferences_store = PreferencesStore::new();
+    let preferences = preferences_store.load();
+    let surface_theme = if preferences.light_theme {
+        SurfaceTheme::Light
+    } else {
+        SurfaceTheme::Dark
+    };
+    player.command(&["set", "background-color", surface_theme.background_color()])?;
+    if preferences.always_on_top {
+        set_window_always_on_top(window.hwnd, true)?;
+    }
+    player.command(&[
+        "script-message",
+        "plainvideo-window-controls",
+        "no",
+        surface_theme.message_name(),
+        if preferences.always_on_top {
+            "yes"
+        } else {
+            "no"
+        },
+        "none",
+    ])?;
 
     let mut app = Box::new(App {
         player,
@@ -74,8 +152,18 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
             bottom: 0,
         },
         fullscreen: false,
-        korean: user_locale().starts_with("ko"),
+        locale,
         suppress_click: false,
+        cursor_hidden: false,
+        move_handle_visible: false,
+        window_controls_visible: false,
+        hovered_control: None,
+        pressed_control: None,
+        surface_theme,
+        always_on_top: preferences.always_on_top,
+        preferences_store,
+        tracking_mouse_leave: false,
+        has_media: !media.is_empty(),
         diagnostic_replacement: diagnostic_replacement(),
         last_error: None,
     });
@@ -92,6 +180,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         for path in media.iter().skip(1) {
             app.player.append_file(path)?;
         }
+        app.note_pointer_activity(window.hwnd);
     }
     configure_diagnostic_timers(window.hwnd, app.diagnostic_replacement.is_some())?;
 
@@ -100,6 +189,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
     unsafe {
         SetWindowLongPtrW(window.hwnd, GWLP_USERDATA, 0);
     }
+    app.show_cursor();
     let last_error = app.last_error.take();
     drop(app);
 
@@ -118,8 +208,18 @@ struct App {
     player: Player,
     windowed_rect: RECT,
     fullscreen: bool,
-    korean: bool,
+    locale: Locale,
     suppress_click: bool,
+    cursor_hidden: bool,
+    move_handle_visible: bool,
+    window_controls_visible: bool,
+    hovered_control: Option<WindowControl>,
+    pressed_control: Option<WindowControl>,
+    surface_theme: SurfaceTheme,
+    always_on_top: bool,
+    preferences_store: PreferencesStore,
+    tracking_mouse_leave: bool,
+    has_media: bool,
     diagnostic_replacement: Option<PathBuf>,
     last_error: Option<String>,
 }
@@ -156,9 +256,164 @@ impl App {
     }
 
     fn load_file(&mut self, path: &Path) {
+        self.has_media = true;
         if let Err(error) = self.player.load_file(path) {
             self.fail(error);
         }
+    }
+
+    fn show_cursor(&mut self) {
+        if self.cursor_hidden {
+            unsafe { ShowCursor(1) };
+            self.cursor_hidden = false;
+        }
+    }
+
+    fn note_pointer_activity(&mut self, hwnd: HWND) {
+        self.show_cursor();
+        self.set_window_controls_visible(true);
+        unsafe { KillTimer(hwnd, TIMER_HIDE_CURSOR) };
+        unsafe { SetTimer(hwnd, TIMER_HIDE_CURSOR, CURSOR_HIDE_DELAY_MS, None) };
+    }
+
+    fn hide_cursor_if_inside(&mut self, hwnd: HWND) {
+        if self.cursor_hidden || !self.has_media || self.move_handle_visible {
+            return;
+        }
+        let mut point = POINT { x: 0, y: 0 };
+        let mut rect = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        if unsafe { GetCursorPos(&mut point) } == 0
+            || unsafe { ScreenToClient(hwnd, &mut point) } == 0
+            || unsafe { GetClientRect(hwnd, &mut rect) } == 0
+        {
+            return;
+        }
+        if point.x >= rect.left
+            && point.x < rect.right
+            && point.y >= rect.top
+            && point.y < rect.bottom
+        {
+            unsafe { ShowCursor(0) };
+            self.cursor_hidden = true;
+        }
+    }
+
+    fn set_move_handle_visible(&mut self, visible: bool) {
+        if self.move_handle_visible == visible {
+            return;
+        }
+        self.move_handle_visible = visible;
+        self.binding(if visible {
+            "plainvideo/show-move-handle"
+        } else {
+            "plainvideo/hide-move-handle"
+        });
+    }
+
+    fn set_window_controls_visible(&mut self, visible: bool) {
+        if self.window_controls_visible == visible && (visible || self.hovered_control.is_none()) {
+            return;
+        }
+        self.window_controls_visible = visible;
+        if !visible {
+            self.hovered_control = None;
+            self.pressed_control = None;
+        }
+        self.sync_window_controls();
+    }
+
+    fn set_hovered_control(&mut self, control: Option<WindowControl>) {
+        if self.hovered_control == control {
+            return;
+        }
+        self.hovered_control = control;
+        self.sync_window_controls();
+    }
+
+    fn sync_window_controls(&mut self) {
+        let visible = if self.window_controls_visible {
+            "yes"
+        } else {
+            "no"
+        };
+        let theme = match self.surface_theme {
+            SurfaceTheme::Dark => "dark",
+            SurfaceTheme::Light => "light",
+        };
+        let pinned = if self.always_on_top { "yes" } else { "no" };
+        let hovered = self
+            .hovered_control
+            .map(WindowControl::message_name)
+            .unwrap_or("none");
+        self.command(&[
+            "script-message",
+            "plainvideo-window-controls",
+            visible,
+            theme,
+            pinned,
+            hovered,
+        ]);
+    }
+
+    fn hide_transient_chrome(&mut self, hwnd: HWND) {
+        if pointer_over_interactive_chrome(
+            hwnd,
+            self.window_controls_visible,
+            self.move_handle_visible,
+        ) {
+            unsafe { SetTimer(hwnd, TIMER_HIDE_CURSOR, CURSOR_HIDE_DELAY_MS, None) };
+            return;
+        }
+        self.set_move_handle_visible(false);
+        self.set_window_controls_visible(false);
+        self.hide_cursor_if_inside(hwnd);
+    }
+
+    fn pointer_moved(&mut self, hwnd: HWND, lparam: LPARAM) {
+        self.note_pointer_activity(hwnd);
+        if !self.tracking_mouse_leave {
+            let mut tracking = TRACKMOUSEEVENT {
+                cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                dwFlags: TME_LEAVE,
+                hwndTrack: hwnd,
+                dwHoverTime: 0,
+            };
+            if unsafe { TrackMouseEvent(&mut tracking) } != 0 {
+                self.tracking_mouse_leave = true;
+            }
+        }
+
+        let hovered_control = window_control_at(hwnd, lparam);
+        self.set_hovered_control(hovered_control);
+        let over_move_handle =
+            hovered_control.is_none() && !self.fullscreen && move_zone_contains(hwnd, lparam);
+        self.set_move_handle_visible(over_move_handle);
+        let cursor = unsafe {
+            LoadCursorW(
+                ptr::null_mut(),
+                if over_move_handle {
+                    IDC_SIZEALL
+                } else {
+                    IDC_ARROW
+                },
+            )
+        };
+        if !cursor.is_null() {
+            unsafe { SetCursor(cursor) };
+        }
+    }
+
+    fn pointer_left(&mut self, hwnd: HWND) {
+        self.tracking_mouse_leave = false;
+        self.set_move_handle_visible(false);
+        self.set_window_controls_visible(false);
+        self.show_cursor();
+        unsafe { KillTimer(hwnd, TIMER_HIDE_CURSOR) };
     }
 
     fn fail(&mut self, error: String) {
@@ -168,7 +423,47 @@ impl App {
         }
     }
 
+    fn activate_window_control(&mut self, hwnd: HWND, control: WindowControl) {
+        match control {
+            WindowControl::Theme => {
+                self.surface_theme = match self.surface_theme {
+                    SurfaceTheme::Dark => SurfaceTheme::Light,
+                    SurfaceTheme::Light => SurfaceTheme::Dark,
+                };
+                self.command(&[
+                    "set",
+                    "background-color",
+                    self.surface_theme.background_color(),
+                ]);
+                self.sync_window_controls();
+                self.save_preferences();
+            }
+            WindowControl::Pin => self.toggle_always_on_top(hwnd),
+            WindowControl::Close => unsafe { PostQuitMessage(0) },
+        }
+    }
+
+    fn toggle_always_on_top(&mut self, hwnd: HWND) {
+        let next = !self.always_on_top;
+        if let Err(error) = set_window_always_on_top(hwnd, next) {
+            self.fail(error);
+            return;
+        }
+        self.always_on_top = next;
+        self.sync_window_controls();
+        self.save_preferences();
+    }
+
+    fn save_preferences(&self) {
+        let _ = self.preferences_store.save(Preferences {
+            light_theme: self.surface_theme == SurfaceTheme::Light,
+            always_on_top: self.always_on_top,
+        });
+    }
+
     fn toggle_fullscreen(&mut self, hwnd: HWND) {
+        self.set_move_handle_visible(false);
+        self.set_window_controls_visible(false);
         unsafe {
             if self.fullscreen {
                 let rect = self.windowed_rect;
@@ -179,7 +474,7 @@ impl App {
                     rect.top,
                     rect.right - rect.left,
                     rect.bottom - rect.top,
-                    SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+                    SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER,
                 );
                 self.fullscreen = false;
             } else {
@@ -200,7 +495,7 @@ impl App {
                     rect.top,
                     rect.right - rect.left,
                     rect.bottom - rect.top,
-                    SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+                    SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER,
                 );
                 self.fullscreen = true;
             }
@@ -220,27 +515,83 @@ impl App {
                 rect.top,
                 rect.right - rect.left,
                 rect.bottom - rect.top,
-                SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+                SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER,
             );
         }
     }
 
     fn show_context_menu(&mut self, hwnd: HWND) {
+        self.set_move_handle_visible(false);
+        self.set_window_controls_visible(false);
+        self.show_cursor();
+        unsafe { KillTimer(hwnd, TIMER_HIDE_CURSOR) };
         let menu = unsafe { CreatePopupMenu() };
         if menu.is_null() {
             return;
         }
-        let (open, move_window, close) = if self.korean {
-            ("영상 열기…", "창 이동…  (Alt+드래그)", "닫기")
-        } else {
-            ("Open video…", "Move window…  (Alt+drag)", "Close")
-        };
-        let open = wide(open);
-        let move_window = wide(move_window);
-        let close = wide(close);
+        let subtitle_menu = unsafe { CreatePopupMenu() };
+        if subtitle_menu.is_null() {
+            unsafe { DestroyMenu(menu) };
+            return;
+        }
+        let text = self.locale.text();
+        let tracks = self.player.subtitle_tracks();
+        let current_subtitle = self.player.current_subtitle_id();
+        let track_commands: Vec<_> = tracks
+            .iter()
+            .enumerate()
+            .map(|(index, track)| (MENU_SUBTITLE_TRACK_BASE + index, track.id))
+            .collect();
+        let open = wide(text.open_video);
+        let subtitles = wide(text.subtitles);
+        let subtitles_off = wide(text.subtitles_off);
+        let open_subtitle = wide(text.open_subtitle);
+        let no_subtitle_tracks = wide(text.no_subtitle_tracks);
+        let close = wide(text.close);
         unsafe {
             AppendMenuW(menu, MF_STRING, MENU_OPEN, open.as_ptr());
-            AppendMenuW(menu, MF_STRING, MENU_MOVE, move_window.as_ptr());
+            AppendMenuW(
+                subtitle_menu,
+                MF_STRING
+                    | if current_subtitle.is_none() {
+                        MF_CHECKED
+                    } else {
+                        0
+                    },
+                MENU_SUBTITLE_OFF,
+                subtitles_off.as_ptr(),
+            );
+            if tracks.is_empty() {
+                AppendMenuW(
+                    subtitle_menu,
+                    MF_STRING | MF_GRAYED,
+                    0,
+                    no_subtitle_tracks.as_ptr(),
+                );
+            } else {
+                for (index, track) in tracks.iter().enumerate() {
+                    let label = wide(&subtitle_track_label(text, track, index));
+                    AppendMenuW(
+                        subtitle_menu,
+                        MF_STRING
+                            | if current_subtitle == Some(track.id) {
+                                MF_CHECKED
+                            } else {
+                                0
+                            },
+                        MENU_SUBTITLE_TRACK_BASE + index,
+                        label.as_ptr(),
+                    );
+                }
+            }
+            AppendMenuW(subtitle_menu, MF_SEPARATOR, 0, ptr::null());
+            AppendMenuW(
+                subtitle_menu,
+                MF_STRING,
+                MENU_SUBTITLE_OPEN,
+                open_subtitle.as_ptr(),
+            );
+            AppendMenuW(menu, MF_POPUP, subtitle_menu as usize, subtitles.as_ptr());
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, MF_STRING, MENU_CLOSE, close.as_ptr());
             SetForegroundWindow(hwnd);
@@ -258,20 +609,39 @@ impl App {
             DestroyMenu(menu);
             match selected {
                 MENU_OPEN => {
-                    if let Some(path) = pick_media_file(hwnd, self.korean) {
+                    if let Some(path) = pick_media_file(hwnd, text) {
                         self.load_file(&path);
                     }
                 }
-                MENU_MOVE => {
-                    SendMessageW(hwnd, WM_SYSCOMMAND, (SC_MOVE | HTCAPTION) as usize, 0);
+                MENU_SUBTITLE_OFF => {
+                    if let Err(error) = self.player.disable_subtitles() {
+                        self.fail(error);
+                    }
+                }
+                MENU_SUBTITLE_OPEN => {
+                    if let Some(path) = pick_subtitle_file(hwnd, text) {
+                        if let Err(error) = self.player.add_subtitle(&path) {
+                            self.fail(error);
+                        }
+                    }
                 }
                 MENU_CLOSE => PostQuitMessage(0),
-                _ => {}
+                _ => {
+                    if let Some((_, track_id)) = track_commands
+                        .iter()
+                        .find(|(command, _)| *command == selected)
+                    {
+                        if let Err(error) = self.player.select_subtitle(*track_id) {
+                            self.fail(error);
+                        }
+                    }
+                }
             }
         }
+        self.note_pointer_activity(hwnd);
     }
 
-    fn dropped_files(&mut self, drop: HDROP) {
+    fn dropped_files(&mut self, hwnd: HWND, drop: HDROP) {
         let count = unsafe { DragQueryFileW(drop, u32::MAX, ptr::null_mut(), 0) };
         let mut paths = Vec::new();
         for index in 0..count {
@@ -294,6 +664,7 @@ impl App {
                     break;
                 }
             }
+            self.note_pointer_activity(hwnd);
         }
     }
 }
@@ -419,19 +790,39 @@ unsafe extern "system" fn window_proc(
             0
         }
         WM_LBUTTONDOWN => {
-            if unsafe { GetKeyState(VK_MENU as i32) } < 0 {
-                if let Some(app) = app {
+            if let Some(app) = app {
+                let window_control = if app.window_controls_visible {
+                    window_control_at(hwnd, lparam)
+                } else {
+                    None
+                };
+                app.note_pointer_activity(hwnd);
+                if let Some(control) = window_control {
+                    app.pressed_control = Some(control);
                     app.suppress_click = true;
+                    return 0;
                 }
-                unsafe {
-                    ReleaseCapture();
-                    SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION as usize, 0);
+                if move_zone_contains(hwnd, lparam) || unsafe { GetKeyState(VK_MENU as i32) } < 0 {
+                    app.suppress_click = true;
+                    unsafe {
+                        ReleaseCapture();
+                        PostMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION as usize, 0);
+                    }
                 }
             }
             0
         }
         WM_LBUTTONUP => {
             if let Some(app) = app {
+                if let Some(pressed) = app.pressed_control.take() {
+                    let released = window_control_at(hwnd, lparam);
+                    app.suppress_click = false;
+                    unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
+                    if released == Some(pressed) {
+                        app.activate_window_control(hwnd, pressed);
+                    }
+                    return 0;
+                }
                 if app.suppress_click {
                     app.suppress_click = false;
                     unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
@@ -448,7 +839,16 @@ unsafe extern "system" fn window_proc(
             unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
             if let Some(app) = app {
                 app.suppress_click = true;
-                app.toggle_fullscreen(hwnd);
+                if window_control_at(hwnd, lparam).is_none() && !move_zone_contains(hwnd, lparam) {
+                    app.toggle_fullscreen(hwnd);
+                }
+            }
+            0
+        }
+        WM_EXITSIZEMOVE => {
+            if let Some(app) = app {
+                app.suppress_click = false;
+                app.set_move_handle_visible(false);
             }
             0
         }
@@ -460,7 +860,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_DROPFILES => {
             if let Some(app) = app {
-                app.dropped_files(wparam as HDROP);
+                app.dropped_files(hwnd, wparam as HDROP);
             }
             0
         }
@@ -486,11 +886,31 @@ unsafe extern "system" fn window_proc(
                     }
                 }
                 TIMER_DIAGNOSTIC_EXIT => unsafe { PostQuitMessage(0) },
+                TIMER_HIDE_CURSOR => {
+                    if let Some(app) = app {
+                        app.hide_transient_chrome(hwnd);
+                    }
+                }
                 _ => {}
             }
             0
         }
+        WM_MOUSEMOVE => {
+            if let Some(app) = app {
+                app.pointer_moved(hwnd, lparam);
+            }
+            0
+        }
+        WM_MOUSELEAVE => {
+            if let Some(app) = app {
+                app.pointer_left(hwnd);
+            }
+            0
+        }
         WM_CLOSE => {
+            if let Some(app) = app {
+                app.show_cursor();
+            }
             unsafe { PostQuitMessage(0) };
             0
         }
@@ -499,6 +919,15 @@ unsafe extern "system" fn window_proc(
 }
 
 fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
+    if key == VK_O && unsafe { GetKeyState(VK_CONTROL as i32) } < 0 {
+        app.show_cursor();
+        unsafe { KillTimer(hwnd, TIMER_HIDE_CURSOR) };
+        if let Some(path) = pick_media_file(hwnd, app.locale.text()) {
+            app.load_file(&path);
+        }
+        app.note_pointer_activity(hwnd);
+        return;
+    }
     match key {
         VK_SPACE => app.binding("plainvideo/toggle-pause"),
         VK_LEFT => app.binding("plainvideo/seek-back-small"),
@@ -507,9 +936,130 @@ fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
         VK_DOWN => app.binding("plainvideo/volume-down"),
         VK_RETURN | VK_F => app.toggle_fullscreen(hwnd),
         VK_ESCAPE if app.fullscreen => app.toggle_fullscreen(hwnd),
+        0x54 => app.toggle_always_on_top(hwnd), // T
         VK_S => app.command(&["screenshot"]),
         0x51 => unsafe { PostQuitMessage(0) }, // Q
         _ => {}
+    }
+}
+
+fn move_zone_contains(hwnd: HWND, lparam: LPARAM) -> bool {
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    if unsafe { GetClientRect(hwnd, &mut rect) } == 0 {
+        return false;
+    }
+    move_zone_contains_point(rect.right - rect.left, client_point(lparam))
+}
+
+fn client_point(lparam: LPARAM) -> POINT {
+    POINT {
+        x: (lparam as u32 & 0xffff) as u16 as i16 as i32,
+        y: ((lparam as u32 >> 16) & 0xffff) as u16 as i16 as i32,
+    }
+}
+
+fn move_zone_contains_point(client_width: i32, point: POINT) -> bool {
+    if client_width <= 0 {
+        return false;
+    }
+    let left = (client_width - MOVE_ZONE_WIDTH) / 2;
+    point.x >= left
+        && point.x < left + MOVE_ZONE_WIDTH
+        && point.y >= 0
+        && point.y < MOVE_ZONE_HEIGHT
+}
+
+fn window_control_at(hwnd: HWND, lparam: LPARAM) -> Option<WindowControl> {
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    if unsafe { GetClientRect(hwnd, &mut rect) } == 0 {
+        return None;
+    }
+    window_control_at_point(rect.right - rect.left, client_point(lparam))
+}
+
+fn window_control_at_point(client_width: i32, point: POINT) -> Option<WindowControl> {
+    let total_width = WINDOW_CONTROL_SIZE * 3 + WINDOW_CONTROL_GAP * 2;
+    let left = client_width - WINDOW_CONTROL_MARGIN - total_width;
+    if client_width <= total_width + WINDOW_CONTROL_MARGIN * 2
+        || point.y < WINDOW_CONTROL_MARGIN
+        || point.y >= WINDOW_CONTROL_MARGIN + WINDOW_CONTROL_SIZE
+        || point.x < left
+        || point.x >= client_width - WINDOW_CONTROL_MARGIN
+    {
+        return None;
+    }
+
+    let stride = WINDOW_CONTROL_SIZE + WINDOW_CONTROL_GAP;
+    let offset = point.x - left;
+    let column = offset / stride;
+    if offset % stride >= WINDOW_CONTROL_SIZE {
+        return None;
+    }
+    match column {
+        0 => Some(WindowControl::Theme),
+        1 => Some(WindowControl::Pin),
+        2 => Some(WindowControl::Close),
+        _ => None,
+    }
+}
+
+fn pointer_over_interactive_chrome(
+    hwnd: HWND,
+    controls_visible: bool,
+    move_handle_visible: bool,
+) -> bool {
+    let mut point = POINT { x: 0, y: 0 };
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    if unsafe { GetCursorPos(&mut point) } == 0
+        || unsafe { ScreenToClient(hwnd, &mut point) } == 0
+        || unsafe { GetClientRect(hwnd, &mut rect) } == 0
+    {
+        return false;
+    }
+    let width = rect.right - rect.left;
+    (controls_visible && window_control_at_point(width, point).is_some())
+        || (move_handle_visible && move_zone_contains_point(width, point))
+}
+
+fn set_window_always_on_top(hwnd: HWND, always_on_top: bool) -> Result<(), String> {
+    let insert_after = if always_on_top {
+        HWND_TOPMOST
+    } else {
+        HWND_NOTOPMOST
+    };
+    if unsafe {
+        SetWindowPos(
+            hwnd,
+            insert_after,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        )
+    } == 0
+    {
+        Err(format!(
+            "PlainVideo could not change always-on-top: {}",
+            std::io::Error::last_os_error()
+        ))
+    } else {
+        Ok(())
     }
 }
 
@@ -548,16 +1098,36 @@ fn message_loop() -> i32 {
     }
 }
 
-fn pick_media_file(hwnd: HWND, korean: bool) -> Option<PathBuf> {
+fn pick_media_file(hwnd: HWND, text: &UiText) -> Option<PathBuf> {
+    pick_file(
+        hwnd,
+        text.file_dialog_title,
+        text.media_files,
+        "*.mp4;*.mkv;*.webm;*.mov;*.avi;*.m2ts;*.mts;*.ts;*.mpg;*.mpeg;*.wmv",
+        text.all_files,
+    )
+}
+
+fn pick_subtitle_file(hwnd: HWND, text: &UiText) -> Option<PathBuf> {
+    pick_file(
+        hwnd,
+        text.subtitle_dialog_title,
+        text.subtitle_files,
+        "*.srt;*.ass;*.ssa;*.vtt;*.sub;*.idx;*.sup",
+        text.all_files,
+    )
+}
+
+fn pick_file(
+    hwnd: HWND,
+    dialog_title: &str,
+    category: &str,
+    patterns: &str,
+    all_files: &str,
+) -> Option<PathBuf> {
     let mut buffer = vec![0_u16; 32_768];
-    let filter = wide(
-        "Media files\0*.mp4;*.mkv;*.webm;*.mov;*.avi;*.m2ts;*.mts;*.ts;*.mpg;*.mpeg;*.wmv\0All files\0*.*\0",
-    );
-    let title = wide(if korean {
-        "영상 열기"
-    } else {
-        "Open video"
-    });
+    let filter = wide(&format!("{category}\0{patterns}\0{all_files}\0*.*\0"));
+    let title = wide(dialog_title);
     let mut dialog = OPENFILENAMEW {
         lStructSize: size_of::<OPENFILENAMEW>() as u32,
         hwndOwner: hwnd,
@@ -572,7 +1142,11 @@ fn pick_media_file(hwnd: HWND, korean: bool) -> Option<PathBuf> {
         nMaxFileTitle: 0,
         lpstrInitialDir: ptr::null(),
         lpstrTitle: title.as_ptr(),
-        Flags: OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR,
+        Flags: OFN_EXPLORER
+            | OFN_FILEMUSTEXIST
+            | OFN_PATHMUSTEXIST
+            | OFN_HIDEREADONLY
+            | OFN_NOCHANGEDIR,
         nFileOffset: 0,
         nFileExtension: 0,
         lpstrDefExt: ptr::null(),
@@ -592,27 +1166,40 @@ fn pick_media_file(hwnd: HWND, korean: bool) -> Option<PathBuf> {
     )))
 }
 
-fn set_locale_environment() {
-    if env::var_os("PLAINVIDEO_LOCALE").is_none() {
-        unsafe { env::set_var("PLAINVIDEO_LOCALE", user_locale()) };
+fn subtitle_track_label(text: &UiText, track: &SubtitleTrack, index: usize) -> String {
+    let title = track
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let filename = track.external_filename.as_deref().and_then(|value| {
+        Path::new(value)
+            .file_name()
+            .and_then(OsStr::to_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    });
+    let language = track
+        .language
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let mut label = title
+        .or(filename)
+        .or(language)
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("{} {}", text.subtitle_track, index + 1));
+    if let Some(language) = language {
+        if !label.eq_ignore_ascii_case(language) {
+            label.push_str(" · ");
+            label.push_str(language);
+        }
     }
+    label
 }
 
-fn user_locale() -> String {
-    const LOCALE_NAME_MAX_LENGTH: usize = 85;
-    let mut buffer = [0_u16; LOCALE_NAME_MAX_LENGTH];
-
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn GetUserDefaultLocaleName(locale_name: *mut u16, locale_name_count: i32) -> i32;
-    }
-
-    let length =
-        unsafe { GetUserDefaultLocaleName(buffer.as_mut_ptr(), LOCALE_NAME_MAX_LENGTH as i32) };
-    if length <= 1 {
-        return "en-US".to_string();
-    }
-    String::from_utf16_lossy(&buffer[..length as usize - 1]).to_lowercase()
+fn set_locale_environment(locale: Locale) {
+    unsafe { env::set_var("PLAINVIDEO_LOCALE", locale.canonical_tag()) };
 }
 
 fn wide(value: &str) -> Vec<u16> {
@@ -626,6 +1213,51 @@ mod tests {
     #[test]
     fn popup_labels_remain_progressively_disclosed() {
         assert_eq!(MENU_OPEN, 100);
+        assert_eq!(MENU_SUBTITLE_TRACK_BASE, 1_000);
         assert_ne!(WM_CONTEXTMENU, WM_PAINT);
+    }
+
+    #[test]
+    fn subtitle_labels_prefer_metadata_then_external_filename() {
+        let text = Locale::English.text();
+        let titled = SubtitleTrack {
+            id: 2,
+            title: Some("Commentary".to_string()),
+            language: Some("en".to_string()),
+            external_filename: None,
+        };
+        assert_eq!(subtitle_track_label(text, &titled, 0), "Commentary · en");
+
+        let external = SubtitleTrack {
+            id: 3,
+            title: None,
+            language: None,
+            external_filename: Some(r"C:\video\sample.ko.srt".to_string()),
+        };
+        assert_eq!(subtitle_track_label(text, &external, 1), "sample.ko.srt");
+    }
+
+    #[test]
+    fn plainview_style_move_zone_is_top_center_only() {
+        assert!(move_zone_contains_point(1280, POINT { x: 640, y: 10 }));
+        assert!(!move_zone_contains_point(1280, POINT { x: 580, y: 10 }));
+        assert!(!move_zone_contains_point(1280, POINT { x: 640, y: 44 }));
+    }
+
+    #[test]
+    fn plainview_style_window_controls_are_top_right_only() {
+        assert_eq!(
+            window_control_at_point(1280, POINT { x: 1173, y: 27 }),
+            Some(WindowControl::Theme)
+        );
+        assert_eq!(
+            window_control_at_point(1280, POINT { x: 1213, y: 27 }),
+            Some(WindowControl::Pin)
+        );
+        assert_eq!(
+            window_control_at_point(1280, POINT { x: 1253, y: 27 }),
+            Some(WindowControl::Close)
+        );
+        assert_eq!(window_control_at_point(1280, POINT { x: 640, y: 27 }), None);
     }
 }
