@@ -1,6 +1,18 @@
 # Architecture notes
 
-Status: candidate architecture for the first playback-surface proof. Nothing in this document is a shipped capability yet.
+Status: Slice 0A playback-surface proof is implemented locally. It is evidence for the interaction and playback direction, not a shipped architecture or release artifact.
+
+## Slice 0A implementation
+
+The current prototype deliberately uses the smallest real-playback path:
+
+- a dependency-free Rust launcher locates a pinned developer mpv runtime;
+- mpv runs in an isolated configuration so user scripts cannot alter the proof;
+- mpv owns the native playback window and GPU renderer;
+- a PlainVideo Lua overlay supplies the localized idle hint and short-lived play, seek, and volume feedback;
+- the stock mpv OSC is disabled, leaving no permanent controls or title bar.
+
+This proves the content-first interaction against a real playback engine. It does **not** yet prove in-process embedding, a native overlay window, portable packaging, or a broad format matrix. Those remain the Slice 0B gate.
 
 ## Constraints
 
@@ -13,7 +25,7 @@ Status: candidate architecture for the first playback-surface proof. Nothing in 
 
 ## Playback core
 
-The first prototype should use **libmpv** rather than building a decoder, demuxer, clock, subtitle renderer, and GPU renderer from scratch.
+The target embedded player should use **libmpv** rather than building a decoder, demuxer, clock, subtitle renderer, and GPU renderer from scratch. Slice 0A launches the pinned mpv executable; Slice 0B moves the proven interaction onto libmpv's render API.
 
 Why it is the leading candidate:
 
@@ -43,6 +55,14 @@ Candidate shells:
 - Qt/QML as a fallback if it materially reduces native-surface risk.
 
 Visual similarity to PlainView is a design-token and interaction requirement, not a reason to force the same rendering architecture.
+
+### Slice 0B exit criteria
+
+1. Render through libmpv's render API in a PlainVideo-owned native window.
+2. Preserve the verified click, seek, fullscreen, subtitle, and no-permanent-UI behavior.
+3. Add a discoverable close/window-move path without restoring a conventional title bar.
+4. Prove rapid file replacement, DPI changes, both connected displays, and clean GPU teardown.
+5. Produce a portable directory from the exact licensed runtime inventory.
 
 ## Smooth motion ladder
 

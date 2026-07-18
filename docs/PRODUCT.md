@@ -8,23 +8,22 @@ The product is not “a simple player with few features.” It is a capable play
 
 ## Default surface
 
-When playback is idle, the window contains only:
+During ordinary playback, the window contains only:
 
 - the video;
 - letterbox or pillarbox background when required;
 - subtitles when enabled.
 
-Pointer movement reveals one compact bottom surface:
+Actual input reveals only the feedback needed for that action:
 
-- play or pause;
-- current time and duration;
-- seek bar;
-- volume;
-- subtitles or tracks when present;
-- fullscreen;
-- one overflow entry for everything else.
+- play or pause briefly shows a centered glyph;
+- seeking briefly shows current time, duration, and a thin progress line;
+- volume adjustment briefly shows a percentage;
+- the empty surface shows one localized drop hint.
 
-Close, always-on-top, and window movement must remain discoverable without recreating a conventional title bar. The first prototype must test these interactions rather than assuming PlainView's image gestures transfer unchanged to video.
+Pointer movement by itself does not need to cover the video. Track selection and advanced actions can live in a contextual surface that appears only when explicitly requested.
+
+Close, always-on-top, and window movement must remain discoverable without recreating a conventional title bar. Slice 0A intentionally leaves this as an embedding-shell problem: `Alt+F4`/`q` close and `Alt`+drag moves the developer surface, but that is not the final first-time-user answer.
 
 ## Interaction defaults
 

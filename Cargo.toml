@@ -1,0 +1,13 @@
+[package]
+name = "plainvideo"
+version = "0.1.0"
+description = "A borderless open-source media player for Windows"
+license = "MIT"
+edition = "2024"
+rust-version = "1.85"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+strip = "symbols"

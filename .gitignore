@@ -16,6 +16,7 @@ target/
 # Build and packaging output
 artifacts/
 release/
+.runtime/
 *.msi
 *.msix
 *.exe
