@@ -386,6 +386,7 @@ pub struct AudioTrack {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EventSummary {
     pub keep_running: bool,
+    pub file_loaded: bool,
     pub media_ready: bool,
     pub reached_end: bool,
     pub playback_error: Option<String>,
@@ -711,6 +712,19 @@ impl Player {
             .unwrap_or(1.0)
     }
 
+    pub fn playback_position(&self) -> Option<f64> {
+        self.property_string("time-pos")?.parse().ok()
+    }
+
+    pub fn duration(&self) -> Option<f64> {
+        self.property_string("duration")?.parse().ok()
+    }
+
+    pub fn seek_absolute_seconds(&self, seconds: f64) -> Result<(), String> {
+        let seconds = seconds.max(0.0).to_string();
+        self.command(&["seek", &seconds, "absolute+keyframes"])
+    }
+
     pub fn seek_absolute_percent(&self, percent: f64, exact: bool) -> Result<(), String> {
         let percent = percent.clamp(0.0, 100.0).to_string();
         let mode = if exact {
@@ -749,6 +763,7 @@ impl Player {
         self.event_wake.clear();
         let mut summary = EventSummary {
             keep_running: true,
+            file_loaded: false,
             media_ready: false,
             reached_end: false,
             playback_error: None,
@@ -776,6 +791,7 @@ impl Player {
                     }
                 }
                 MPV_EVENT_FILE_LOADED => {
+                    summary.file_loaded = true;
                     summary.media_ready = true;
                     summary.reached_end = false;
                     summary.playback_error = None;

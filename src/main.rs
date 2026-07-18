@@ -15,6 +15,8 @@ mod mpv;
 #[cfg(target_os = "windows")]
 mod preferences;
 #[cfg(target_os = "windows")]
+mod resume;
+#[cfg(target_os = "windows")]
 mod windowing;
 #[cfg(target_os = "windows")]
 mod windows_app;

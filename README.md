@@ -43,6 +43,7 @@ Display synchronization and AI frame generation are intentionally treated as dif
 - A localized empty state with no Korean/English mixing and a `Ctrl+O` open path
 - `PageUp`/`PageDown` previous-next navigation, `A` audio-track cycling, `V` subtitle cycling, and `M` mute
 - `Tab` toggles a compact top-left media-information overlay during playback
+- Automatic resume for partially watched local files, with a transient resume notice and a context-menu restart action
 - `F6`/`Shift+F6` keyboard focus for transient controls, with `Enter` or `Space` activation and a visible focus state
 - Real file-drop replacement, plus a progressively disclosed right-click menu for open, retry, previous/next, audio, subtitles, and close
 - Recoverable per-file playback errors that keep the window open for retry, another file, or drag and drop instead of terminating the app

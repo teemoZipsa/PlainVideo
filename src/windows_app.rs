@@ -53,6 +53,7 @@ use crate::media_queue::{
 };
 use crate::mpv::{AudioTrack, Player, SubtitleTrack, diagnostic_replacement};
 use crate::preferences::{Preferences, PreferencesStore};
+use crate::resume::ResumeStore;
 use crate::windowing::{
     BASE_DRAG_ZONE_HEIGHT, WindowBounds, apply_min_track_size, configure_frameless_shadow,
     current_dpi, current_monitor_bounds, resize_window_to_media, restorable_window_bounds,
@@ -65,6 +66,8 @@ const TIMER_SINGLE_CLICK: usize = 1;
 const TIMER_DIAGNOSTIC_REPLACE: usize = 2;
 const TIMER_DIAGNOSTIC_EXIT: usize = 3;
 const TIMER_HIDE_CURSOR: usize = 4;
+const TIMER_RESUME_PROGRESS: usize = 5;
+const RESUME_SAVE_INTERVAL_MS: u32 = 10_000;
 const CURSOR_HIDE_DELAY_MS: u32 = 1_600;
 const WINDOW_CONTROL_SIZE: i32 = 34;
 const WINDOW_CONTROL_GAP: i32 = 6;
@@ -85,6 +88,7 @@ const MENU_PLAY_PAUSE: usize = 105;
 const MENU_SCREENSHOT: usize = 106;
 const MENU_OPEN_LOCATION: usize = 107;
 const MENU_FULLSCREEN: usize = 108;
+const MENU_RESTART: usize = 109;
 const MENU_SUBTITLE_OFF: usize = 200;
 const MENU_SUBTITLE_OPEN: usize = 201;
 const MENU_AUDIO_OFF: usize = 300;
@@ -195,6 +199,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
 
     let preferences_store = PreferencesStore::new();
     let preferences = preferences_store.load();
+    let resume_store = ResumeStore::new();
     let window = Window::create()?;
     let last_window_bounds = match preferences.last_window_bounds {
         Some(bounds) if restore_window_bounds(window.hwnd, bounds)? => Some(bounds),
@@ -247,6 +252,9 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         surface_theme,
         always_on_top: preferences.always_on_top,
         preferences_store,
+        resume_store,
+        pending_resume: None,
+        resume_error_reported: false,
         tracking_mouse_leave: false,
         has_media: has_initial_media,
         pending_media_resize: has_initial_media,
@@ -271,6 +279,17 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         app.note_pointer_activity(window.hwnd);
     }
     configure_diagnostic_timers(window.hwnd, app.diagnostic_replacement.is_some())?;
+    if unsafe {
+        SetTimer(
+            window.hwnd,
+            TIMER_RESUME_PROGRESS,
+            RESUME_SAVE_INTERVAL_MS,
+            None,
+        )
+    } == 0
+    {
+        return Err("Could not schedule PlainVideo resume-history updates.".to_string());
+    }
 
     let exit_code = message_loop();
 
@@ -314,6 +333,9 @@ struct App {
     surface_theme: SurfaceTheme,
     always_on_top: bool,
     preferences_store: PreferencesStore,
+    resume_store: ResumeStore,
+    pending_resume: Option<f64>,
+    resume_error_reported: bool,
     tracking_mouse_leave: bool,
     has_media: bool,
     pending_media_resize: bool,
@@ -379,10 +401,12 @@ impl App {
     }
 
     fn load_path(&mut self, path: &Path) {
+        self.save_resume_progress();
         self.clear_playback_error();
         self.has_media = true;
         self.pending_media_resize = true;
         self.active_path = Some(path.to_path_buf());
+        self.pending_resume = self.resume_store.position(path);
         self.update_window_title();
         if let Err(error) = self.player.load_file(path) {
             self.show_playback_error(error);
@@ -437,6 +461,7 @@ impl App {
         self.has_media = false;
         self.pending_media_resize = false;
         self.clear_keyboard_focus();
+        self.pending_resume = None;
         self.playback_error_visible = true;
         let text = self.locale.text();
         let _ = self.player.command(&[
@@ -650,6 +675,50 @@ impl App {
         let _ = self
             .player
             .command(&["script-message", "plainvideo-status", message]);
+    }
+
+    fn save_resume_progress(&mut self) {
+        if !self.has_media || self.playback_error_visible {
+            return;
+        }
+        let (Some(path), Some(position), Some(duration)) = (
+            self.active_path.clone(),
+            self.player.playback_position(),
+            self.player.duration(),
+        ) else {
+            return;
+        };
+        if let Err(error) = self.resume_store.record(&path, position, duration) {
+            if !self.resume_error_reported {
+                self.record_error(&error);
+                self.resume_error_reported = true;
+            }
+        }
+    }
+
+    fn apply_pending_resume(&mut self) {
+        let Some(position) = self.pending_resume.take() else {
+            return;
+        };
+        if let Err(error) = self.player.seek_absolute_seconds(position) {
+            self.operation_error(error);
+            return;
+        }
+        let time = format_playback_time(position);
+        self.show_status(&self.locale.text().resumed_from.replace("{}", &time));
+    }
+
+    fn restart_video(&mut self) {
+        if let Some(path) = self.active_path.clone() {
+            if let Err(error) = self.resume_store.clear(&path) {
+                self.operation_error(error);
+                return;
+            }
+        }
+        self.pending_resume = None;
+        if let Err(error) = self.player.seek_absolute_seconds(0.0) {
+            self.operation_error(error);
+        }
     }
 
     fn toggle_media_info(&mut self) {
@@ -1094,6 +1163,7 @@ impl App {
         let previous = wide(text.previous_video);
         let next = wide(text.next_video);
         let retry = wide(text.retry_video);
+        let restart = wide(text.restart_video);
         let subtitles = wide(text.subtitles);
         let subtitles_off = wide(text.subtitles_off);
         let open_subtitle = wide(text.open_subtitle);
@@ -1115,6 +1185,7 @@ impl App {
             if has_playable_media {
                 AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
                 AppendMenuW(menu, MF_STRING, MENU_PLAY_PAUSE, play_pause.as_ptr());
+                AppendMenuW(menu, MF_STRING, MENU_RESTART, restart.as_ptr());
                 AppendMenuW(
                     menu,
                     MF_STRING
@@ -1275,6 +1346,7 @@ impl App {
                     self.next_video();
                 }
                 MENU_RETRY => self.retry_video(),
+                MENU_RESTART => self.restart_video(),
                 MENU_PLAY_PAUSE => {
                     self.binding("plainvideo/toggle-pause");
                 }
@@ -1572,15 +1644,21 @@ unsafe extern "system" fn window_proc(
                 if let Some(error) = events.playback_error {
                     app.show_playback_error(error);
                 } else {
+                    if events.file_loaded {
+                        app.apply_pending_resume();
+                    }
                     if events.media_ready {
                         app.has_media = true;
                         app.clear_playback_error();
                         app.resize_to_pending_media(hwnd);
                     }
-                    if events.reached_end && !app.next_video() {
-                        app.has_media = false;
-                        app.pending_media_resize = false;
-                        app.clear_keyboard_focus();
+                    if events.reached_end {
+                        app.save_resume_progress();
+                        if !app.next_video() {
+                            app.has_media = false;
+                            app.pending_media_resize = false;
+                            app.clear_keyboard_focus();
+                        }
                     }
                 }
                 if !events.keep_running {
@@ -1845,6 +1923,14 @@ unsafe extern "system" fn window_proc(
                         app.hide_transient_chrome(hwnd);
                     }
                 }
+                TIMER_RESUME_PROGRESS => {
+                    if let Some(app) = app {
+                        app.save_resume_progress();
+                    }
+                    unsafe {
+                        SetTimer(hwnd, TIMER_RESUME_PROGRESS, RESUME_SAVE_INTERVAL_MS, None);
+                    }
+                }
                 _ => {}
             }
             0
@@ -1873,6 +1959,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_CLOSE => {
             if let Some(app) = app {
+                app.save_resume_progress();
                 app.save_window_bounds_if_restorable(hwnd);
                 app.pressed_control = None;
                 app.volume_drag_active = false;
@@ -2231,6 +2318,18 @@ fn set_window_always_on_top(hwnd: HWND, always_on_top: bool) -> Result<(), Strin
         ))
     } else {
         Ok(())
+    }
+}
+
+fn format_playback_time(seconds: f64) -> String {
+    let seconds = seconds.max(0.0).floor() as u64;
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let seconds = seconds % 60;
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes:02}:{seconds:02}")
     }
 }
 

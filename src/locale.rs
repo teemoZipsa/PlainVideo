@@ -13,6 +13,8 @@ pub struct UiText {
     pub previous_video: &'static str,
     pub next_video: &'static str,
     pub retry_video: &'static str,
+    pub restart_video: &'static str,
+    pub resumed_from: &'static str,
     pub subtitles: &'static str,
     pub subtitles_off: &'static str,
     pub open_subtitle: &'static str,
@@ -45,6 +47,8 @@ const KOREAN: UiText = UiText {
     previous_video: "이전 영상\tPage Up",
     next_video: "다음 영상\tPage Down",
     retry_video: "다시 시도\tR",
+    restart_video: "처음부터 재생",
+    resumed_from: "{}부터 이어 재생",
     subtitles: "자막",
     subtitles_off: "자막 끄기",
     open_subtitle: "자막 파일 열기…",
@@ -77,6 +81,8 @@ const ENGLISH: UiText = UiText {
     previous_video: "Previous video\tPage Up",
     next_video: "Next video\tPage Down",
     retry_video: "Try again\tR",
+    restart_video: "Play from beginning",
+    resumed_from: "Resumed from {}",
     subtitles: "Subtitles",
     subtitles_off: "Off",
     open_subtitle: "Open subtitle file…",
@@ -170,6 +176,8 @@ mod tests {
             assert!(!text.previous_video.is_empty());
             assert!(!text.next_video.is_empty());
             assert!(!text.retry_video.is_empty());
+            assert!(!text.restart_video.is_empty());
+            assert!(!text.resumed_from.is_empty());
             assert!(!text.subtitles.is_empty());
             assert!(!text.subtitles_off.is_empty());
             assert!(!text.open_subtitle.is_empty());
