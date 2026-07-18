@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-07-19T00:59:25+09:00",
+  "status": "planning",
+  "repository": {
+    "nameWithOwner": "teemoZipsa/PlainVideo",
+    "visibility": "public",
+    "defaultBranch": "master",
+    "baselineCommit": "784dbbc6b50854d98dad82bc37f3d716e30bdc00",
+    "githubActionsRepositoryPermission": "enabled",
+    "localWorkflowCount": 0,
+    "workflowPolicy": "Do not add, dispatch, rerun, or broaden workflows without explicit user approval."
+  },
+  "product": {
+    "cargoVersion": "0.1.0",
+    "stage": "pre-alpha",
+    "storeTarget": true,
+    "distributionModel": "packaged Win32 MSIX",
+    "targetDeviceFamily": "Windows.Desktop",
+    "initialArchitectures": [
+      "x64"
+    ],
+    "listingLocales": [
+      "en-US",
+      "ko-KR"
+    ],
+    "pricing": "free",
+    "advertising": false,
+    "accounts": false,
+    "telemetry": false
+  },
+  "partnerCenter": {
+    "status": "not-checked",
+    "productNameReserved": null,
+    "packageIdentityName": null,
+    "publisher": null,
+    "submissionId": null,
+    "certificationStatus": null,
+    "publicationStatus": null
+  },
+  "release": {
+    "eligible": false,
+    "packageVersion": null,
+    "packageSha256": null,
+    "nextMilestone": "runtime-redistribution-closure"
+  },
+  "blockingGates": [
+    "The pinned libmpv runtime is developer-only and lacks an approved redistribution profile.",
+    "The Partner Center reservation state has not been checked and no exact package identity or publisher is recorded.",
+    "No MSIX manifest, app identity resources, Store logos, or deterministic Store packaging flow exists.",
+    "No WACK, developer-signed installed-package, update, uninstall, or clean-VM package proof exists.",
+    "No public privacy/support pages or rights-cleared bilingual Store screenshots exist."
+  ]
+}

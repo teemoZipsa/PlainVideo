@@ -6,6 +6,8 @@ PlainVideo extends the product philosophy of PlainView to video: open a file and
 
 The project is currently at the **embedded playback proof stage (pre-alpha)**. A local prototype renders in-process through libmpv inside a PlainVideo-owned window, but there is no distributable player yet.
 
+PlainVideo is now planned as a free Microsoft Store app delivered as packaged Win32 MSIX, while retaining a matching portable build. The current developer libmpv runtime is not approved for redistribution, so runtime license/build closure is the first Store release gate. See the [Microsoft Store release plan](docs/STORE_RELEASE_PLAN.md).
+
 [한국어 README](README.ko.md)
 
 ## Principles
