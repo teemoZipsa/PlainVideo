@@ -9,6 +9,8 @@ use std::process::ExitCode;
 #[cfg(target_os = "windows")]
 mod locale;
 #[cfg(target_os = "windows")]
+mod media_queue;
+#[cfg(target_os = "windows")]
 mod mpv;
 #[cfg(target_os = "windows")]
 mod preferences;

@@ -14,12 +14,12 @@ This pass ports the current PlainView window-behavior principles into PlainVideo
 - Media-size resize preserves the current position first, fits the video within 90% of the current monitor work area, honors the DPI-scaled minimum, then clamps the result into that work area. Two physical pixels or less are treated as DPI rounding, not real overflow.
 - The frameless window uses an opaque `WS_POPUP | WS_THICKFRAME` surface with minimize/maximize/system styles, no layered transparency, `DWMWA_BORDER_COLOR = DWMWA_COLOR_NONE`, a one-pixel `DwmExtendFrameIntoClientArea` margin, and `WM_NCCALCSIZE` client extension. This removes the visible DWM border while retaining native composition and shadow behavior.
 - The top 56 logical pixels across the full client width are an invisible native `HTCAPTION` move zone. There is no dot handle or move button. The zone uses `IDC_SIZEALL`, and entering it reveals the transient overlays.
-- Top-right theme, pin, minimize, and close controls, plus bottom play/pause, seek, mute, subtitle, and fullscreen controls, return `HTCLIENT` and cannot start a window drag. Control capture is released on client mouse-up, `WM_CAPTURECHANGED`, and `WM_CANCELMODE` so a boundary crossing cannot leave an interaction locked.
+- Top-right theme, pin, minimize, and close controls, plus bottom play/pause, seek, speaker/volume, subtitle, and fullscreen controls, return `HTCLIENT` and cannot start a window drag. Native mouse capture routes an outside mouse-up back to the window, and capture is also cleared on `WM_CAPTURECHANGED` and `WM_CANCELMODE`, so a boundary crossing cannot leave an interaction locked.
 - The baseline minimum is 280×240 logical pixels and scales with `GetDpiForWindow`. Overlay geometry has a DPI-scaled maximum width, a compact seek-track fallback, and only two text tiers. Text scaling is capped progressively at narrow widths so a 200% preference does not clip the controls.
 
 ## Local evidence
 
-The reproducible probe is `scripts/verify-window-behavior.ps1`. Its ignored runtime result is `.runtime/window-behavior/window-behavior-evidence.json`.
+The reproducible probe is `scripts/verify-window-behavior.ps1`. Its default ignored runtime result is `.runtime/window-behavior/window-behavior-evidence.json`. When an explicit evidence path is supplied, captures are stored beside that JSON so a later run cannot silently overwrite another run's screenshots.
 
 | Check | Result |
 |---|---|
@@ -48,4 +48,4 @@ cargo build --release
 git diff --check
 ```
 
-All 14 Rust tests passed. All PowerShell scripts parsed. No GitHub Actions workflow was added, enabled, or run.
+All 23 Rust tests passed in the current quality pass. All PowerShell scripts parsed. No GitHub Actions workflow was added, enabled, or run.

@@ -33,18 +33,21 @@ Display synchronization and AI frame generation are intentionally treated as dif
 
 - A Rust-owned native Windows shell around a pinned libmpv developer runtime
 - In-process render-API playback in a titleless, borderless window
-- Click to play/pause, double-click fullscreen, arrow-key seek and volume, and `Esc` to return
+- Click to play/pause, double-click fullscreen, five-second arrow-key seek, 30-second `Shift`+arrow seek, arrow-key or mouse-wheel volume, and `Esc` to return
 - Translucent feedback and a compact playback bar that appear only after pointer/input activity; no permanent toolbar
 - A pointer that hides after 1.6 seconds during playback and returns on mouse movement
 - A full-width invisible 56 px top move zone with a move cursor and no visible handle
-- PlainView-style top-right theme, always-on-top, minimize, and close controls, plus transient play, seek, mute, subtitle, and fullscreen controls
+- PlainView-style top-right theme, always-on-top, minimize, and close controls, plus transient play, seek, volume-slider/mute, subtitle, and fullscreen controls
 - Physical-pixel window placement across monitors, DPI-scaled 280×240 minimum sizing, and DWM border suppression with the native shadow retained
-- Automatic discovery of same-name external SRT subtitles, plus context-menu off, track selection, and external subtitle loading
+- Automatic discovery of same-name external SRT subtitles, plus contextual subtitle and audio-track selection and external subtitle loading
 - A localized empty state with no Korean/English mixing and a `Ctrl+O` open path
-- Real file-drop replacement, plus a progressively disclosed right-click menu for open, subtitles, and close
+- `PageUp`/`PageDown` previous-next navigation, `A` audio-track cycling, `V` subtitle cycling, and `M` mute
+- `Tab`/`Shift+Tab` keyboard focus for transient controls, with `Enter` or `Space` activation and a visible focus state
+- Real file-drop replacement, plus a progressively disclosed right-click menu for open, retry, previous/next, audio, subtitles, and close
+- Recoverable per-file playback errors that keep the window open for retry, another file, or drag and drop instead of terminating the app
 - A reproducible local developer portable directory with per-file hashes
 
-The evidence currently covers an H.264/AAC MP4 fixture, a Matroska remux of the same streams, and external SRT. The embedded Slice 0B build selected `nvdec` hardware decoding on the development machine; the older child-process Slice 0A build observed `d3d11va-copy`. Neither observation is a broader hardware guarantee.
+The first local developer format matrix on 2026-07-19 passed all ten generated container, codec, audio, and subtitle combinations against one hash-locked portable directory. This remains dirty-worktree developer evidence with a runtime that is not approved for redistribution, not a blanket release-support claim; see the [format compatibility ledger](docs/FORMAT_COMPATIBILITY_LEDGER.md) for the exact rows and limits. The embedded build selected `nvdec` on the development machine; the older child-process Slice 0A build observed `d3d11va-copy`. Neither observation guarantees hardware support on another GPU.
 
 ## Run locally
 
@@ -53,7 +56,7 @@ The evidence currently covers an H.264/AAC MP4 fixture, a Matroska remux of the 
 cargo run --release -- "C:\path\to\video.mkv"
 ```
 
-With FFmpeg installed, `.\scripts\generate-smoke-media.ps1` recreates the deterministic fixtures. `.\scripts\build-portable.ps1` creates a local developer portable proof under `.runtime`; it is not approved for redistribution. See the [Slice 0A playback proof](docs/SLICE_0_PLAYBACK_PROOF.md), [Slice 0B libmpv proof](docs/SLICE_0B_LIBMPV_PROOF.md), [UI/UX polish proof](docs/UI_UX_POLISH_PROOF.md), and [Windows window-behavior proof](docs/WINDOW_BEHAVIOR_PROOF.md) for the exact evidence and limits.
+With FFmpeg installed, `.\scripts\generate-smoke-media.ps1` recreates the deterministic fixtures. `.\scripts\build-portable.ps1` creates a local developer portable proof under `.runtime`; it is not approved for redistribution. `.\scripts\run-local-validation.ps1` runs the quick local quality gate as one batch. See [quality pass 1-6](docs/QUALITY_PASS_1_TO_6.md) for this scope and its remaining gates, plus the [accessibility baseline](docs/ACCESSIBILITY_BASELINE.md), [format compatibility ledger](docs/FORMAT_COMPATIBILITY_LEDGER.md), [playback stability plan](docs/PLAYBACK_STABILITY_PLAN.md), [Slice 0B libmpv proof](docs/SLICE_0B_LIBMPV_PROOF.md), and [Windows window-behavior proof](docs/WINDOW_BEHAVIOR_PROOF.md) for the exact evidence and limits.
 
 ## Technical direction
 

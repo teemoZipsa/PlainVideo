@@ -22,13 +22,14 @@ if ([string]::IsNullOrWhiteSpace($SmallMediaPath)) {
 if ([string]::IsNullOrWhiteSpace($EvidencePath)) {
     $EvidencePath = Join-Path $runtimeRoot 'window-behavior-evidence.json'
 }
+$evidenceDirectory = Split-Path -Parent ([System.IO.Path]::GetFullPath($EvidencePath))
 
 foreach ($required in @($Executable, $MediaPath)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Required verification input is missing: $required"
     }
 }
-New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $runtimeRoot, $evidenceDirectory -Force | Out-Null
 
 if (-not (Test-Path -LiteralPath $SmallMediaPath -PathType Leaf)) {
     $ffmpeg = (Get-Command ffmpeg -ErrorAction Stop).Source
@@ -297,8 +298,10 @@ try {
     $seekY = $client.height - [int](40 * $initialDpi / 96)
     $seekPoint = [PlainVideoWindowProbe]::MakeLParam($seekX, $seekY)
     [void][PlainVideoWindowProbe]::SetCursorPos($initialRect.x + $seekX, $initialRect.y + $seekY)
+    Start-Sleep -Milliseconds 80
     [void][PlainVideoWindowProbe]::SendMessageW($hwnd, 0x0200, [UIntPtr]::Zero, $seekPoint)
-    Start-Sleep -Milliseconds 120
+    [void][PlainVideoWindowProbe]::SendMessageW($hwnd, 0x0100, [UIntPtr]0x09, [IntPtr]::Zero)
+    [void][PlainVideoWindowProbe]::SendMessageW($hwnd, 0x0101, [UIntPtr]0x09, [IntPtr]::Zero)
     [void][PlainVideoWindowProbe]::SendMessageW($hwnd, 0x0201, [UIntPtr]1, $seekPoint)
     [void][PlainVideoWindowProbe]::SendMessageW($hwnd, 0x0202, [UIntPtr]::Zero, $seekPoint)
     Start-Sleep -Milliseconds 400
@@ -370,7 +373,7 @@ try {
     Assert-BoundsEqual -Actual (Get-SavedBounds -Path $settingsPath) -Expected $savedTarget -Label 'Off-screen save exclusion'
     Set-Rect -Hwnd $hwnd -X $savedTarget.x -Y $savedTarget.y -Width $savedTarget.width -Height $savedTarget.height
 
-    $mainCapture = Join-Path $runtimeRoot 'window-shadow-and-controls.png'
+    $mainCapture = Join-Path $evidenceDirectory 'window-shadow-and-controls.png'
     $mousePoint = [PlainVideoWindowProbe]::MakeLParam([int]($savedTarget.width / 2), $savedTarget.height - 36)
     [void][PlainVideoWindowProbe]::SetCursorPos(
         $savedTarget.x + [int]($savedTarget.width / 2),
@@ -415,8 +418,12 @@ try {
         $smallRect.y + $smallClient.height - [int](36 * $smallDpi / 96)
     )
     [void][PlainVideoWindowProbe]::SendMessageW($smallRun.Hwnd, 0x0200, [UIntPtr]::Zero, $smallPoint)
+    # Keep the transient chrome visible with a real keyboard-focus state so the
+    # 200% capture proves that focused controls and labels fit the small window.
+    [void][PlainVideoWindowProbe]::SendMessageW($smallRun.Hwnd, 0x0100, [UIntPtr]0x09, [IntPtr]::Zero)
+    [void][PlainVideoWindowProbe]::SendMessageW($smallRun.Hwnd, 0x0101, [UIntPtr]0x09, [IntPtr]::Zero)
     Start-Sleep -Milliseconds 180
-    $smallCapture = Join-Path $runtimeRoot 'small-video-text-200-percent.png'
+    $smallCapture = Join-Path $evidenceDirectory 'small-video-text-200-percent.png'
     Save-WindowCapture -Hwnd $smallRun.Hwnd -Path $smallCapture
 }
 finally {
@@ -426,6 +433,9 @@ finally {
 $logs = @($mainLog, $restoreLog, $smallLog)
 foreach ($log in $logs) {
     $logText = Get-Content -LiteralPath $log -Raw
+    if ($logText -notmatch 'Reading config file .*[/\\]mpv\.conf') {
+        throw "The bundled mpv.conf was not loaded in $log"
+    }
     if ($logText -match 'Lua error|stack traceback|error running function') {
         throw "A Lua overlay error was recorded in $log"
     }

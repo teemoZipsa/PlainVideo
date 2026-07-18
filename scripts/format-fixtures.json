@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "defaults": {
+    "durationSeconds": 4,
+    "size": "640x360",
+    "frameRate": 24,
+    "sampleRate": 48000
+  },
+  "fixtures": [
+    {
+      "id": "mp4-h264-aac-srt",
+      "claim": "MP4 / H.264 / AAC / external SRT",
+      "extension": ".mp4",
+      "muxer": "mp4",
+      "video": {
+        "codec": "h264",
+        "encoders": ["libx264"],
+        "pixelFormat": "yuv420p",
+        "args": ["-preset", "veryfast", "-crf", "22"]
+      },
+      "audio": {
+        "codec": "aac",
+        "encoders": ["aac"],
+        "args": ["-b:a", "128k"]
+      },
+      "subtitle": { "mode": "external", "format": "srt" },
+      "outputArgs": ["-movflags", "+faststart"]
+    },
+    {
+      "id": "mkv-h264-flac-srt",
+      "claim": "Matroska / H.264 / FLAC / embedded SRT",
+      "extension": ".mkv",
+      "muxer": "matroska",
+      "video": {
+        "codec": "h264",
+        "encoders": ["libx264"],
+        "pixelFormat": "yuv420p",
+        "args": ["-preset", "veryfast", "-crf", "22"]
+      },
+      "audio": {
+        "codec": "flac",
+        "encoders": ["flac"],
+        "args": []
+      },
+      "subtitle": { "mode": "embedded", "format": "srt", "encoder": "srt" },
+      "outputArgs": []
+    },
+    {
+      "id": "webm-vp9-opus-vtt",
+      "claim": "WebM / VP9 / Opus / external WebVTT",
+      "extension": ".webm",
+      "muxer": "webm",
+      "video": {
+        "codec": "vp9",
+        "encoders": ["libvpx-vp9"],
+        "pixelFormat": "yuv420p",
+        "args": ["-deadline", "realtime", "-cpu-used", "8", "-crf", "35", "-b:v", "0"]
+      },
+      "audio": {
+        "codec": "opus",
+        "encoders": ["libopus", "opus"],
+        "args": ["-b:a", "96k"]
+      },
+      "subtitle": { "mode": "external", "format": "vtt" },
+      "outputArgs": []
+    },
+    {
+      "id": "mov-prores-pcm",
+      "claim": "QuickTime / ProRes Proxy / PCM",
+      "extension": ".mov",
+      "muxer": "mov",
+      "video": {
+        "codec": "prores",
+        "encoders": ["prores_ks"],
+        "pixelFormat": "yuv422p10le",
+        "args": ["-profile:v", "0"]
+      },
+      "audio": {
+        "codec": "pcm_s16le",
+        "encoders": ["pcm_s16le"],
+        "args": []
+      },
+      "subtitle": { "mode": "none" },
+      "outputArgs": []
+    },
+    {
+      "id": "avi-mpeg4-mp3",
+      "claim": "AVI / MPEG-4 Part 2 / MP3",
+      "extension": ".avi",
+      "muxer": "avi",
+      "video": {
+        "codec": "mpeg4",
+        "encoders": ["mpeg4"],
+        "pixelFormat": "yuv420p",
+        "args": ["-q:v", "5"]
+      },
+      "audio": {
+        "codec": "mp3",
+        "encoders": ["libmp3lame"],
+        "args": ["-b:a", "128k"]
+      },
+      "subtitle": { "mode": "none" },
+      "outputArgs": []
+    },
+    {
+      "id": "mpeg-mpeg2-mp2",
+      "claim": "MPEG program stream / MPEG-2 Video / MP2",
+      "extension": ".mpeg",
+      "muxer": "mpeg",
+      "video": {
+        "codec": "mpeg2video",
+        "encoders": ["mpeg2video"],
+        "pixelFormat": "yuv420p",
+        "args": ["-q:v", "4"]
+      },
+      "audio": {
+        "codec": "mp2",
+        "encoders": ["mp2"],
+        "args": ["-b:a", "192k"]
+      },
+      "subtitle": { "mode": "none" },
+      "outputArgs": []
+    },
+    {
+      "id": "m2ts-h264-aac",
+      "claim": "M2TS / H.264 / AAC",
+      "extension": ".m2ts",
+      "muxer": "mpegts",
+      "video": {
+        "codec": "h264",
+        "encoders": ["libx264"],
+        "pixelFormat": "yuv420p",
+        "args": ["-preset", "veryfast", "-crf", "22"]
+      },
+      "audio": {
+        "codec": "aac",
+        "encoders": ["aac"],
+        "args": ["-b:a", "128k"]
+      },
+      "subtitle": { "mode": "none" },
+      "outputArgs": ["-mpegts_m2ts_mode", "1"]
+    },
+    {
+      "id": "wmv-wmv2-wmav2",
+      "claim": "ASF/WMV / WMV2 / WMA2",
+      "extension": ".wmv",
+      "muxer": "asf",
+      "video": {
+        "codec": "wmv2",
+        "encoders": ["wmv2"],
+        "pixelFormat": "yuv420p",
+        "args": ["-q:v", "4"]
+      },
+      "audio": {
+        "codec": "wmav2",
+        "encoders": ["wmav2"],
+        "args": ["-b:a", "128k"]
+      },
+      "subtitle": { "mode": "none" },
+      "outputArgs": []
+    },
+    {
+      "id": "mkv-ffv1-pcm-software",
+      "claim": "Matroska / FFV1 / PCM software-decode baseline",
+      "extension": ".mkv",
+      "muxer": "matroska",
+      "video": {
+        "codec": "ffv1",
+        "encoders": ["ffv1"],
+        "pixelFormat": "yuv420p",
+        "args": ["-level", "3"]
+      },
+      "audio": {
+        "codec": "pcm_s16le",
+        "encoders": ["pcm_s16le"],
+        "args": []
+      },
+      "subtitle": { "mode": "none" },
+      "expectedDecode": "software",
+      "outputArgs": []
+    },
+    {
+      "id": "mp4-hevc10-aac",
+      "claim": "MP4 / 10-bit HEVC / AAC",
+      "extension": ".mp4",
+      "muxer": "mp4",
+      "video": {
+        "codec": "hevc",
+        "encoders": ["libx265"],
+        "pixelFormat": "yuv420p10le",
+        "args": ["-preset", "ultrafast", "-x265-params", "log-level=error"]
+      },
+      "audio": {
+        "codec": "aac",
+        "encoders": ["aac"],
+        "args": ["-b:a", "128k"]
+      },
+      "subtitle": { "mode": "none" },
+      "outputArgs": ["-tag:v", "hvc1", "-movflags", "+faststart"]
+    }
+  ]
+}

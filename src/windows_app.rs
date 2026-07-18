@@ -4,6 +4,7 @@ use std::mem::{self, size_of};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 use std::ptr;
+use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
@@ -20,8 +21,8 @@ use windows_sys::Win32::UI::HiDpi::{
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetDoubleClickTime, GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT,
-    TrackMouseEvent, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_F, VK_LEFT, VK_O, VK_RETURN, VK_RIGHT,
-    VK_S, VK_SPACE, VK_UP,
+    TrackMouseEvent, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_F, VK_LEFT, VK_NEXT, VK_O, VK_PRIOR,
+    VK_RETURN, VK_RIGHT, VK_S, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
 };
 use windows_sys::Win32::UI::Shell::{DragAcceptFiles, DragFinish, DragQueryFileW, HDROP};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -29,22 +30,25 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     DestroyMenu, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
     GetMessageW, GetSystemMetrics, GetWindowLongPtrW, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT,
     HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HWND_NOTOPMOST,
-    HWND_TOPMOST, IDC_ARROW, IDC_SIZEALL, IsZoomed, KillTimer, LoadCursorW, MF_CHECKED, MF_GRAYED,
-    MF_POPUP, MF_SEPARATOR, MF_STRING, MINMAXINFO, MSG, PostQuitMessage, RegisterClassExW,
-    SIZE_MINIMIZED, SM_CXSCREEN, SM_CYSCREEN, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW,
-    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER,
-    SetCursor, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowCursor,
-    ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP,
-    WM_CANCELMODE, WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU, WM_DPICHANGED, WM_DROPFILES,
-    WM_DWMCOMPOSITIONCHANGED, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_KEYDOWN,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCCALCSIZE, WM_NCHITTEST,
-    WM_PAINT, WM_QUIT, WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WNDCLASSEXW,
-    WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
-    WS_THICKFRAME,
+    HWND_TOPMOST, IDC_ARROW, IDC_HAND, IDC_SIZEALL, IsZoomed, KillTimer, LoadCursorW, MF_CHECKED,
+    MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MINMAXINFO, MSG, PostQuitMessage,
+    RegisterClassExW, SIZE_MINIMIZED, SM_CXSCREEN, SM_CYSCREEN, SW_MAXIMIZE, SW_MINIMIZE,
+    SW_RESTORE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
+    SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
+    SetWindowPos, SetWindowTextW, ShowCursor, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    TrackPopupMenu, TranslateMessage, WM_APP, WM_CANCELMODE, WM_CAPTURECHANGED, WM_CLOSE,
+    WM_CONTEXTMENU, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES, WM_DWMCOMPOSITIONCHANGED,
+    WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_PAINT, WM_QUIT,
+    WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES,
+    WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
 use crate::locale::{Locale, UiText};
-use crate::mpv::{Player, SubtitleTrack, diagnostic_replacement};
+use crate::media_queue::{
+    MEDIA_DIALOG_PATTERN, MediaQueue, SUBTITLE_DIALOG_PATTERN, is_subtitle_path,
+};
+use crate::mpv::{AudioTrack, Player, SubtitleTrack, diagnostic_replacement};
 use crate::preferences::{Preferences, PreferencesStore};
 use crate::windowing::{
     BASE_DRAG_ZONE_HEIGHT, WindowBounds, apply_min_track_size, configure_frameless_shadow,
@@ -68,11 +72,17 @@ const PLAYBACK_BAR_HEIGHT: i32 = 56;
 const PLAYBACK_BAR_MARGIN: i32 = 12;
 const PLAYBACK_BUTTON_SIZE: i32 = 36;
 const PLAYBACK_BUTTON_GAP: i32 = 6;
+const PLAYBACK_VOLUME_WIDTH: i32 = 64;
 const MENU_OPEN: usize = 100;
+const MENU_PREVIOUS: usize = 101;
+const MENU_CLOSE: usize = 102;
+const MENU_NEXT: usize = 103;
+const MENU_RETRY: usize = 104;
 const MENU_SUBTITLE_OFF: usize = 200;
 const MENU_SUBTITLE_OPEN: usize = 201;
+const MENU_AUDIO_OFF: usize = 300;
 const MENU_SUBTITLE_TRACK_BASE: usize = 1_000;
-const MENU_CLOSE: usize = 102;
+const MENU_AUDIO_TRACK_BASE: usize = 2_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SurfaceTheme {
@@ -108,7 +118,7 @@ enum WindowControl {
 enum PlaybackControl {
     PlayPause,
     Seek,
-    Mute,
+    Volume,
     Subtitles,
     Fullscreen,
 }
@@ -124,9 +134,30 @@ struct PlaybackLayout {
     bar: RECT,
     play_pause: RECT,
     seek: RECT,
-    mute: RECT,
+    volume: RECT,
     subtitles: RECT,
     fullscreen: RECT,
+}
+
+impl PlaybackControl {
+    fn message_name(self) -> &'static str {
+        match self {
+            Self::PlayPause => "play",
+            Self::Seek => "seek",
+            Self::Volume => "volume",
+            Self::Subtitles => "subtitles",
+            Self::Fullscreen => "fullscreen",
+        }
+    }
+}
+
+impl PressedControl {
+    fn message_name(self) -> &'static str {
+        match self {
+            Self::Window(control) => control.message_name(),
+            Self::Playback(control) => control.message_name(),
+        }
+    }
 }
 
 impl WindowControl {
@@ -173,7 +204,15 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
     if preferences.always_on_top {
         set_window_always_on_top(window.hwnd, true)?;
     }
+    let diagnostic_single_file = diagnostic_single_file();
+    let media_queue = if media.len() == 1 && !diagnostic_single_file {
+        MediaQueue::around(&media[0])
+    } else {
+        MediaQueue::from_paths(media)
+    };
+    let has_initial_media = media_queue.current().is_some();
     let mut app = Box::new(App {
+        hwnd: window.hwnd,
         player,
         windowed_bounds: None,
         windowed_was_maximized: false,
@@ -184,16 +223,24 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         cursor_hidden: false,
         window_controls_visible: false,
         hovered_control: None,
+        hovered_playback: None,
         pressed_control: None,
+        volume_drag_active: false,
+        keyboard_focus: None,
         dpi: current_dpi(window.hwnd),
         text_scale: text_scale_factor(),
         surface_theme,
         always_on_top: preferences.always_on_top,
         preferences_store,
         tracking_mouse_leave: false,
-        has_media: !media.is_empty(),
-        pending_media_resize: !media.is_empty(),
+        has_media: has_initial_media,
+        pending_media_resize: has_initial_media,
+        media_queue,
+        active_path: None,
+        playback_error_visible: false,
+        last_seek_drag: None,
         diagnostic_replacement: diagnostic_replacement(),
+        diagnostic_single_file,
         last_error: None,
     });
 
@@ -205,11 +252,8 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         UpdateWindow(window.hwnd);
     }
 
-    if let Some(first) = media.first() {
-        app.player.load_file(first)?;
-        for path in media.iter().skip(1) {
-            app.player.append_file(path)?;
-        }
+    if has_initial_media {
+        app.load_current();
         app.note_pointer_activity(window.hwnd);
     }
     configure_diagnostic_timers(window.hwnd, app.diagnostic_replacement.is_some())?;
@@ -236,6 +280,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
 }
 
 struct App {
+    hwnd: HWND,
     player: Player,
     windowed_bounds: Option<WindowBounds>,
     windowed_was_maximized: bool,
@@ -246,7 +291,10 @@ struct App {
     cursor_hidden: bool,
     window_controls_visible: bool,
     hovered_control: Option<WindowControl>,
+    hovered_playback: Option<PlaybackControl>,
     pressed_control: Option<PressedControl>,
+    volume_drag_active: bool,
+    keyboard_focus: Option<PressedControl>,
     dpi: u32,
     text_scale: f64,
     surface_theme: SurfaceTheme,
@@ -255,7 +303,12 @@ struct App {
     tracking_mouse_leave: bool,
     has_media: bool,
     pending_media_resize: bool,
+    media_queue: MediaQueue,
+    active_path: Option<PathBuf>,
+    playback_error_visible: bool,
+    last_seek_drag: Option<Instant>,
     diagnostic_replacement: Option<PathBuf>,
+    diagnostic_single_file: bool,
     last_error: Option<String>,
 }
 
@@ -278,24 +331,131 @@ impl App {
         self.player.request_render(width, height, force);
     }
 
-    fn command(&mut self, arguments: &[&str]) {
+    fn command(&mut self, arguments: &[&str]) -> bool {
         if let Err(error) = self.player.command(arguments) {
-            self.fail(error);
+            self.operation_error(error);
+            false
+        } else {
+            true
         }
     }
 
-    fn binding(&mut self, name: &str) {
+    fn binding(&mut self, name: &str) -> bool {
         if let Err(error) = self.player.script_binding(name) {
-            self.fail(error);
+            self.operation_error(error);
+            false
+        } else {
+            true
         }
     }
 
-    fn load_file(&mut self, path: &Path) {
+    fn open_file(&mut self, path: &Path) {
+        self.media_queue = if self.diagnostic_single_file {
+            MediaQueue::from_paths(vec![path.to_path_buf()])
+        } else {
+            MediaQueue::around(path)
+        };
+        self.load_current();
+    }
+
+    fn load_current(&mut self) {
+        if let Some(path) = self.media_queue.current().map(Path::to_path_buf) {
+            self.load_path(&path);
+        }
+    }
+
+    fn load_path(&mut self, path: &Path) {
+        self.clear_playback_error();
         self.has_media = true;
         self.pending_media_resize = true;
+        self.active_path = Some(path.to_path_buf());
+        self.update_window_title();
         if let Err(error) = self.player.load_file(path) {
-            self.fail(error);
+            self.show_playback_error(error);
         }
+    }
+
+    fn previous_video(&mut self) {
+        if let Some(path) = self.media_queue.previous().map(Path::to_path_buf) {
+            self.load_path(&path);
+        }
+    }
+
+    fn next_video(&mut self) -> bool {
+        if let Some(path) = self.media_queue.next().map(Path::to_path_buf) {
+            self.load_path(&path);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn retry_video(&mut self) {
+        self.load_current();
+    }
+
+    fn update_window_title(&self) {
+        let title = self
+            .active_path
+            .as_deref()
+            .and_then(Path::file_name)
+            .and_then(OsStr::to_str)
+            .map(|name| format!("{name} — PlainVideo"))
+            .unwrap_or_else(|| "PlainVideo".to_string());
+        let title = wide(&title);
+        unsafe { SetWindowTextW(self.hwnd, title.as_ptr()) };
+    }
+
+    fn clear_playback_error(&mut self) {
+        if self.playback_error_visible {
+            let _ = self.player.command(&[
+                "script-message",
+                "plainvideo-playback-status",
+                "ok",
+                "",
+                "",
+            ]);
+        }
+        self.playback_error_visible = false;
+    }
+
+    fn show_playback_error(&mut self, error: String) {
+        self.has_media = false;
+        self.pending_media_resize = false;
+        self.clear_keyboard_focus();
+        self.playback_error_visible = true;
+        let text = self.locale.text();
+        let _ = self.player.command(&[
+            "script-message",
+            "plainvideo-playback-status",
+            "error",
+            text.playback_error_title,
+            text.playback_error_hint,
+        ]);
+        self.record_error(&error);
+    }
+
+    fn record_error(&self, error: &str) {
+        if let Some(log_path) = env::var_os("PLAINVIDEO_DIAGNOSTIC_LOG") {
+            let sidecar = PathBuf::from(log_path).with_extension("app-errors.log");
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(sidecar)
+                .and_then(|mut file| {
+                    use std::io::Write;
+                    writeln!(file, "{error}")
+                });
+        }
+    }
+
+    fn operation_error(&self, error: String) {
+        self.record_error(&error);
+        let _ = self.player.command(&[
+            "script-message",
+            "plainvideo-status",
+            self.locale.text().operation_failed,
+        ]);
     }
 
     fn show_cursor(&mut self) {
@@ -340,13 +500,18 @@ impl App {
     }
 
     fn set_window_controls_visible(&mut self, visible: bool) {
+        if !visible && self.keyboard_focus.is_some() {
+            return;
+        }
         if self.window_controls_visible == visible && (visible || self.hovered_control.is_none()) {
             return;
         }
         self.window_controls_visible = visible;
         if !visible {
             self.hovered_control = None;
+            self.hovered_playback = None;
             self.pressed_control = None;
+            self.volume_drag_active = false;
         }
         self.sync_window_controls();
     }
@@ -356,6 +521,14 @@ impl App {
             return;
         }
         self.hovered_control = control;
+        self.sync_window_controls();
+    }
+
+    fn set_hovered_playback(&mut self, control: Option<PlaybackControl>) {
+        if self.hovered_playback == control {
+            return;
+        }
+        self.hovered_playback = control;
         self.sync_window_controls();
     }
 
@@ -371,6 +544,18 @@ impl App {
             .hovered_control
             .map(WindowControl::message_name)
             .unwrap_or("none");
+        let playback_hovered = self
+            .hovered_playback
+            .map(PlaybackControl::message_name)
+            .unwrap_or("none");
+        let pressed = self
+            .pressed_control
+            .map(PressedControl::message_name)
+            .unwrap_or("none");
+        let focused = self
+            .keyboard_focus
+            .map(PressedControl::message_name)
+            .unwrap_or("none");
         self.command(&[
             "script-message",
             "plainvideo-window-controls",
@@ -380,11 +565,15 @@ impl App {
             hovered,
             &format!("{:.4}", f64::from(self.dpi) / 96.0),
             &format!("{:.4}", self.text_scale),
+            playback_hovered,
+            pressed,
+            focused,
         ]);
     }
 
     fn hide_transient_chrome(&mut self, hwnd: HWND) {
         if self.pressed_control.is_some()
+            || self.keyboard_focus.is_some()
             || pointer_over_interactive_chrome(hwnd, self.window_controls_visible, self.dpi)
         {
             unsafe { SetTimer(hwnd, TIMER_HIDE_CURSOR, CURSOR_HIDE_DELAY_MS, None) };
@@ -409,10 +598,20 @@ impl App {
         }
 
         if self.pressed_control == Some(PressedControl::Playback(PlaybackControl::Seek)) {
-            self.seek_from_pointer(hwnd, client_point(lparam));
+            self.seek_from_pointer(hwnd, client_point(lparam), false);
+        } else if self.pressed_control == Some(PressedControl::Playback(PlaybackControl::Volume))
+            && self.volume_drag_active
+        {
+            self.set_volume_from_pointer(hwnd, client_point(lparam));
         }
         let hovered_control = window_control_at(hwnd, lparam, self.dpi);
         self.set_hovered_control(hovered_control);
+        let hovered_playback = if self.window_controls_visible {
+            playback_control_at(hwnd, client_point(lparam), self.dpi)
+        } else {
+            None
+        };
+        self.set_hovered_playback(hovered_playback);
     }
 
     fn pointer_left(&mut self, hwnd: HWND) {
@@ -421,6 +620,7 @@ impl App {
             return;
         }
         self.set_window_controls_visible(false);
+        self.hovered_playback = None;
         self.show_cursor();
         unsafe { KillTimer(hwnd, TIMER_HIDE_CURSOR) };
     }
@@ -430,6 +630,74 @@ impl App {
             self.last_error = Some(error);
             unsafe { PostQuitMessage(1) };
         }
+    }
+
+    fn show_status(&self, message: &str) {
+        let _ = self
+            .player
+            .command(&["script-message", "plainvideo-status", message]);
+    }
+
+    fn cycle_keyboard_focus(&mut self, reverse: bool) {
+        const ORDER: [PressedControl; 8] = [
+            PressedControl::Playback(PlaybackControl::PlayPause),
+            PressedControl::Playback(PlaybackControl::Volume),
+            PressedControl::Playback(PlaybackControl::Subtitles),
+            PressedControl::Playback(PlaybackControl::Fullscreen),
+            PressedControl::Window(WindowControl::Theme),
+            PressedControl::Window(WindowControl::Pin),
+            PressedControl::Window(WindowControl::Minimize),
+            PressedControl::Window(WindowControl::Close),
+        ];
+        let order = if self.has_media {
+            &ORDER[..]
+        } else {
+            &ORDER[4..]
+        };
+        let current = self
+            .keyboard_focus
+            .and_then(|focused| order.iter().position(|candidate| *candidate == focused));
+        let next = match (current, reverse) {
+            (None, false) => 0,
+            (None, true) => order.len() - 1,
+            (Some(0), true) => order.len() - 1,
+            (Some(index), true) => index - 1,
+            (Some(index), false) => (index + 1) % order.len(),
+        };
+        self.keyboard_focus = Some(order[next]);
+        self.set_window_controls_visible(true);
+        self.sync_window_controls();
+    }
+
+    fn clear_keyboard_focus(&mut self) {
+        if self.keyboard_focus.take().is_some() {
+            self.sync_window_controls();
+        }
+    }
+
+    fn activate_keyboard_focus(&mut self, hwnd: HWND) -> bool {
+        let Some(focused) = self.keyboard_focus else {
+            return false;
+        };
+        match focused {
+            PressedControl::Window(control) => self.activate_window_control(hwnd, control),
+            PressedControl::Playback(PlaybackControl::Volume) => {
+                self.toggle_mute();
+            }
+            PressedControl::Playback(control) => {
+                let point = playback_layout(hwnd, self.dpi)
+                    .map(|layout| match control {
+                        PlaybackControl::PlayPause => rect_center(layout.play_pause),
+                        PlaybackControl::Seek => rect_center(layout.seek),
+                        PlaybackControl::Volume => rect_center(layout.volume),
+                        PlaybackControl::Subtitles => rect_center(layout.subtitles),
+                        PlaybackControl::Fullscreen => rect_center(layout.fullscreen),
+                    })
+                    .unwrap_or(POINT { x: 0, y: 0 });
+                self.activate_playback_control(hwnd, control, point);
+            }
+        }
+        true
     }
 
     fn activate_window_control(&mut self, hwnd: HWND, control: WindowControl) {
@@ -590,25 +858,160 @@ impl App {
         self.save_window_bounds_if_restorable(hwnd);
     }
 
-    fn seek_from_pointer(&mut self, hwnd: HWND, point: POINT) {
+    fn seek_from_pointer(&mut self, hwnd: HWND, point: POINT, exact: bool) {
+        if !self.player.is_seekable() {
+            return;
+        }
+        if !exact {
+            let now = Instant::now();
+            if self
+                .last_seek_drag
+                .is_some_and(|previous| now.duration_since(previous) < Duration::from_millis(25))
+            {
+                return;
+            }
+            self.last_seek_drag = Some(now);
+        } else {
+            self.last_seek_drag = None;
+        }
         let Some(layout) = playback_layout(hwnd, self.dpi) else {
             return;
         };
-        let width = (layout.seek.right - layout.seek.left).max(1);
-        let percent =
-            f64::from((point.x - layout.seek.left).clamp(0, width)) / f64::from(width) * 100.0;
-        if let Err(error) = self.player.seek_absolute_percent(percent) {
-            self.fail(error);
+        let (track_left, track_right) = seek_track_bounds(&layout, self.dpi);
+        let percent = track_percent(point.x, track_left, track_right);
+        if let Err(error) = self.player.seek_absolute_percent(percent, exact) {
+            self.operation_error(error);
+        }
+    }
+
+    fn set_volume_from_pointer(&mut self, hwnd: HWND, point: POINT) {
+        let Some(layout) = playback_layout(hwnd, self.dpi) else {
+            return;
+        };
+        let (track_left, track_right) = volume_track_bounds(&layout, self.dpi);
+        let volume = track_percent(point.x, track_left, track_right);
+        if let Err(error) = self.player.set_volume(volume) {
+            self.operation_error(error);
+            return;
+        }
+        let _ = self.player.command(&["set", "mute", "no"]);
+        let _ = self
+            .player
+            .command(&["script-message", "plainvideo-volume-feedback"]);
+    }
+
+    fn adjust_volume(&mut self, amount: f64) {
+        let volume = (self.player.volume() + amount).clamp(0.0, 100.0);
+        if let Err(error) = self.player.set_volume(volume) {
+            self.operation_error(error);
+            return;
+        }
+        if amount > 0.0 {
+            let _ = self.player.command(&["set", "mute", "no"]);
+        }
+        let _ = self
+            .player
+            .command(&["script-message", "plainvideo-volume-feedback"]);
+    }
+
+    fn toggle_mute(&mut self) {
+        if self.command(&["cycle", "mute"]) {
+            let _ = self
+                .player
+                .command(&["script-message", "plainvideo-volume-feedback"]);
+        }
+    }
+
+    fn disable_subtitles_ui(&mut self) {
+        if let Err(error) = self.player.disable_subtitles() {
+            self.operation_error(error);
+        } else {
+            self.show_status(self.locale.text().subtitles_off);
+        }
+    }
+
+    fn add_subtitle_ui(&mut self, path: &Path) {
+        if let Err(error) = self.player.add_subtitle(path) {
+            self.operation_error(error);
+        } else {
+            let label = path
+                .file_name()
+                .and_then(OsStr::to_str)
+                .unwrap_or(self.locale.text().subtitles);
+            self.show_status(&format!("{}: {label}", self.locale.text().subtitles));
+        }
+    }
+
+    fn select_subtitle_ui(&mut self, id: i64, label: &str) {
+        if let Err(error) = self.player.select_subtitle(id) {
+            self.operation_error(error);
+        } else {
+            self.show_status(&format!("{}: {label}", self.locale.text().subtitles));
+        }
+    }
+
+    fn cycle_subtitle(&mut self) {
+        let tracks = self.player.subtitle_tracks();
+        if tracks.is_empty() {
+            self.show_status(self.locale.text().no_subtitle_tracks);
+            return;
+        }
+        let current = self.player.current_subtitle_id();
+        let next = current
+            .and_then(|id| tracks.iter().position(|track| track.id == id))
+            .and_then(|index| tracks.get(index + 1));
+        if let Some(track) = next.or_else(|| current.is_none().then(|| &tracks[0])) {
+            let index = tracks
+                .iter()
+                .position(|candidate| candidate.id == track.id)
+                .unwrap_or(0);
+            let label = subtitle_track_label(self.locale.text(), track, index);
+            self.select_subtitle_ui(track.id, &label);
+        } else {
+            self.disable_subtitles_ui();
+        }
+    }
+
+    fn cycle_audio(&mut self) {
+        let tracks = self.player.audio_tracks();
+        if tracks.is_empty() {
+            self.show_status(self.locale.text().no_audio_tracks);
+            return;
+        }
+        let current = self.player.current_audio_id();
+        let next_index = current
+            .and_then(|id| tracks.iter().position(|track| track.id == id))
+            .map_or(0, |index| (index + 1) % tracks.len());
+        if let Err(error) = self.player.select_audio(tracks[next_index].id) {
+            self.operation_error(error);
+        } else {
+            let label = audio_track_label(self.locale.text(), &tracks[next_index], next_index);
+            self.show_status(&format!("{}: {label}", self.locale.text().audio));
         }
     }
 
     fn activate_playback_control(&mut self, hwnd: HWND, control: PlaybackControl, point: POINT) {
         match control {
-            PlaybackControl::PlayPause => self.binding("plainvideo/toggle-pause"),
-            PlaybackControl::Seek => self.seek_from_pointer(hwnd, point),
-            PlaybackControl::Mute => self.command(&["cycle", "mute"]),
+            PlaybackControl::PlayPause => {
+                self.binding("plainvideo/toggle-pause");
+            }
+            PlaybackControl::Seek => {
+                self.seek_from_pointer(hwnd, point, true);
+            }
+            PlaybackControl::Volume => {
+                let track_left = playback_layout(hwnd, self.dpi)
+                    .map(|layout| volume_track_bounds(&layout, self.dpi).0)
+                    .unwrap_or(i32::MIN);
+                if point.x < track_left {
+                    self.toggle_mute();
+                } else {
+                    self.set_volume_from_pointer(hwnd, point);
+                }
+            }
             PlaybackControl::Subtitles => self.show_subtitle_menu(hwnd),
-            PlaybackControl::Fullscreen => self.toggle_fullscreen(hwnd),
+            PlaybackControl::Fullscreen => {
+                self.toggle_fullscreen(hwnd);
+            }
         }
     }
 
@@ -621,26 +1024,73 @@ impl App {
             return;
         }
         let subtitle_menu = unsafe { CreatePopupMenu() };
-        if subtitle_menu.is_null() {
+        let audio_menu = unsafe { CreatePopupMenu() };
+        if subtitle_menu.is_null() || audio_menu.is_null() {
+            if !subtitle_menu.is_null() {
+                unsafe { DestroyMenu(subtitle_menu) };
+            }
+            if !audio_menu.is_null() {
+                unsafe { DestroyMenu(audio_menu) };
+            }
             unsafe { DestroyMenu(menu) };
             return;
         }
         let text = self.locale.text();
-        let tracks = self.player.subtitle_tracks();
+        let subtitle_tracks = self.player.subtitle_tracks();
+        let audio_tracks = self.player.audio_tracks();
         let current_subtitle = self.player.current_subtitle_id();
-        let track_commands: Vec<_> = tracks
+        let current_audio = self.player.current_audio_id();
+        let subtitle_commands: Vec<_> = subtitle_tracks
             .iter()
             .enumerate()
             .map(|(index, track)| (MENU_SUBTITLE_TRACK_BASE + index, track.id))
             .collect();
+        let audio_commands: Vec<_> = audio_tracks
+            .iter()
+            .enumerate()
+            .map(|(index, track)| (MENU_AUDIO_TRACK_BASE + index, track.id))
+            .collect();
         let open = wide(text.open_video);
+        let previous = wide(text.previous_video);
+        let next = wide(text.next_video);
+        let retry = wide(text.retry_video);
         let subtitles = wide(text.subtitles);
         let subtitles_off = wide(text.subtitles_off);
         let open_subtitle = wide(text.open_subtitle);
         let no_subtitle_tracks = wide(text.no_subtitle_tracks);
+        let audio = wide(text.audio);
+        let audio_off = wide(text.audio_off);
+        let no_audio_tracks = wide(text.no_audio_tracks);
         let close = wide(text.close);
         unsafe {
             AppendMenuW(menu, MF_STRING, MENU_OPEN, open.as_ptr());
+            if self.playback_error_visible {
+                AppendMenuW(menu, MF_STRING, MENU_RETRY, retry.as_ptr());
+            }
+            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
+            AppendMenuW(
+                menu,
+                MF_STRING
+                    | if self.media_queue.can_previous() {
+                        0
+                    } else {
+                        MF_GRAYED
+                    },
+                MENU_PREVIOUS,
+                previous.as_ptr(),
+            );
+            AppendMenuW(
+                menu,
+                MF_STRING
+                    | if self.media_queue.can_next() {
+                        0
+                    } else {
+                        MF_GRAYED
+                    },
+                MENU_NEXT,
+                next.as_ptr(),
+            );
+            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(
                 subtitle_menu,
                 MF_STRING
@@ -652,7 +1102,7 @@ impl App {
                 MENU_SUBTITLE_OFF,
                 subtitles_off.as_ptr(),
             );
-            if tracks.is_empty() {
+            if subtitle_tracks.is_empty() {
                 AppendMenuW(
                     subtitle_menu,
                     MF_STRING | MF_GRAYED,
@@ -660,7 +1110,7 @@ impl App {
                     no_subtitle_tracks.as_ptr(),
                 );
             } else {
-                for (index, track) in tracks.iter().enumerate() {
+                for (index, track) in subtitle_tracks.iter().enumerate() {
                     let label = wide(&subtitle_track_label(text, track, index));
                     AppendMenuW(
                         subtitle_menu,
@@ -683,6 +1133,41 @@ impl App {
                 open_subtitle.as_ptr(),
             );
             AppendMenuW(menu, MF_POPUP, subtitle_menu as usize, subtitles.as_ptr());
+            AppendMenuW(
+                audio_menu,
+                MF_STRING
+                    | if current_audio.is_none() {
+                        MF_CHECKED
+                    } else {
+                        0
+                    },
+                MENU_AUDIO_OFF,
+                audio_off.as_ptr(),
+            );
+            if audio_tracks.is_empty() {
+                AppendMenuW(
+                    audio_menu,
+                    MF_STRING | MF_GRAYED,
+                    0,
+                    no_audio_tracks.as_ptr(),
+                );
+            } else {
+                for (index, track) in audio_tracks.iter().enumerate() {
+                    let label = wide(&audio_track_label(text, track, index));
+                    AppendMenuW(
+                        audio_menu,
+                        MF_STRING
+                            | if current_audio == Some(track.id) {
+                                MF_CHECKED
+                            } else {
+                                0
+                            },
+                        MENU_AUDIO_TRACK_BASE + index,
+                        label.as_ptr(),
+                    );
+                }
+            }
+            AppendMenuW(menu, MF_POPUP, audio_menu as usize, audio.as_ptr());
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, MF_STRING, MENU_CLOSE, close.as_ptr());
             SetForegroundWindow(hwnd);
@@ -701,29 +1186,45 @@ impl App {
             match selected {
                 MENU_OPEN => {
                     if let Some(path) = pick_media_file(hwnd, text) {
-                        self.load_file(&path);
+                        self.open_file(&path);
                     }
                 }
+                MENU_PREVIOUS => self.previous_video(),
+                MENU_NEXT => {
+                    self.next_video();
+                }
+                MENU_RETRY => self.retry_video(),
                 MENU_SUBTITLE_OFF => {
-                    if let Err(error) = self.player.disable_subtitles() {
-                        self.fail(error);
-                    }
+                    self.disable_subtitles_ui();
                 }
                 MENU_SUBTITLE_OPEN => {
                     if let Some(path) = pick_subtitle_file(hwnd, text) {
-                        if let Err(error) = self.player.add_subtitle(&path) {
-                            self.fail(error);
-                        }
+                        self.add_subtitle_ui(&path);
+                    }
+                }
+                MENU_AUDIO_OFF => {
+                    if let Err(error) = self.player.disable_audio() {
+                        self.operation_error(error);
                     }
                 }
                 MENU_CLOSE => PostQuitMessage(0),
                 _ => {
-                    if let Some((_, track_id)) = track_commands
+                    if let Some((_, track_id)) = subtitle_commands
                         .iter()
                         .find(|(command, _)| *command == selected)
                     {
-                        if let Err(error) = self.player.select_subtitle(*track_id) {
-                            self.fail(error);
+                        let index = subtitle_tracks
+                            .iter()
+                            .position(|track| track.id == *track_id)
+                            .unwrap_or(0);
+                        let label = subtitle_track_label(text, &subtitle_tracks[index], index);
+                        self.select_subtitle_ui(*track_id, &label);
+                    } else if let Some((_, track_id)) = audio_commands
+                        .iter()
+                        .find(|(command, _)| *command == selected)
+                    {
+                        if let Err(error) = self.player.select_audio(*track_id) {
+                            self.operation_error(error);
                         }
                     }
                 }
@@ -797,15 +1298,11 @@ impl App {
             DestroyMenu(menu);
             match selected {
                 MENU_SUBTITLE_OFF => {
-                    if let Err(error) = self.player.disable_subtitles() {
-                        self.fail(error);
-                    }
+                    self.disable_subtitles_ui();
                 }
                 MENU_SUBTITLE_OPEN => {
                     if let Some(path) = pick_subtitle_file(hwnd, text) {
-                        if let Err(error) = self.player.add_subtitle(&path) {
-                            self.fail(error);
-                        }
+                        self.add_subtitle_ui(&path);
                     }
                 }
                 _ => {
@@ -813,9 +1310,12 @@ impl App {
                         .iter()
                         .find(|(command, _)| *command == selected)
                     {
-                        if let Err(error) = self.player.select_subtitle(*track_id) {
-                            self.fail(error);
-                        }
+                        let index = tracks
+                            .iter()
+                            .position(|track| track.id == *track_id)
+                            .unwrap_or(0);
+                        let label = subtitle_track_label(text, &tracks[index], index);
+                        self.select_subtitle_ui(*track_id, &label);
                     }
                 }
             }
@@ -838,14 +1338,23 @@ impl App {
             }
         }
         unsafe { DragFinish(drop) };
-        if let Some(first) = paths.first() {
-            self.load_file(first);
-            for path in paths.iter().skip(1) {
-                if let Err(error) = self.player.append_file(path) {
-                    self.fail(error);
-                    break;
-                }
-            }
+        if paths.len() == 1 && is_subtitle_path(&paths[0]) && self.active_path.is_some() {
+            self.add_subtitle_ui(&paths[0]);
+            self.note_pointer_activity(hwnd);
+            return;
+        }
+
+        let media: Vec<_> = paths
+            .into_iter()
+            .filter(|path| !is_subtitle_path(path))
+            .collect();
+        if !media.is_empty() {
+            self.media_queue = if media.len() == 1 {
+                MediaQueue::around(&media[0])
+            } else {
+                MediaQueue::from_paths(media)
+            };
+            self.load_current();
             self.note_pointer_activity(hwnd);
         }
     }
@@ -954,11 +1463,22 @@ unsafe extern "system" fn window_proc(
         WM_APP_MPV_EVENT => {
             if let Some(app) = app {
                 let events = app.player.drain_events();
-                if events.media_ready {
-                    app.resize_to_pending_media(hwnd);
+                if let Some(error) = events.playback_error {
+                    app.show_playback_error(error);
+                } else {
+                    if events.media_ready {
+                        app.has_media = true;
+                        app.clear_playback_error();
+                        app.resize_to_pending_media(hwnd);
+                    }
+                    if events.reached_end && !app.next_video() {
+                        app.has_media = false;
+                        app.pending_media_resize = false;
+                        app.clear_keyboard_focus();
+                    }
                 }
                 if !events.keep_running {
-                    unsafe { PostQuitMessage(0) };
+                    app.fail("The libmpv playback core stopped unexpectedly.".to_string());
                 }
             }
             0
@@ -1008,6 +1528,26 @@ unsafe extern "system" fn window_proc(
                     return 1;
                 }
             }
+            if let Some(app) = app {
+                let mut point = POINT { x: 0, y: 0 };
+                if app.window_controls_visible
+                    && unsafe { GetCursorPos(&mut point) } != 0
+                    && unsafe { ScreenToClient(hwnd, &mut point) } != 0
+                    && (window_control_at_point(
+                        client_size(hwnd).map(|size| size.0).unwrap_or(0),
+                        point,
+                        app.dpi,
+                    )
+                    .is_some()
+                        || playback_control_at(hwnd, point, app.dpi).is_some())
+                {
+                    let cursor = unsafe { LoadCursorW(ptr::null_mut(), IDC_HAND) };
+                    if !cursor.is_null() {
+                        unsafe { SetCursor(cursor) };
+                        return 1;
+                    }
+                }
+            }
             unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
         }
         WM_DPICHANGED => {
@@ -1024,6 +1564,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_LBUTTONDOWN => {
             if let Some(app) = app {
+                app.clear_keyboard_focus();
                 let point = client_point(lparam);
                 let pressed = if app.window_controls_visible {
                     window_control_at_point(
@@ -1041,10 +1582,18 @@ unsafe extern "system" fn window_proc(
                 app.note_pointer_activity(hwnd);
                 if let Some(control) = pressed {
                     app.pressed_control = Some(control);
+                    app.volume_drag_active = control
+                        == PressedControl::Playback(PlaybackControl::Volume)
+                        && playback_layout(hwnd, app.dpi).is_some_and(|layout| {
+                            point.x >= volume_track_bounds(&layout, app.dpi).0
+                        });
+                    app.sync_window_controls();
                     app.suppress_click = true;
                     unsafe { SetCapture(hwnd) };
                     if control == PressedControl::Playback(PlaybackControl::Seek) {
-                        app.seek_from_pointer(hwnd, point);
+                        app.seek_from_pointer(hwnd, point, false);
+                    } else if app.volume_drag_active {
+                        app.set_volume_from_pointer(hwnd, point);
                     }
                     return 0;
                 }
@@ -1055,6 +1604,9 @@ unsafe extern "system" fn window_proc(
             if let Some(app) = app {
                 let point = client_point(lparam);
                 if let Some(pressed) = app.pressed_control.take() {
+                    let volume_drag_active = app.volume_drag_active;
+                    app.volume_drag_active = false;
+                    app.last_seek_drag = None;
                     unsafe { ReleaseCapture() };
                     app.suppress_click = false;
                     unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
@@ -1071,11 +1623,30 @@ unsafe extern "system" fn window_proc(
                         }
                         PressedControl::Playback(control) => {
                             let released = playback_control_at(hwnd, point, app.dpi);
-                            if control == PlaybackControl::Seek || released == Some(control) {
-                                app.activate_playback_control(hwnd, control, point);
+                            match control {
+                                PlaybackControl::Seek => {
+                                    app.activate_playback_control(hwnd, control, point);
+                                }
+                                PlaybackControl::Volume if volume_drag_active => {
+                                    app.set_volume_from_pointer(hwnd, point);
+                                }
+                                PlaybackControl::Volume => {
+                                    let released_on_speaker = released == Some(control)
+                                        && playback_layout(hwnd, app.dpi).is_some_and(|layout| {
+                                            point.x < volume_track_bounds(&layout, app.dpi).0
+                                        });
+                                    if released_on_speaker {
+                                        app.toggle_mute();
+                                    }
+                                }
+                                _ if released == Some(control) => {
+                                    app.activate_playback_control(hwnd, control, point);
+                                }
+                                _ => {}
                             }
                         }
                     }
+                    app.sync_window_controls();
                     return 0;
                 }
                 if app.suppress_click {
@@ -1093,7 +1664,10 @@ unsafe extern "system" fn window_proc(
         WM_CAPTURECHANGED | WM_CANCELMODE => {
             if let Some(app) = app {
                 app.pressed_control = None;
+                app.volume_drag_active = false;
+                app.last_seek_drag = None;
                 app.suppress_click = false;
+                app.sync_window_controls();
             }
             0
         }
@@ -1119,6 +1693,8 @@ unsafe extern "system" fn window_proc(
             if let Some(app) = app {
                 app.suppress_click = false;
                 app.pressed_control = None;
+                app.volume_drag_active = false;
+                app.last_seek_drag = None;
                 app.update_scale(hwnd);
                 app.save_window_bounds_if_restorable(hwnd);
             }
@@ -1153,7 +1729,7 @@ unsafe extern "system" fn window_proc(
                 TIMER_DIAGNOSTIC_REPLACE => {
                     if let Some(app) = app {
                         if let Some(path) = app.diagnostic_replacement.clone() {
-                            app.load_file(&path);
+                            app.open_file(&path);
                         }
                     }
                 }
@@ -1173,6 +1749,16 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
+        WM_MOUSEWHEEL => {
+            if let Some(app) = app {
+                let delta = wheel_delta(wparam);
+                if delta != 0 {
+                    app.adjust_volume(f64::from(delta) / 120.0 * 2.0);
+                    app.note_pointer_activity(hwnd);
+                }
+            }
+            0
+        }
         WM_MOUSELEAVE => {
             if let Some(app) = app {
                 app.pointer_left(hwnd);
@@ -1183,9 +1769,14 @@ unsafe extern "system" fn window_proc(
             if let Some(app) = app {
                 app.save_window_bounds_if_restorable(hwnd);
                 app.pressed_control = None;
+                app.volume_drag_active = false;
                 unsafe { ReleaseCapture() };
                 app.show_cursor();
             }
+            unsafe { PostQuitMessage(0) };
+            0
+        }
+        WM_DESTROY => {
             unsafe { PostQuitMessage(0) };
             0
         }
@@ -1198,21 +1789,63 @@ fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
         app.show_cursor();
         unsafe { KillTimer(hwnd, TIMER_HIDE_CURSOR) };
         if let Some(path) = pick_media_file(hwnd, app.locale.text()) {
-            app.load_file(&path);
+            app.open_file(&path);
         }
         app.note_pointer_activity(hwnd);
         return;
     }
+    if key == VK_TAB {
+        let reverse = unsafe { GetKeyState(VK_SHIFT as i32) } < 0;
+        app.cycle_keyboard_focus(reverse);
+        app.note_pointer_activity(hwnd);
+        return;
+    }
+    let shift = unsafe { GetKeyState(VK_SHIFT as i32) } < 0;
     match key {
-        VK_SPACE => app.binding("plainvideo/toggle-pause"),
-        VK_LEFT => app.binding("plainvideo/seek-back-small"),
-        VK_RIGHT => app.binding("plainvideo/seek-forward-small"),
-        VK_UP => app.binding("plainvideo/volume-up"),
-        VK_DOWN => app.binding("plainvideo/volume-down"),
-        VK_RETURN | VK_F => app.toggle_fullscreen(hwnd),
-        VK_ESCAPE if app.fullscreen => app.toggle_fullscreen(hwnd),
-        0x54 => app.toggle_always_on_top(hwnd), // T
-        VK_S => app.command(&["screenshot"]),
+        VK_SPACE => {
+            if !app.activate_keyboard_focus(hwnd) {
+                app.binding("plainvideo/toggle-pause");
+            }
+        }
+        VK_LEFT if shift => {
+            app.binding("plainvideo/seek-back-large");
+        }
+        VK_RIGHT if shift => {
+            app.binding("plainvideo/seek-forward-large");
+        }
+        VK_LEFT => {
+            app.binding("plainvideo/seek-back-small");
+        }
+        VK_RIGHT => {
+            app.binding("plainvideo/seek-forward-small");
+        }
+        VK_UP => app.adjust_volume(2.0),
+        VK_DOWN => app.adjust_volume(-2.0),
+        VK_PRIOR => app.previous_video(),
+        VK_NEXT => {
+            app.next_video();
+        }
+        VK_RETURN => {
+            if !app.activate_keyboard_focus(hwnd) {
+                app.toggle_fullscreen(hwnd);
+            }
+        }
+        VK_F => app.toggle_fullscreen(hwnd),
+        VK_ESCAPE if app.fullscreen => {
+            app.clear_keyboard_focus();
+            app.toggle_fullscreen(hwnd);
+        }
+        VK_ESCAPE if app.keyboard_focus.is_some() => app.clear_keyboard_focus(),
+        0x41 => app.cycle_audio(), // A
+        0x4D => {
+            app.toggle_mute(); // M
+        }
+        0x52 if app.playback_error_visible => app.retry_video(), // R
+        0x54 => app.toggle_always_on_top(hwnd),                  // T
+        0x56 => app.cycle_subtitle(),                            // V
+        VK_S => {
+            app.command(&["screenshot"]);
+        }
         0x51 => unsafe { PostQuitMessage(0) }, // Q
         _ => {}
     }
@@ -1294,17 +1927,38 @@ fn playback_layout(hwnd: HWND, dpi: u32) -> Option<PlaybackLayout> {
     playback_layout_for_size(width, height, dpi)
 }
 
+fn seek_track_bounds(layout: &PlaybackLayout, dpi: u32) -> (i32, i32) {
+    (
+        layout.seek.left + scale_metric(4, dpi),
+        layout.seek.right - scale_metric(4, dpi),
+    )
+}
+
+fn volume_track_bounds(layout: &PlaybackLayout, dpi: u32) -> (i32, i32) {
+    (
+        layout.volume.left + scale_metric(30, dpi),
+        layout.volume.right - scale_metric(6, dpi),
+    )
+}
+
+fn track_percent(position: i32, start: i32, end: i32) -> f64 {
+    let width = (end - start).max(1);
+    f64::from((position - start).clamp(0, width)) / f64::from(width) * 100.0
+}
+
 fn playback_layout_for_size(width: i32, height: i32, dpi: u32) -> Option<PlaybackLayout> {
     let outer_margin = scale_metric(PLAYBACK_BAR_MARGIN, dpi);
     let bar_height = scale_metric(PLAYBACK_BAR_HEIGHT, dpi);
     let button = scale_metric(PLAYBACK_BUTTON_SIZE, dpi);
+    let volume_width = scale_metric(PLAYBACK_VOLUME_WIDTH, dpi);
     let gap = scale_metric(PLAYBACK_BUTTON_GAP, dpi);
     let inner_margin = scale_metric(10, dpi);
     let maximum_width = scale_metric(PLAYBACK_BAR_MAX_WIDTH, dpi);
     let bar_width = (width - outer_margin * 2).min(maximum_width);
     if bar_width <= 0
         || height < bar_height + outer_margin * 2
-        || bar_width < button * 4 + gap * 4 + inner_margin * 2 + scale_metric(32, dpi)
+        || bar_width
+            < button * 3 + volume_width + gap * 4 + inner_margin * 2 + scale_metric(32, dpi)
     {
         return None;
     }
@@ -1322,18 +1976,23 @@ fn playback_layout_for_size(width: i32, height: i32, dpi: u32) -> Option<Playbac
     let play_pause = rect_from_xywh(inner_left, control_top, button, button);
     let fullscreen = rect_from_xywh(inner_right - button, control_top, button, button);
     let subtitles = rect_from_xywh(fullscreen.left - gap - button, control_top, button, button);
-    let mute = rect_from_xywh(subtitles.left - gap - button, control_top, button, button);
+    let volume = rect_from_xywh(
+        subtitles.left - gap - volume_width,
+        control_top,
+        volume_width,
+        button,
+    );
     let seek = RECT {
         left: play_pause.right + gap,
         top: control_top,
-        right: mute.left - gap,
+        right: volume.left - gap,
         bottom: control_top + button,
     };
     Some(PlaybackLayout {
         bar,
         play_pause,
         seek,
-        mute,
+        volume,
         subtitles,
         fullscreen,
     })
@@ -1344,7 +2003,7 @@ fn playback_control_at(hwnd: HWND, point: POINT, dpi: u32) -> Option<PlaybackCon
     [
         (PlaybackControl::PlayPause, layout.play_pause),
         (PlaybackControl::Seek, layout.seek),
-        (PlaybackControl::Mute, layout.mute),
+        (PlaybackControl::Volume, layout.volume),
         (PlaybackControl::Subtitles, layout.subtitles),
         (PlaybackControl::Fullscreen, layout.fullscreen),
     ]
@@ -1421,6 +2080,17 @@ fn rect_contains(rect: RECT, point: POINT) -> bool {
     point.x >= rect.left && point.x < rect.right && point.y >= rect.top && point.y < rect.bottom
 }
 
+const fn rect_center(rect: RECT) -> POINT {
+    POINT {
+        x: rect.left + (rect.right - rect.left) / 2,
+        y: rect.top + (rect.bottom - rect.top) / 2,
+    }
+}
+
+const fn wheel_delta(wparam: WPARAM) -> i16 {
+    ((wparam >> 16) & 0xffff) as u16 as i16
+}
+
 const fn loword(value: usize) -> u16 {
     (value & 0xffff) as u16
 }
@@ -1470,6 +2140,11 @@ fn configure_diagnostic_timers(hwnd: HWND, has_replacement: bool) -> Result<(), 
     Ok(())
 }
 
+fn diagnostic_single_file() -> bool {
+    env::var_os("PLAINVIDEO_DIAGNOSTIC_LOG").is_some()
+        && env::var("PLAINVIDEO_DIAGNOSTIC_SINGLE_FILE").as_deref() == Ok("1")
+}
+
 fn message_loop() -> i32 {
     let mut message: MSG = unsafe { mem::zeroed() };
     loop {
@@ -1492,7 +2167,7 @@ fn pick_media_file(hwnd: HWND, text: &UiText) -> Option<PathBuf> {
         hwnd,
         text.file_dialog_title,
         text.media_files,
-        "*.mp4;*.mkv;*.webm;*.mov;*.avi;*.m2ts;*.mts;*.ts;*.mpg;*.mpeg;*.wmv",
+        MEDIA_DIALOG_PATTERN,
         text.all_files,
     )
 }
@@ -1502,7 +2177,7 @@ fn pick_subtitle_file(hwnd: HWND, text: &UiText) -> Option<PathBuf> {
         hwnd,
         text.subtitle_dialog_title,
         text.subtitle_files,
-        "*.srt;*.ass;*.ssa;*.vtt;*.sub;*.idx;*.sup",
+        SUBTITLE_DIALOG_PATTERN,
         text.all_files,
     )
 }
@@ -1587,6 +2262,37 @@ fn subtitle_track_label(text: &UiText, track: &SubtitleTrack, index: usize) -> S
     label
 }
 
+fn audio_track_label(text: &UiText, track: &AudioTrack, index: usize) -> String {
+    let title = track
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let language = track
+        .language
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let codec = track
+        .codec
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let mut label = title
+        .or(language)
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("{} {}", text.audio_track, index + 1));
+    for detail in [language, codec, track.channels.as_deref()] {
+        if let Some(detail) = detail.map(str::trim).filter(|value| !value.is_empty()) {
+            if !label.eq_ignore_ascii_case(detail) {
+                label.push_str(" · ");
+                label.push_str(detail);
+            }
+        }
+    }
+    label
+}
+
 fn set_locale_environment(locale: Locale) {
     unsafe { env::set_var("PLAINVIDEO_LOCALE", locale.canonical_tag()) };
 }
@@ -1665,5 +2371,65 @@ mod tests {
         assert!(layout.bar.left >= 0);
         assert!(layout.bar.right <= 560);
         assert!(layout.bar.bottom <= 480);
+    }
+
+    #[test]
+    fn playback_layout_stays_inside_small_windows_across_dpi_scales() {
+        for dpi in [96, 120, 144, 192, 240] {
+            for (logical_width, logical_height) in [(280, 240), (320, 240), (480, 270), (1280, 720)]
+            {
+                let width = scale_metric(logical_width, dpi);
+                let height = scale_metric(logical_height, dpi);
+                let layout = playback_layout_for_size(width, height, dpi)
+                    .expect("minimum-size playback layout");
+                let tolerance = 2;
+                assert!(layout.bar.left >= -tolerance);
+                assert!(layout.bar.top >= -tolerance);
+                assert!(layout.bar.right <= width + tolerance);
+                assert!(layout.bar.bottom <= height + tolerance);
+                assert!(layout.play_pause.right <= layout.seek.left);
+                assert!(layout.seek.right <= layout.volume.left);
+                assert!(layout.volume.right <= layout.subtitles.left);
+                assert!(layout.subtitles.right <= layout.fullscreen.left);
+                assert!(layout.seek.right - layout.seek.left + tolerance >= scale_metric(32, dpi));
+            }
+        }
+    }
+
+    #[test]
+    fn visible_seek_and_volume_track_endpoints_map_to_zero_and_one_hundred() {
+        let layout = playback_layout_for_size(280, 240, 96).expect("minimum layout");
+        let (seek_left, seek_right) = seek_track_bounds(&layout, 96);
+        assert_eq!(track_percent(seek_left, seek_left, seek_right), 0.0);
+        assert_eq!(track_percent(seek_right, seek_left, seek_right), 100.0);
+        assert_eq!(track_percent(seek_left - 50, seek_left, seek_right), 0.0);
+
+        let (volume_left, volume_right) = volume_track_bounds(&layout, 96);
+        assert_eq!(track_percent(volume_left, volume_left, volume_right), 0.0);
+        assert_eq!(
+            track_percent(volume_right + 50, volume_left, volume_right),
+            100.0
+        );
+    }
+
+    #[test]
+    fn wheel_delta_preserves_signed_high_word() {
+        assert_eq!(wheel_delta((120_u32 as usize) << 16), 120);
+        assert_eq!(wheel_delta(((u16::MAX - 119) as usize) << 16), -120);
+    }
+
+    #[test]
+    fn audio_labels_keep_metadata_compact() {
+        let track = AudioTrack {
+            id: 1,
+            title: Some("Commentary".to_string()),
+            language: Some("en".to_string()),
+            codec: Some("aac".to_string()),
+            channels: Some("2".to_string()),
+        };
+        assert_eq!(
+            audio_track_label(Locale::English.text(), &track, 0),
+            "Commentary · en · aac · 2"
+        );
     }
 }

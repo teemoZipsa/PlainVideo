@@ -1,5 +1,6 @@
 use std::ffi::{CStr, CString, c_char, c_double, c_int, c_void};
 use std::mem::size_of;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,8 +21,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 const MPV_EVENT_NONE: c_int = 0;
 const MPV_EVENT_SHUTDOWN: c_int = 1;
+const MPV_EVENT_END_FILE: c_int = 7;
 const MPV_EVENT_FILE_LOADED: c_int = 8;
 const MPV_EVENT_VIDEO_RECONFIG: c_int = 17;
+const MPV_END_FILE_REASON_EOF: c_int = 0;
+const MPV_END_FILE_REASON_ERROR: c_int = 4;
 const MPV_RENDER_PARAM_INVALID: c_int = 0;
 const MPV_RENDER_PARAM_API_TYPE: c_int = 1;
 const MPV_RENDER_PARAM_OPENGL_INIT_PARAMS: c_int = 2;
@@ -45,6 +49,15 @@ struct MpvEvent {
     error: c_int,
     reply_userdata: u64,
     data: *mut c_void,
+}
+
+#[repr(C)]
+struct MpvEventEndFile {
+    reason: c_int,
+    error: c_int,
+    playlist_entry_id: i64,
+    playlist_insert_id: i64,
+    playlist_insert_num_entries: c_int,
 }
 
 #[repr(C)]
@@ -72,7 +85,6 @@ type MpvInitialize = unsafe extern "C" fn(*mut MpvHandle) -> c_int;
 type MpvTerminateDestroy = unsafe extern "C" fn(*mut MpvHandle);
 type MpvSetOptionString =
     unsafe extern "C" fn(*mut MpvHandle, *const c_char, *const c_char) -> c_int;
-type MpvCommandAsync = unsafe extern "C" fn(*mut MpvHandle, u64, *const *const c_char) -> c_int;
 type MpvCommand = unsafe extern "C" fn(*mut MpvHandle, *const *const c_char) -> c_int;
 type MpvGetPropertyString = unsafe extern "C" fn(*mut MpvHandle, *const c_char) -> *mut c_char;
 type MpvFree = unsafe extern "C" fn(*mut c_void);
@@ -100,7 +112,6 @@ struct Api {
     terminate_destroy: MpvTerminateDestroy,
     set_option_string: MpvSetOptionString,
     command: MpvCommand,
-    command_async: MpvCommandAsync,
     get_property_string: MpvGetPropertyString,
     free: MpvFree,
     set_wakeup_callback: MpvSetWakeupCallback,
@@ -126,7 +137,6 @@ impl Api {
                 terminate_destroy: load_symbol(&library, b"mpv_terminate_destroy\0")?,
                 set_option_string: load_symbol(&library, b"mpv_set_option_string\0")?,
                 command: load_symbol(&library, b"mpv_command\0")?,
-                command_async: load_symbol(&library, b"mpv_command_async\0")?,
                 get_property_string: load_symbol(&library, b"mpv_get_property_string\0")?,
                 free: load_symbol(&library, b"mpv_free\0")?,
                 set_wakeup_callback: load_symbol(&library, b"mpv_set_wakeup_callback\0")?,
@@ -364,10 +374,21 @@ pub struct SubtitleTrack {
     pub external_filename: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AudioTrack {
+    pub id: i64,
+    pub title: Option<String>,
+    pub language: Option<String>,
+    pub codec: Option<String>,
+    pub channels: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EventSummary {
     pub keep_running: bool,
     pub media_ready: bool,
+    pub reached_end: bool,
+    pub playback_error: Option<String>,
 }
 
 impl Player {
@@ -458,22 +479,43 @@ impl Player {
         let render_error = Arc::new(Mutex::new(None));
         let worker_wake = Arc::clone(&render_wake);
         let worker_error = Arc::clone(&render_error);
+        let panic_wake = Arc::clone(&render_wake);
+        let panic_error = Arc::clone(&render_error);
         let render_address = render as usize;
         let hwnd_address = hwnd as usize;
         let render_thread = thread::Builder::new()
             .name("plainvideo-render".to_string())
             .spawn(move || {
-                render_worker(
-                    surface,
-                    render_address,
-                    render_functions,
-                    worker_wake,
-                    worker_error,
-                    hwnd_address,
-                    render_error_message,
-                );
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    render_worker(
+                        surface,
+                        render_address,
+                        render_functions,
+                        worker_wake,
+                        worker_error,
+                        hwnd_address,
+                        render_error_message,
+                    );
+                }));
+                if result.is_err() {
+                    *panic_error
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                        Some("PlainVideo's render thread stopped unexpectedly.".to_string());
+                    unsafe {
+                        PostMessageW(hwnd_address as HWND, render_error_message, 0, 0);
+                    }
+                    panic_wake.wait_until_stopped();
+                }
             })
-            .expect("PlainVideo could not start its render thread");
+            .map_err(|error| {
+                unsafe {
+                    (api.set_wakeup_callback)(handle, None, ptr::null_mut());
+                    (api.render_context_set_update_callback)(render, None, ptr::null_mut());
+                    (api.terminate_destroy)(handle);
+                }
+                format!("PlainVideo could not start its render thread: {error}")
+            })?;
 
         Ok(Self {
             api,
@@ -493,14 +535,18 @@ impl Player {
     ) -> Result<(), String> {
         let config_dir = root.join("assets").join("mpv");
         let script = config_dir.join("scripts").join("plainvideo.lua");
+        let diagnostic_log = std::env::var_os("PLAINVIDEO_DIAGNOSTIC_LOG");
+        let diagnostic_hwdec = diagnostic_log
+            .as_ref()
+            .and_then(|_| std::env::var("PLAINVIDEO_DIAGNOSTIC_HWDEC").ok())
+            .filter(|value| matches!(value.as_str(), "no" | "auto-safe"));
         let mut options = vec![
-            ("config", "yes".to_string()),
             ("config-dir", utf8_path(&config_dir)?),
+            ("config", "yes".to_string()),
             ("scripts", utf8_path(&script)?),
             ("load-scripts", "no".to_string()),
             ("vo", "libmpv".to_string()),
             ("gpu-api", "opengl".to_string()),
-            ("hwdec", "auto-safe".to_string()),
             ("input-default-bindings", "no".to_string()),
             ("input-vo-keyboard", "no".to_string()),
             ("terminal", "no".to_string()),
@@ -510,7 +556,7 @@ impl Player {
             ("force-window", "no".to_string()),
         ];
 
-        if let Some(log_path) = std::env::var_os("PLAINVIDEO_DIAGNOSTIC_LOG") {
+        if let Some(log_path) = diagnostic_log {
             options.push(("log-file", utf8_path(Path::new(&log_path))?));
             options.push(("msg-level", "all=v".to_string()));
         }
@@ -523,31 +569,19 @@ impl Player {
         if code < 0 {
             return Err(format!("libmpv initialization failed: {}", api.error(code)));
         }
+        if let Some(hwdec) = diagnostic_hwdec {
+            command_with(api.command, handle, &["set", "hwdec", &hwdec])?;
+        }
         Ok(())
     }
 
     pub fn command(&self, arguments: &[&str]) -> Result<(), String> {
-        let strings: Result<Vec<_>, _> =
-            arguments.iter().map(|value| CString::new(*value)).collect();
-        let strings =
-            strings.map_err(|_| "A libmpv command contained an embedded NUL.".to_string())?;
-        let mut pointers: Vec<_> = strings.iter().map(|value| value.as_ptr()).collect();
-        pointers.push(ptr::null());
-        let code = unsafe { (self.api.command_async)(self.handle, 0, pointers.as_ptr()) };
-        if code < 0 {
-            return Err(format!("libmpv command failed: {}", self.api.error(code)));
-        }
-        Ok(())
+        command_with(self.api.command, self.handle, arguments)
     }
 
     pub fn load_file(&self, path: &Path) -> Result<(), String> {
         let path = utf8_path(path)?;
         self.command(&["loadfile", &path, "replace"])
-    }
-
-    pub fn append_file(&self, path: &Path) -> Result<(), String> {
-        let path = utf8_path(path)?;
-        self.command(&["loadfile", &path, "append-play"])
     }
 
     pub fn script_binding(&self, name: &str) -> Result<(), String> {
@@ -578,6 +612,32 @@ impl Player {
             .collect()
     }
 
+    pub fn audio_tracks(&self) -> Vec<AudioTrack> {
+        let count = self
+            .property_string("track-list/count")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(0);
+
+        (0..count)
+            .filter_map(|index| {
+                let property =
+                    |field: &str| self.property_string(&format!("track-list/{index}/{field}"));
+                if property("type").as_deref() != Some("audio") {
+                    return None;
+                }
+                let id = property("id")?.parse::<i64>().ok()?;
+                Some(AudioTrack {
+                    id,
+                    title: non_empty(property("title")),
+                    language: non_empty(property("lang")),
+                    codec: non_empty(property("codec")),
+                    channels: non_empty(property("demux-channel-count"))
+                        .or_else(|| non_empty(property("audio-channels"))),
+                })
+            })
+            .collect()
+    }
+
     pub fn current_subtitle_id(&self) -> Option<i64> {
         self.property_string("sid")?.parse::<i64>().ok()
     }
@@ -593,7 +653,32 @@ impl Player {
 
     pub fn add_subtitle(&self, path: &Path) -> Result<(), String> {
         let path = utf8_path(path)?;
-        command_with(self.api.command, self.handle, &["sub-add", &path, "cached"])
+        command_with(self.api.command, self.handle, &["sub-add", &path, "select"])
+    }
+
+    pub fn current_audio_id(&self) -> Option<i64> {
+        self.property_string("aid")?.parse::<i64>().ok()
+    }
+
+    pub fn select_audio(&self, id: i64) -> Result<(), String> {
+        let id = id.to_string();
+        command_with(self.api.command, self.handle, &["set", "aid", &id])
+    }
+
+    pub fn disable_audio(&self) -> Result<(), String> {
+        command_with(self.api.command, self.handle, &["set", "aid", "no"])
+    }
+
+    pub fn volume(&self) -> f64 {
+        self.property_string("volume")
+            .and_then(|value| value.parse::<f64>().ok())
+            .unwrap_or(100.0)
+            .clamp(0.0, 100.0)
+    }
+
+    pub fn set_volume(&self, volume: f64) -> Result<(), String> {
+        let volume = format!("{:.2}", volume.clamp(0.0, 100.0));
+        command_with(self.api.command, self.handle, &["set", "volume", &volume])
     }
 
     pub fn video_dimensions(&self) -> Option<(u32, u32)> {
@@ -610,9 +695,19 @@ impl Player {
         (width > 0 && height > 0).then_some((width, height))
     }
 
-    pub fn seek_absolute_percent(&self, percent: f64) -> Result<(), String> {
+    pub fn is_seekable(&self) -> bool {
+        self.property_string("seekable")
+            .is_some_and(|value| matches!(value.as_str(), "yes" | "true"))
+    }
+
+    pub fn seek_absolute_percent(&self, percent: f64, exact: bool) -> Result<(), String> {
         let percent = percent.clamp(0.0, 100.0).to_string();
-        self.command(&["seek", &percent, "absolute-percent+exact"])
+        let mode = if exact {
+            "absolute-percent+exact"
+        } else {
+            "absolute-percent+keyframes"
+        };
+        self.command(&["seek", &percent, mode])
     }
 
     fn property_string(&self, name: &str) -> Option<String> {
@@ -644,6 +739,8 @@ impl Player {
         let mut summary = EventSummary {
             keep_running: true,
             media_ready: false,
+            reached_end: false,
+            playback_error: None,
         };
         loop {
             let event = unsafe { (self.api.wait_event)(self.handle, 0.0) };
@@ -656,7 +753,23 @@ impl Player {
                     summary.keep_running = false;
                     return summary;
                 }
-                MPV_EVENT_FILE_LOADED | MPV_EVENT_VIDEO_RECONFIG => summary.media_ready = true,
+                MPV_EVENT_END_FILE => {
+                    let data = unsafe { (*event).data.cast::<MpvEventEndFile>().as_ref() };
+                    if let Some(data) = data {
+                        if data.reason == MPV_END_FILE_REASON_ERROR {
+                            summary.playback_error =
+                                Some(format!("Playback stopped: {}", self.api.error(data.error)));
+                        } else if data.reason == MPV_END_FILE_REASON_EOF {
+                            summary.reached_end = true;
+                        }
+                    }
+                }
+                MPV_EVENT_FILE_LOADED => {
+                    summary.media_ready = true;
+                    summary.reached_end = false;
+                    summary.playback_error = None;
+                }
+                MPV_EVENT_VIDEO_RECONFIG => summary.media_ready = true,
                 _ => {}
             }
         }
@@ -984,9 +1097,13 @@ fn set_option(api: &Api, handle: *mut MpvHandle, name: &str, value: &str) -> Res
 }
 
 fn utf8_path(path: &Path) -> Result<String, String> {
-    path.to_str()
-        .map(str::to_owned)
-        .ok_or_else(|| format!("Path is not valid Unicode: {}", path.display()))
+    let value = path
+        .to_str()
+        .ok_or_else(|| format!("Path is not valid Unicode: {}", path.display()))?;
+    if let Some(unc) = value.strip_prefix(r"\\?\UNC\") {
+        return Ok(format!(r"\\{unc}"));
+    }
+    Ok(value.strip_prefix(r"\\?\").unwrap_or(value).to_owned())
 }
 
 pub fn diagnostic_replacement() -> Option<PathBuf> {
@@ -1004,5 +1121,24 @@ mod tests {
             utf8_path(path).expect("Unicode path"),
             r"C:\영상\sample.mkv"
         );
+    }
+
+    #[test]
+    fn utf8_paths_remove_windows_verbatim_prefixes_for_libmpv() {
+        assert_eq!(
+            utf8_path(Path::new(r"\\?\C:\영상\sample.mkv")).expect("drive path"),
+            r"C:\영상\sample.mkv"
+        );
+        assert_eq!(
+            utf8_path(Path::new(r"\\?\UNC\server\share\sample.mkv")).expect("UNC path"),
+            r"\\server\share\sample.mkv"
+        );
+    }
+
+    #[test]
+    fn pinned_end_file_layout_matches_mpv_client_header() {
+        assert_eq!(size_of::<MpvEventEndFile>(), 32);
+        assert_eq!(MPV_END_FILE_REASON_EOF, 0);
+        assert_eq!(MPV_END_FILE_REASON_ERROR, 4);
     }
 }

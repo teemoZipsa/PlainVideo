@@ -7,8 +7,15 @@ local window_controls_visible = false
 local surface_theme = "dark"
 local window_pinned = false
 local window_control_hover = "none"
+local playback_control_hover = "none"
+local pressed_control = "none"
+local focused_control = "none"
 local ui_scale = 1.0
 local text_scale = 1.0
+local playback_error_title = nil
+local playback_error_hint = nil
+local status_message = nil
+local status_timer = nil
 
 local TYPE_SIZE = {
     primary = 22,
@@ -20,6 +27,13 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     idle_title = "여기에 영상을 놓으세요",
     idle_hint = "또는 Ctrl+O로 열기",
     volume = "볼륨",
+    live = "라이브",
+    play = "재생",
+    pause = "일시정지",
+    mute = "음소거",
+    unmute = "음소거 해제",
+    subtitles = "자막",
+    fullscreen = "전체화면",
     light_mode = "라이트 모드",
     dark_mode = "다크 모드",
     pin = "항상 위",
@@ -30,6 +44,13 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     idle_title = "Drop a video here",
     idle_hint = "or press Ctrl+O to open",
     volume = "Volume",
+    live = "LIVE",
+    play = "Play",
+    pause = "Pause",
+    mute = "Mute",
+    unmute = "Unmute",
+    subtitles = "Subtitles",
+    fullscreen = "Full screen",
     light_mode = "Light mode",
     dark_mode = "Dark mode",
     pin = "Always on top",
@@ -84,15 +105,18 @@ local function px(value)
 end
 
 local function type_size(tier, width, height)
-    local viewport_scale = clamp(math.min(width / 1280, height / 720), 0.78, 1.35)
+    local safe_ui_scale = math.max(ui_scale, 0.01)
+    local logical_width = width / safe_ui_scale
+    local logical_height = height / safe_ui_scale
+    local viewport_scale = clamp(math.min(logical_width / 1280, logical_height / 720), 0.78, 1.35)
     local accessibility_cap = 2.0
-    if width < 520 * ui_scale or height < 320 * ui_scale then
+    if logical_width < 520 or logical_height < 320 then
         accessibility_cap = tier == "primary" and 1.28 or 1.20
-    elseif width < 760 * ui_scale then
+    elseif logical_width < 760 then
         accessibility_cap = tier == "primary" and 1.55 or 1.40
     end
     local accessibility_scale = math.min(text_scale, accessibility_cap)
-    return math.floor(TYPE_SIZE[tier] * viewport_scale * accessibility_scale + 0.5)
+    return math.floor(TYPE_SIZE[tier] * viewport_scale * accessibility_scale * safe_ui_scale + 0.5)
 end
 
 local function ass_escape(value)
@@ -174,7 +198,7 @@ end
 
 local function draw_idle(width, height)
     local palette = theme_palette()
-    local scale = clamp(math.min(width / 1280, height / 720), 0.78, 1.35)
+    local scale = clamp(math.min(width / ui_scale / 1280, height / ui_scale / 720), 0.78, 1.35) * ui_scale
     local center_x = math.floor(width / 2)
     local center_y = math.floor(height / 2)
     local tile = math.floor(56 * scale)
@@ -229,9 +253,32 @@ local function draw_idle(width, height)
     return table.concat({ background_event, tile_event, icon_event, title_event, hint_event }, "\n")
 end
 
+local function draw_playback_error(width, height)
+    local palette = theme_palette()
+    local center_x = math.floor(width / 2)
+    local center_y = math.floor(height / 2)
+    local tile = px(56)
+    local events = {
+        box_event(0, 0, width, height, 0, palette.app, "&H00&"),
+        box_event(center_x - math.floor(tile / 2), center_y - px(78),
+            center_x + math.floor(tile / 2), center_y - px(78) + tile,
+            px(16), palette.danger, "&H28&"),
+        text_event(5, center_x, center_y - px(50), type_size("primary", width, height),
+            palette.text, "&H08&", true, "!"),
+        text_event(5, center_x, center_y + px(10), type_size("primary", width, height),
+            palette.text, "&H08&", true, playback_error_title or ""),
+    }
+    if width >= px(360) and height >= px(250) then
+        table.insert(events, text_event(5, center_x, center_y + px(42),
+            type_size("secondary", width, height), palette.muted, "&H18&", false,
+            playback_error_hint or ""))
+    end
+    return table.concat(events, "\n")
+end
+
 local function draw_playback_feedback(width, height, kind)
     local palette = theme_palette()
-    local scale = clamp(math.min(width / 1280, height / 720), 0.82, 1.35)
+    local scale = clamp(math.min(width / ui_scale / 1280, height / ui_scale / 720), 0.82, 1.35) * ui_scale
     local center_x = math.floor(width / 2)
     local center_y = math.floor(height / 2)
     local tile = math.floor(68 * scale)
@@ -439,9 +486,15 @@ local function draw_window_controls(width, height)
             background = palette.accent
             alpha = "&H38&"
         end
-        if window_control_hover == name then
+        if window_control_hover == name or pressed_control == name or focused_control == name then
             background = name == "close" and palette.danger or palette.hover
             alpha = "&H24&"
+        end
+        if focused_control == name then
+            table.insert(events, box_event(
+                button_left - px(2), top - px(2), button_right + px(2), top + size + px(2),
+                px(10), palette.accent, "&H20&"
+            ))
         end
         table.insert(events, box_event(button_left, top, button_right, top + size, px(8), background, alpha))
 
@@ -460,16 +513,18 @@ local function draw_window_controls(width, height)
         end
     end
 
-    if window_control_hover ~= "none" then
+    local tooltip_control = window_control_hover ~= "none" and window_control_hover or focused_control
+    if tooltip_control == "theme" or tooltip_control == "pin"
+        or tooltip_control == "minimize" or tooltip_control == "close" then
         local label
         local index
-        if window_control_hover == "theme" then
+        if tooltip_control == "theme" then
             label = surface_theme == "dark" and copy.light_mode or copy.dark_mode
             index = 1
-        elseif window_control_hover == "pin" then
+        elseif tooltip_control == "pin" then
             label = window_pinned and copy.unpin or copy.pin
             index = 2
-        elseif window_control_hover == "minimize" then
+        elseif tooltip_control == "minimize" then
             label = copy.minimize
             index = 3
         else
@@ -545,14 +600,31 @@ local function draw_fullscreen_icon(center_x, center_y, palette)
     return path_event(path, palette.text, "&H08&")
 end
 
+local function append_control_tile(events, name, left, top, right, bottom, palette)
+    local background = palette.surface
+    local alpha = palette.surface_alpha
+    if playback_control_hover == name or pressed_control == name or focused_control == name then
+        background = palette.hover
+        alpha = "&H24&"
+    end
+    if focused_control == name then
+        table.insert(events, box_event(
+            left - px(2), top - px(2), right + px(2), bottom + px(2),
+            px(11), palette.accent, "&H20&"
+        ))
+    end
+    table.insert(events, box_event(left, top, right, bottom, px(9), background, alpha))
+end
+
 local function draw_playback_controls(width, height)
     local outer_margin = px(12)
     local bar_height = px(56)
     local button = px(36)
+    local volume_width = px(64)
     local gap = px(6)
     local inner_margin = px(10)
     local bar_width = math.min(width - outer_margin * 2, px(860))
-    local minimum_width = button * 4 + gap * 4 + inner_margin * 2 + px(32)
+    local minimum_width = button * 3 + volume_width + gap * 4 + inner_margin * 2 + px(32)
     if bar_width < minimum_width or height < bar_height + outer_margin * 2 then
         return ""
     end
@@ -568,12 +640,13 @@ local function draw_playback_controls(width, height)
     local play_left = inner_left
     local fullscreen_left = inner_right - button
     local subtitle_left = fullscreen_left - gap - button
-    local mute_left = subtitle_left - gap - button
+    local volume_left = subtitle_left - gap - volume_width
     local seek_left = play_left + button + gap
-    local seek_right = mute_left - gap
+    local seek_right = volume_left - gap
     local center_y = control_top + math.floor(button / 2)
     local duration = mp.get_property_number("duration", 0)
     local position = mp.get_property_number("time-pos", 0)
+    local seekable = mp.get_property_bool("seekable", duration > 0)
     local progress = duration > 0 and clamp(position / duration, 0, 1) or 0
     local track_left = seek_left + px(4)
     local track_right = seek_right - px(4)
@@ -582,30 +655,96 @@ local function draw_playback_controls(width, height)
     local filled = track_left + math.floor((track_right - track_left) * progress)
     local events = {
         box_event(left, top, right, bottom, px(16), palette.panel, palette.panel_alpha),
-        box_event(play_left, control_top, play_left + button, control_top + button, px(9), palette.surface, palette.surface_alpha),
-        box_event(mute_left, control_top, mute_left + button, control_top + button, px(9), palette.surface, palette.surface_alpha),
-        box_event(subtitle_left, control_top, subtitle_left + button, control_top + button, px(9), palette.surface, palette.surface_alpha),
-        box_event(fullscreen_left, control_top, fullscreen_left + button, control_top + button, px(9), palette.surface, palette.surface_alpha),
-        box_event(track_left, track_top, track_right, track_bottom, px(2), palette.track, "&H58&"),
     }
-    if filled > track_left then
-        table.insert(events, box_event(track_left, track_top, filled, track_bottom, px(2), palette.accent, "&H08&"))
+    append_control_tile(events, "play", play_left, control_top, play_left + button, control_top + button, palette)
+    append_control_tile(events, "volume", volume_left, control_top, volume_left + volume_width, control_top + button, palette)
+    append_control_tile(events, "subtitles", subtitle_left, control_top, subtitle_left + button, control_top + button, palette)
+    append_control_tile(events, "fullscreen", fullscreen_left, control_top, fullscreen_left + button, control_top + button, palette)
+
+    if seekable and duration > 0 then
+        table.insert(events, box_event(track_left, track_top, track_right, track_bottom, px(2), palette.track, "&H58&"))
+        if filled > track_left then
+            table.insert(events, box_event(track_left, track_top, filled, track_bottom, px(2), palette.accent, "&H08&"))
+        end
+    else
+        table.insert(events, text_event(5, math.floor((seek_left + seek_right) / 2), center_y,
+            type_size("secondary", width, height), palette.secondary, "&H10&", true, copy.live))
     end
+
     table.insert(events, draw_play_pause_icon(play_left + math.floor(button / 2), center_y, palette))
-    table.insert(events, draw_speaker_icon(mute_left + math.floor(button / 2), center_y, palette))
+    local speaker_x = volume_left + px(13)
+    table.insert(events, draw_speaker_icon(speaker_x, center_y, palette))
+    local volume_track_left = volume_left + px(30)
+    local volume_track_right = volume_left + volume_width - px(6)
+    local volume = clamp(mp.get_property_number("volume", 100) / 100, 0, 1)
+    local volume_filled = volume_track_left + math.floor((volume_track_right - volume_track_left) * volume)
+    table.insert(events, box_event(volume_track_left, center_y - px(2), volume_track_right,
+        center_y + px(1), px(2), palette.track, "&H58&"))
+    if volume_filled > volume_track_left and not mp.get_property_bool("mute", false) then
+        table.insert(events, box_event(volume_track_left, center_y - px(2), volume_filled,
+            center_y + px(1), px(2), palette.accent, "&H08&"))
+    end
+    local sid = mp.get_property("sid", "no")
+    local subtitle_active = sid ~= "no" and sid ~= "false" and sid ~= "auto"
     table.insert(events, text_event(
         5, subtitle_left + math.floor(button / 2), center_y,
-        type_size("secondary", width, height), palette.text, "&H08&", true, "CC"
+        type_size("secondary", width, height), subtitle_active and palette.accent or palette.text,
+        "&H08&", true, "CC"
     ))
     table.insert(events, draw_fullscreen_icon(fullscreen_left + math.floor(button / 2), center_y, palette))
-    if seek_right - seek_left >= px(180) then
+    if seekable and seek_right - seek_left >= px(180) then
         local label_y = top + px(42)
         table.insert(events, text_event(4, seek_left + px(4), label_y,
             type_size("secondary", width, height), palette.secondary, "&H10&", false, format_time(position)))
         table.insert(events, text_event(6, seek_right - px(4), label_y,
             type_size("secondary", width, height), palette.secondary, "&H10&", false, format_time(duration)))
     end
+
+    local tooltip_name = playback_control_hover ~= "none" and playback_control_hover or focused_control
+    local tooltip_label = nil
+    local tooltip_center = nil
+    if tooltip_name == "play" then
+        tooltip_label = mp.get_property_bool("pause", false) and copy.play or copy.pause
+        tooltip_center = play_left + math.floor(button / 2)
+    elseif tooltip_name == "volume" then
+        tooltip_label = mp.get_property_bool("mute", false) and copy.unmute or copy.mute
+        tooltip_center = volume_left + math.floor(volume_width / 2)
+    elseif tooltip_name == "subtitles" then
+        tooltip_label = copy.subtitles
+        tooltip_center = subtitle_left + math.floor(button / 2)
+    elseif tooltip_name == "fullscreen" then
+        tooltip_label = copy.fullscreen
+        tooltip_center = fullscreen_left + math.floor(button / 2)
+    end
+    if tooltip_label and top >= px(42) then
+        local tooltip_width = math.min(px(150), width - outer_margin * 2)
+        tooltip_center = clamp(tooltip_center, math.floor(tooltip_width / 2) + outer_margin,
+            width - math.floor(tooltip_width / 2) - outer_margin)
+        table.insert(events, box_event(tooltip_center - math.floor(tooltip_width / 2), top - px(36),
+            tooltip_center + math.floor(tooltip_width / 2), top - px(6), px(8),
+            palette.panel, palette.panel_alpha))
+        table.insert(events, text_event(5, tooltip_center, top - px(21),
+            type_size("secondary", width, height), palette.text, "&H08&", false, tooltip_label))
+    end
     return table.concat(events, "\n")
+end
+
+local function draw_status(width, height)
+    if not status_message or status_message == "" then
+        return ""
+    end
+    local palette = theme_palette()
+    local status_width = math.min(width - px(24), px(420))
+    if status_width <= px(80) then
+        return ""
+    end
+    local center_x = math.floor(width / 2)
+    local top = math.min(height - px(52), px(68))
+    return box_event(center_x - math.floor(status_width / 2), top,
+        center_x + math.floor(status_width / 2), top + px(36), px(10),
+        palette.panel, palette.panel_alpha) .. "\n" ..
+        text_event(5, center_x, top + px(18), type_size("secondary", width, height),
+            palette.text, "&H08&", false, status_message)
 end
 
 local function draw_surface()
@@ -614,7 +753,9 @@ local function draw_surface()
     -- not flash an unexplained black surface.
     local is_idle = mp.get_property_bool("idle-active", false) or mp.get_property("path") == nil
 
-    if not is_idle and feedback_kind == nil and not window_controls_visible then
+    local has_playback_error = playback_error_title ~= nil
+    if not is_idle and not has_playback_error and feedback_kind == nil
+        and status_message == nil and not window_controls_visible then
         overlay:remove()
         return
     end
@@ -629,7 +770,9 @@ local function draw_surface()
     overlay:remove()
 
     local events = {}
-    if is_idle then
+    if has_playback_error then
+        table.insert(events, draw_playback_error(width, height))
+    elseif is_idle then
         table.insert(events, draw_idle(width, height))
     elseif feedback_kind == "pause" or feedback_kind == "play" then
         table.insert(events, draw_playback_feedback(width, height, feedback_kind))
@@ -640,10 +783,40 @@ local function draw_surface()
     end
     if window_controls_visible then
         table.insert(events, draw_window_controls(width, height))
-        table.insert(events, draw_playback_controls(width, height))
+        if not has_playback_error and not is_idle then
+            table.insert(events, draw_playback_controls(width, height))
+        end
+    end
+    if status_message ~= nil then
+        table.insert(events, draw_status(width, height))
     end
     overlay.data = table.concat(events, "\n")
     overlay:update()
+end
+
+local function set_playback_status(state, title, hint)
+    if state == "error" then
+        playback_error_title = title ~= "" and title or nil
+        playback_error_hint = hint ~= "" and hint or nil
+    else
+        playback_error_title = nil
+        playback_error_hint = nil
+    end
+    draw_surface()
+end
+
+local function show_status_message(message)
+    status_message = message ~= "" and message or nil
+    if status_timer then
+        status_timer:kill()
+    end
+    if status_message then
+        status_timer = mp.add_timeout(1.8, function()
+            status_message = nil
+            draw_surface()
+        end)
+    end
+    draw_surface()
 end
 
 local function show_feedback(kind, duration)
@@ -675,13 +848,17 @@ local function change_volume(amount)
     show_feedback("volume", 0.9)
 end
 
-local function set_window_controls(visible, theme, pinned, hovered, next_ui_scale, next_text_scale)
+local function set_window_controls(visible, theme, pinned, hovered, next_ui_scale, next_text_scale,
+    playback_hovered, pressed, focused)
     window_controls_visible = visible == "yes"
     surface_theme = theme == "light" and "light" or "dark"
     window_pinned = pinned == "yes"
     window_control_hover = hovered or "none"
     ui_scale = clamp(tonumber(next_ui_scale) or 1.0, 0.75, 4.0)
     text_scale = clamp(tonumber(next_text_scale) or 1.0, 1.0, 2.25)
+    playback_control_hover = playback_hovered or "none"
+    pressed_control = pressed or "none"
+    focused_control = focused or "none"
     draw_surface()
 end
 
@@ -693,6 +870,11 @@ mp.add_key_binding(nil, "seek-forward-large", function() seek(30) end)
 mp.add_key_binding(nil, "volume-up", function() change_volume(2) end)
 mp.add_key_binding(nil, "volume-down", function() change_volume(-2) end)
 mp.register_script_message("plainvideo-window-controls", set_window_controls)
+mp.register_script_message("plainvideo-playback-status", set_playback_status)
+mp.register_script_message("plainvideo-status", show_status_message)
+mp.register_script_message("plainvideo-volume-feedback", function()
+    show_feedback("volume", 0.9)
+end)
 
 mp.observe_property("idle-active", "bool", draw_surface)
 mp.observe_property("path", "string", draw_surface)
@@ -709,6 +891,15 @@ mp.observe_property("volume", "number", function()
     if window_controls_visible then draw_surface() end
 end)
 mp.observe_property("mute", "bool", function()
+    if window_controls_visible then draw_surface() end
+end)
+mp.observe_property("sid", "native", function()
+    if window_controls_visible then draw_surface() end
+end)
+mp.observe_property("aid", "native", function()
+    if window_controls_visible then draw_surface() end
+end)
+mp.observe_property("seekable", "bool", function()
     if window_controls_visible then draw_surface() end
 end)
 mp.register_event("file-loaded", draw_surface)
