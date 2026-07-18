@@ -63,6 +63,10 @@ impl MediaQueue {
             .map(PathBuf::as_path)
     }
 
+    pub fn position(&self) -> Option<(usize, usize)> {
+        self.current.map(|index| (index + 1, self.paths.len()))
+    }
+
     pub fn can_previous(&self) -> bool {
         self.current.is_some_and(|index| index > 0)
     }

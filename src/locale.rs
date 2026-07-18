@@ -8,6 +8,8 @@ pub enum Locale {
 
 pub struct UiText {
     pub open_video: &'static str,
+    pub play_video: &'static str,
+    pub pause_video: &'static str,
     pub previous_video: &'static str,
     pub next_video: &'static str,
     pub retry_video: &'static str,
@@ -20,6 +22,10 @@ pub struct UiText {
     pub audio_off: &'static str,
     pub no_audio_tracks: &'static str,
     pub audio_track: &'static str,
+    pub playback_speed: &'static str,
+    pub save_screenshot: &'static str,
+    pub open_file_location: &'static str,
+    pub fullscreen: &'static str,
     pub close: &'static str,
     pub file_dialog_title: &'static str,
     pub media_files: &'static str,
@@ -34,6 +40,8 @@ pub struct UiText {
 
 const KOREAN: UiText = UiText {
     open_video: "영상 열기…\tCtrl+O",
+    play_video: "재생\tSpace",
+    pause_video: "일시정지\tSpace",
     previous_video: "이전 영상\tPage Up",
     next_video: "다음 영상\tPage Down",
     retry_video: "다시 시도\tR",
@@ -46,6 +54,10 @@ const KOREAN: UiText = UiText {
     audio_off: "오디오 끄기",
     no_audio_tracks: "오디오 트랙 없음",
     audio_track: "오디오",
+    playback_speed: "재생 속도",
+    save_screenshot: "스크린샷 저장\tS",
+    open_file_location: "파일 위치 열기",
+    fullscreen: "전체 화면\tF",
     close: "닫기\tAlt+F4",
     file_dialog_title: "영상 열기",
     media_files: "미디어 파일",
@@ -60,6 +72,8 @@ const KOREAN: UiText = UiText {
 
 const ENGLISH: UiText = UiText {
     open_video: "Open video…\tCtrl+O",
+    play_video: "Play\tSpace",
+    pause_video: "Pause\tSpace",
     previous_video: "Previous video\tPage Up",
     next_video: "Next video\tPage Down",
     retry_video: "Try again\tR",
@@ -72,6 +86,10 @@ const ENGLISH: UiText = UiText {
     audio_off: "Off",
     no_audio_tracks: "No audio tracks",
     audio_track: "Audio",
+    playback_speed: "Playback speed",
+    save_screenshot: "Save screenshot\tS",
+    open_file_location: "Open file location",
+    fullscreen: "Full screen\tF",
     close: "Close\tAlt+F4",
     file_dialog_title: "Open video",
     media_files: "Media files",
@@ -147,6 +165,8 @@ mod tests {
         for locale in [Locale::Korean, Locale::English] {
             let text = locale.text();
             assert!(!text.open_video.is_empty());
+            assert!(!text.play_video.is_empty());
+            assert!(!text.pause_video.is_empty());
             assert!(!text.previous_video.is_empty());
             assert!(!text.next_video.is_empty());
             assert!(!text.retry_video.is_empty());
@@ -159,6 +179,10 @@ mod tests {
             assert!(!text.audio_off.is_empty());
             assert!(!text.no_audio_tracks.is_empty());
             assert!(!text.audio_track.is_empty());
+            assert!(!text.playback_speed.is_empty());
+            assert!(!text.save_screenshot.is_empty());
+            assert!(!text.open_file_location.is_empty());
+            assert!(!text.fullscreen.is_empty());
             assert!(!text.close.is_empty());
             assert!(!text.file_dialog_title.is_empty());
             assert!(!text.media_files.is_empty());

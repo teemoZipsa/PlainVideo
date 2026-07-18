@@ -21,10 +21,12 @@ use windows_sys::Win32::UI::HiDpi::{
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetDoubleClickTime, GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT,
-    TrackMouseEvent, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_F, VK_LEFT, VK_NEXT, VK_O, VK_PRIOR,
+    TrackMouseEvent, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_F, VK_F6, VK_LEFT, VK_NEXT, VK_O, VK_PRIOR,
     VK_RETURN, VK_RIGHT, VK_S, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
 };
-use windows_sys::Win32::UI::Shell::{DragAcceptFiles, DragFinish, DragQueryFileW, HDROP};
+use windows_sys::Win32::UI::Shell::{
+    DragAcceptFiles, DragFinish, DragQueryFileW, HDROP, ShellExecuteW,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CS_DBLCLKS, CS_OWNDC, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
     DestroyMenu, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
@@ -33,15 +35,16 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     HWND_TOPMOST, IDC_ARROW, IDC_HAND, IDC_SIZEALL, IsZoomed, KillTimer, LoadCursorW, MF_CHECKED,
     MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MINMAXINFO, MSG, PostQuitMessage,
     RegisterClassExW, SIZE_MINIMIZED, SM_CXSCREEN, SM_CYSCREEN, SW_MAXIMIZE, SW_MINIMIZE,
-    SW_RESTORE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
-    SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, SetWindowTextW, ShowCursor, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    TrackPopupMenu, TranslateMessage, WM_APP, WM_CANCELMODE, WM_CAPTURECHANGED, WM_CLOSE,
-    WM_CONTEXTMENU, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES, WM_DWMCOMPOSITIONCHANGED,
+    SW_RESTORE, SW_SHOW, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetForegroundWindow, SetTimer,
+    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowCursor, ShowWindow, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP, WM_CANCELMODE, WM_CAPTURECHANGED,
+    WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES, WM_DWMCOMPOSITIONCHANGED,
     WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_PAINT, WM_QUIT,
-    WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES,
-    WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST,
+    WM_NCPAINT, WM_PAINT, WM_QUIT, WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WNDCLASSEXW,
+    WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
+    WS_THICKFRAME,
 };
 
 use crate::locale::{Locale, UiText};
@@ -78,9 +81,21 @@ const MENU_PREVIOUS: usize = 101;
 const MENU_CLOSE: usize = 102;
 const MENU_NEXT: usize = 103;
 const MENU_RETRY: usize = 104;
+const MENU_PLAY_PAUSE: usize = 105;
+const MENU_SCREENSHOT: usize = 106;
+const MENU_OPEN_LOCATION: usize = 107;
+const MENU_FULLSCREEN: usize = 108;
 const MENU_SUBTITLE_OFF: usize = 200;
 const MENU_SUBTITLE_OPEN: usize = 201;
 const MENU_AUDIO_OFF: usize = 300;
+const PLAYBACK_SPEEDS: [(usize, &str, f64); 6] = [
+    (400, "0.5×", 0.5),
+    (401, "0.75×", 0.75),
+    (402, "1.0×", 1.0),
+    (403, "1.25×", 1.25),
+    (404, "1.5×", 1.5),
+    (405, "2.0×", 2.0),
+];
 const MENU_SUBTITLE_TRACK_BASE: usize = 1_000;
 const MENU_AUDIO_TRACK_BASE: usize = 2_000;
 
@@ -251,7 +266,6 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         ShowWindow(window.hwnd, SW_SHOW);
         UpdateWindow(window.hwnd);
     }
-
     if has_initial_media {
         app.load_current();
         app.note_pointer_activity(window.hwnd);
@@ -636,6 +650,22 @@ impl App {
         let _ = self
             .player
             .command(&["script-message", "plainvideo-status", message]);
+    }
+
+    fn toggle_media_info(&mut self) {
+        if !self.has_media || self.playback_error_visible {
+            return;
+        }
+        let (position, count) = self.media_queue.position().unwrap_or((1, 1));
+        let position = position.to_string();
+        let count = count.to_string();
+        self.command(&[
+            "script-message",
+            "plainvideo-media-info",
+            "toggle",
+            &position,
+            &count,
+        ]);
     }
 
     fn cycle_keyboard_focus(&mut self, reverse: bool) {
@@ -1025,16 +1055,21 @@ impl App {
         }
         let subtitle_menu = unsafe { CreatePopupMenu() };
         let audio_menu = unsafe { CreatePopupMenu() };
-        if subtitle_menu.is_null() || audio_menu.is_null() {
+        let speed_menu = unsafe { CreatePopupMenu() };
+        if subtitle_menu.is_null() || audio_menu.is_null() || speed_menu.is_null() {
             if !subtitle_menu.is_null() {
                 unsafe { DestroyMenu(subtitle_menu) };
             }
             if !audio_menu.is_null() {
                 unsafe { DestroyMenu(audio_menu) };
             }
+            if !speed_menu.is_null() {
+                unsafe { DestroyMenu(speed_menu) };
+            }
             unsafe { DestroyMenu(menu) };
             return;
         }
+        let has_playable_media = self.has_media && !self.playback_error_visible;
         let text = self.locale.text();
         let subtitle_tracks = self.player.subtitle_tracks();
         let audio_tracks = self.player.audio_tracks();
@@ -1051,6 +1086,11 @@ impl App {
             .map(|(index, track)| (MENU_AUDIO_TRACK_BASE + index, track.id))
             .collect();
         let open = wide(text.open_video);
+        let play_pause = wide(if self.player.is_paused() {
+            text.play_video
+        } else {
+            text.pause_video
+        });
         let previous = wide(text.previous_video);
         let next = wide(text.next_video);
         let retry = wide(text.retry_video);
@@ -1061,36 +1101,44 @@ impl App {
         let audio = wide(text.audio);
         let audio_off = wide(text.audio_off);
         let no_audio_tracks = wide(text.no_audio_tracks);
+        let playback_speed = wide(text.playback_speed);
+        let save_screenshot = wide(text.save_screenshot);
+        let open_file_location_label = wide(text.open_file_location);
+        let fullscreen = wide(text.fullscreen);
         let close = wide(text.close);
+        let current_speed = self.player.playback_speed();
         unsafe {
             AppendMenuW(menu, MF_STRING, MENU_OPEN, open.as_ptr());
             if self.playback_error_visible {
                 AppendMenuW(menu, MF_STRING, MENU_RETRY, retry.as_ptr());
             }
-            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
-            AppendMenuW(
-                menu,
-                MF_STRING
-                    | if self.media_queue.can_previous() {
-                        0
-                    } else {
-                        MF_GRAYED
-                    },
-                MENU_PREVIOUS,
-                previous.as_ptr(),
-            );
-            AppendMenuW(
-                menu,
-                MF_STRING
-                    | if self.media_queue.can_next() {
-                        0
-                    } else {
-                        MF_GRAYED
-                    },
-                MENU_NEXT,
-                next.as_ptr(),
-            );
-            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
+            if has_playable_media {
+                AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
+                AppendMenuW(menu, MF_STRING, MENU_PLAY_PAUSE, play_pause.as_ptr());
+                AppendMenuW(
+                    menu,
+                    MF_STRING
+                        | if self.media_queue.can_previous() {
+                            0
+                        } else {
+                            MF_GRAYED
+                        },
+                    MENU_PREVIOUS,
+                    previous.as_ptr(),
+                );
+                AppendMenuW(
+                    menu,
+                    MF_STRING
+                        | if self.media_queue.can_next() {
+                            0
+                        } else {
+                            MF_GRAYED
+                        },
+                    MENU_NEXT,
+                    next.as_ptr(),
+                );
+                AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
+            }
             AppendMenuW(
                 subtitle_menu,
                 MF_STRING
@@ -1132,7 +1180,9 @@ impl App {
                 MENU_SUBTITLE_OPEN,
                 open_subtitle.as_ptr(),
             );
-            AppendMenuW(menu, MF_POPUP, subtitle_menu as usize, subtitles.as_ptr());
+            if has_playable_media {
+                AppendMenuW(menu, MF_POPUP, subtitle_menu as usize, subtitles.as_ptr());
+            }
             AppendMenuW(
                 audio_menu,
                 MF_STRING
@@ -1167,7 +1217,33 @@ impl App {
                     );
                 }
             }
-            AppendMenuW(menu, MF_POPUP, audio_menu as usize, audio.as_ptr());
+            if has_playable_media {
+                AppendMenuW(menu, MF_POPUP, audio_menu as usize, audio.as_ptr());
+                for (command, label, speed) in PLAYBACK_SPEEDS {
+                    let label = wide(label);
+                    AppendMenuW(
+                        speed_menu,
+                        MF_STRING
+                            | if (current_speed - speed).abs() < 0.001 {
+                                MF_CHECKED
+                            } else {
+                                0
+                            },
+                        command,
+                        label.as_ptr(),
+                    );
+                }
+                AppendMenuW(menu, MF_POPUP, speed_menu as usize, playback_speed.as_ptr());
+                AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
+                AppendMenuW(menu, MF_STRING, MENU_SCREENSHOT, save_screenshot.as_ptr());
+                AppendMenuW(
+                    menu,
+                    MF_STRING,
+                    MENU_OPEN_LOCATION,
+                    open_file_location_label.as_ptr(),
+                );
+                AppendMenuW(menu, MF_STRING, MENU_FULLSCREEN, fullscreen.as_ptr());
+            }
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             AppendMenuW(menu, MF_STRING, MENU_CLOSE, close.as_ptr());
             SetForegroundWindow(hwnd);
@@ -1182,6 +1258,11 @@ impl App {
                 hwnd,
                 ptr::null(),
             ) as usize;
+            if !has_playable_media {
+                DestroyMenu(subtitle_menu);
+                DestroyMenu(audio_menu);
+                DestroyMenu(speed_menu);
+            }
             DestroyMenu(menu);
             match selected {
                 MENU_OPEN => {
@@ -1194,6 +1275,20 @@ impl App {
                     self.next_video();
                 }
                 MENU_RETRY => self.retry_video(),
+                MENU_PLAY_PAUSE => {
+                    self.binding("plainvideo/toggle-pause");
+                }
+                MENU_SCREENSHOT => {
+                    self.command(&["screenshot"]);
+                }
+                MENU_OPEN_LOCATION => {
+                    if let Some(path) = self.active_path.clone() {
+                        if let Err(error) = open_file_location(hwnd, &path) {
+                            self.operation_error(error);
+                        }
+                    }
+                }
+                MENU_FULLSCREEN => self.toggle_fullscreen(hwnd),
                 MENU_SUBTITLE_OFF => {
                     self.disable_subtitles_ui();
                 }
@@ -1226,6 +1321,12 @@ impl App {
                         if let Err(error) = self.player.select_audio(*track_id) {
                             self.operation_error(error);
                         }
+                    } else if let Some((_, _, speed)) = PLAYBACK_SPEEDS
+                        .iter()
+                        .find(|(command, _, _)| *command == selected)
+                    {
+                        let speed = speed.to_string();
+                        self.command(&["set", "speed", &speed]);
                     }
                 }
             }
@@ -1443,6 +1544,11 @@ unsafe extern "system" fn window_proc(
 
     match message {
         WM_NCCALCSIZE if wparam != 0 && unsafe { IsZoomed(hwnd) } == 0 => 0,
+        WM_NCACTIVATE if unsafe { IsZoomed(hwnd) } == 0 => {
+            let _ = configure_frameless_shadow(hwnd);
+            1
+        }
+        WM_NCPAINT if unsafe { IsZoomed(hwnd) } == 0 => 0,
         WM_DWMCOMPOSITIONCHANGED => {
             let _ = configure_frameless_shadow(hwnd);
             0
@@ -1794,9 +1900,15 @@ fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
         app.note_pointer_activity(hwnd);
         return;
     }
-    if key == VK_TAB {
+    if key == VK_F6 {
         let reverse = unsafe { GetKeyState(VK_SHIFT as i32) } < 0;
         app.cycle_keyboard_focus(reverse);
+        app.note_pointer_activity(hwnd);
+        return;
+    }
+    if key == VK_TAB {
+        app.clear_keyboard_focus();
+        app.toggle_media_info();
         app.note_pointer_activity(hwnd);
         return;
     }
@@ -2122,6 +2234,30 @@ fn set_window_always_on_top(hwnd: HWND, always_on_top: bool) -> Result<(), Strin
     }
 }
 
+fn open_file_location(hwnd: HWND, path: &Path) -> Result<(), String> {
+    let operation = wide("open");
+    let explorer = wide("explorer.exe");
+    let parameters = wide(&format!(r#"/select,"{}""#, path.display()));
+    let result = unsafe {
+        ShellExecuteW(
+            hwnd,
+            operation.as_ptr(),
+            explorer.as_ptr(),
+            parameters.as_ptr(),
+            ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if result as isize > 32 {
+        Ok(())
+    } else {
+        Err(format!(
+            "PlainVideo could not open the file location (ShellExecute code {}).",
+            result as isize
+        ))
+    }
+}
+
 fn configure_diagnostic_timers(hwnd: HWND, has_replacement: bool) -> Result<(), String> {
     if has_replacement && unsafe { SetTimer(hwnd, TIMER_DIAGNOSTIC_REPLACE, 700, None) } == 0 {
         return Err("Could not schedule the diagnostic replacement timer.".to_string());
@@ -2410,6 +2546,19 @@ mod tests {
             track_percent(volume_right + 50, volume_left, volume_right),
             100.0
         );
+    }
+
+    #[test]
+    fn hover_redraw_replaces_overlay_without_a_blank_frame() {
+        let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
+        let redraw = lua
+            .split_once("overlay.res_y = height")
+            .and_then(|(_, rest)| rest.split_once("overlay:update()"))
+            .map(|(body, _)| body)
+            .expect("installed overlay redraw path");
+
+        assert!(redraw.contains("overlay.data = table.concat"));
+        assert!(!redraw.contains("overlay:remove()"));
     }
 
     #[test]

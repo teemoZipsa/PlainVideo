@@ -27,7 +27,8 @@ PlainVideo's custom-drawn ASS overlay does not yet expose a custom UI Automation
 | --- | --- | --- | --- |
 | File | Open video | `Ctrl+O` | Opens the native Windows file picker. |
 | Playback | Play or pause | `Space` | Toggles playback when no transient control has keyboard focus. |
-| Controls | Move focus forward/back | `Tab` / `Shift+Tab` | Reveals the overlay and cycles through playback and window controls. |
+| Information | Show or hide media details | `Tab` | Toggles the compact top-left playback information overlay. |
+| Controls | Move focus forward/back | `F6` / `Shift+F6` | Reveals the overlay and cycles through playback and window controls. |
 | Controls | Activate focused control | `Enter` or `Space` | Invokes the focused button or control. |
 | Seek | Small seek | `Left` / `Right` | Seeks backward/forward five seconds. |
 | Seek | Large seek | `Shift+Left` / `Shift+Right` | Seeks backward/forward thirty seconds. |

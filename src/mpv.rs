@@ -700,6 +700,17 @@ impl Player {
             .is_some_and(|value| matches!(value.as_str(), "yes" | "true"))
     }
 
+    pub fn is_paused(&self) -> bool {
+        self.property_string("pause")
+            .is_some_and(|value| matches!(value.as_str(), "yes" | "true"))
+    }
+
+    pub fn playback_speed(&self) -> f64 {
+        self.property_string("speed")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1.0)
+    }
+
     pub fn seek_absolute_percent(&self, percent: f64, exact: bool) -> Result<(), String> {
         let percent = percent.clamp(0.0, 100.0).to_string();
         let mode = if exact {

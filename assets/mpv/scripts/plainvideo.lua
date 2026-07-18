@@ -16,6 +16,9 @@ local playback_error_title = nil
 local playback_error_hint = nil
 local status_message = nil
 local status_timer = nil
+local media_info_visible = false
+local media_queue_position = 1
+local media_queue_count = 1
 
 local TYPE_SIZE = {
     primary = 22,
@@ -40,6 +43,13 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     unpin = "고정 해제",
     minimize = "최소화",
     close = "닫기",
+    video = "영상",
+    decoder = "디코더",
+    audio = "오디오",
+    subtitle = "자막",
+    speed = "속도",
+    none = "없음",
+    software = "소프트웨어",
 } or {
     idle_title = "Drop a video here",
     idle_hint = "or press Ctrl+O to open",
@@ -57,6 +67,13 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     unpin = "Unpin",
     minimize = "Minimize",
     close = "Close",
+    video = "Video",
+    decoder = "Decoder",
+    audio = "Audio",
+    subtitle = "Subtitles",
+    speed = "Speed",
+    none = "None",
+    software = "Software",
 }
 
 local function theme_palette()
@@ -194,6 +211,134 @@ local function text_event(alignment, x, y, size, color, alpha, bold, value)
         alpha,
         ass_escape(value)
     )
+end
+
+local function clipped_text_event(alignment, x, y, size, color, alpha, bold, value,
+    left, top, right, bottom)
+    return string.format("{\\clip(%d,%d,%d,%d)}%s", left, top, right, bottom,
+        text_event(alignment, x, y, size, color, alpha, bold, value))
+end
+
+local function selected_track(kind)
+    for _, track in ipairs(mp.get_property_native("track-list", {}) or {}) do
+        if track.type == kind and track.selected then
+            return track
+        end
+    end
+    return nil
+end
+
+local function uppercase(value, fallback)
+    value = tostring(value or "")
+    if value == "" or value == "no" then
+        return fallback
+    end
+    return value:upper()
+end
+
+local function decimal(value, places)
+    local result = string.format("%." .. tostring(places) .. "f", tonumber(value) or 0)
+    return result:gsub("0+$", ""):gsub("%.$", "")
+end
+
+local function file_name(value)
+    value = tostring(value or "")
+    return value:match("[^/\\]+$") or value
+end
+
+local function first_nonempty(...)
+    for index = 1, select("#", ...) do
+        local value = select(index, ...)
+        if value ~= nil and tostring(value) ~= "" then
+            return tostring(value)
+        end
+    end
+    return ""
+end
+
+local function draw_media_info(width, height)
+    local palette = theme_palette()
+    local left = px(12)
+    local top = px(12)
+    local right = math.min(width - px(12), left + px(500))
+    if right - left < px(160) then
+        return ""
+    end
+
+    local title_height = px(30)
+    local row_height = px(23)
+    local padding = px(14)
+    local bottom = math.min(height - px(12), top + padding * 2 + title_height + row_height * 6)
+    if bottom - top < px(120) then
+        return ""
+    end
+
+    local filename = first_nonempty(mp.get_property("filename"), mp.get_property("media-title"), copy.none)
+    local position = mp.get_property_number("time-pos", 0)
+    local duration = mp.get_property_number("duration", 0)
+    local video_codec = uppercase(mp.get_property("video-codec", mp.get_property("video-format", "")), copy.none)
+    local video_width = mp.get_property_number("video-params/w", 0)
+    local video_height = mp.get_property_number("video-params/h", 0)
+    local fps = mp.get_property_number("container-fps",
+        mp.get_property_number("estimated-vf-fps", 0))
+    local decoder = uppercase(mp.get_property("hwdec-current", ""), copy.software)
+    local audio_track = selected_track("audio")
+    local audio_codec = uppercase(mp.get_property("audio-codec-name",
+        audio_track and audio_track.codec or ""), copy.none)
+    local channels = mp.get_property("audio-params/hr-channels",
+        mp.get_property("audio-params/channels", ""))
+    local sample_rate = mp.get_property_number("audio-params/samplerate", 0)
+    local subtitle_track = selected_track("sub")
+    local subtitle = copy.none
+    if subtitle_track then
+        subtitle = first_nonempty(subtitle_track.title, subtitle_track.lang,
+            file_name(subtitle_track["external-filename"]), uppercase(subtitle_track.codec, copy.none))
+        if subtitle_track.lang and subtitle_track.lang ~= subtitle then
+            subtitle = subtitle .. " · " .. subtitle_track.lang
+        end
+        if subtitle_track.codec and uppercase(subtitle_track.codec, "") ~= subtitle:upper() then
+            subtitle = subtitle .. " · " .. uppercase(subtitle_track.codec, "")
+        end
+    end
+    local speed = mp.get_property_number("speed", 1)
+
+    local video_parts = { video_codec }
+    if video_width > 0 and video_height > 0 then
+        table.insert(video_parts, string.format("%d×%d", video_width, video_height))
+    end
+    if fps > 0 then
+        table.insert(video_parts, decimal(fps, 3) .. " fps")
+    end
+    local audio_parts = { audio_codec }
+    if channels and channels ~= "" then table.insert(audio_parts, channels) end
+    if sample_rate > 0 then table.insert(audio_parts, decimal(sample_rate / 1000, 1) .. " kHz") end
+
+    local lines = {
+        string.format("%d / %d · %s / %s", media_queue_position, media_queue_count,
+            format_time(position), format_time(duration)),
+        copy.video .. "  " .. table.concat(video_parts, " · "),
+        copy.decoder .. "  " .. decoder,
+        copy.audio .. "  " .. table.concat(audio_parts, " · "),
+        copy.subtitle .. "  " .. subtitle,
+        copy.speed .. "  " .. decimal(speed, 2) .. "×",
+    }
+
+    local events = {
+        box_event(left, top, right, bottom, px(12), palette.panel, "&H28&"),
+        clipped_text_event(7, left + padding, top + padding,
+            type_size("primary", width, height), palette.text, "&H00&", true,
+            filename, left + padding, top + padding, right - padding, bottom - padding),
+    }
+    local line_y = top + padding + title_height
+    for _, line in ipairs(lines) do
+        if line_y + row_height <= bottom - px(4) then
+            table.insert(events, clipped_text_event(7, left + padding, line_y,
+                type_size("secondary", width, height), palette.secondary, "&H08&", false,
+                line, left + padding, top + padding, right - padding, bottom - padding))
+        end
+        line_y = line_y + row_height
+    end
+    return table.concat(events, "\n")
 end
 
 local function draw_idle(width, height)
@@ -755,7 +900,7 @@ local function draw_surface()
 
     local has_playback_error = playback_error_title ~= nil
     if not is_idle and not has_playback_error and feedback_kind == nil
-        and status_message == nil and not window_controls_visible then
+        and status_message == nil and not window_controls_visible and not media_info_visible then
         overlay:remove()
         return
     end
@@ -767,7 +912,6 @@ local function draw_surface()
 
     overlay.res_x = width
     overlay.res_y = height
-    overlay:remove()
 
     local events = {}
     if has_playback_error then
@@ -790,18 +934,38 @@ local function draw_surface()
     if status_message ~= nil then
         table.insert(events, draw_status(width, height))
     end
+    if media_info_visible and not has_playback_error and not is_idle then
+        table.insert(events, draw_media_info(width, height))
+    end
     overlay.data = table.concat(events, "\n")
+    -- update() replaces the installed ASS payload in place. Removing the
+    -- overlay first creates a visible blank frame on every hover transition,
+    -- which makes both the controls and idle/error copy flicker together.
     overlay:update()
 end
 
 local function set_playback_status(state, title, hint)
     if state == "error" then
+        media_info_visible = false
         playback_error_title = title ~= "" and title or nil
         playback_error_hint = hint ~= "" and hint or nil
     else
         playback_error_title = nil
         playback_error_hint = nil
     end
+    draw_surface()
+end
+
+local function set_media_info(action, position, count)
+    if action == "hide" then
+        media_info_visible = false
+    elseif action == "show" then
+        media_info_visible = true
+    else
+        media_info_visible = not media_info_visible
+    end
+    media_queue_position = math.max(1, tonumber(position) or 1)
+    media_queue_count = math.max(media_queue_position, tonumber(count) or 1)
     draw_surface()
 end
 
@@ -872,15 +1036,22 @@ mp.add_key_binding(nil, "volume-down", function() change_volume(-2) end)
 mp.register_script_message("plainvideo-window-controls", set_window_controls)
 mp.register_script_message("plainvideo-playback-status", set_playback_status)
 mp.register_script_message("plainvideo-status", show_status_message)
+mp.register_script_message("plainvideo-media-info", set_media_info)
 mp.register_script_message("plainvideo-volume-feedback", function()
     show_feedback("volume", 0.9)
 end)
 
-mp.observe_property("idle-active", "bool", draw_surface)
-mp.observe_property("path", "string", draw_surface)
+mp.observe_property("idle-active", "bool", function(_, value)
+    if value then media_info_visible = false end
+    draw_surface()
+end)
+mp.observe_property("path", "string", function()
+    media_info_visible = false
+    draw_surface()
+end)
 mp.observe_property("osd-dimensions", "native", draw_surface)
 mp.observe_property("time-pos", "number", function()
-    if feedback_kind == "seek" or window_controls_visible then
+    if feedback_kind == "seek" or window_controls_visible or media_info_visible then
         draw_surface()
     end
 end)
@@ -894,15 +1065,28 @@ mp.observe_property("mute", "bool", function()
     if window_controls_visible then draw_surface() end
 end)
 mp.observe_property("sid", "native", function()
-    if window_controls_visible then draw_surface() end
+    if window_controls_visible or media_info_visible then draw_surface() end
 end)
 mp.observe_property("aid", "native", function()
-    if window_controls_visible then draw_surface() end
+    if window_controls_visible or media_info_visible then draw_surface() end
 end)
 mp.observe_property("seekable", "bool", function()
     if window_controls_visible then draw_surface() end
 end)
-mp.register_event("file-loaded", draw_surface)
+mp.observe_property("speed", "number", function()
+    if media_info_visible then draw_surface() end
+end)
+mp.observe_property("hwdec-current", "string", function()
+    if media_info_visible then draw_surface() end
+end)
+mp.register_event("file-loaded", function()
+    media_info_visible = false
+    draw_surface()
+end)
+mp.register_event("end-file", function()
+    media_info_visible = false
+    draw_surface()
+end)
 mp.register_event("shutdown", function()
     overlay:remove()
 end)

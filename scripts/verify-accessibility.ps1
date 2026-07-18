@@ -54,7 +54,8 @@ Assert-Pattern $localeSource 'playback_error_hint:' 'playback-error hint localiz
 Assert-Pattern $localeSource 'for locale in \[Locale::Korean, Locale::English\]' 'both locale sets in the completeness test'
 
 # Keyboard and pointer routes owned by the native Win32 shell.
-Assert-Pattern $windowSource 'VK_TAB' 'Tab keyboard focus route'
+Assert-Pattern $windowSource 'VK_F6' 'F6 keyboard focus route'
+Assert-Pattern $windowSource 'plainvideo-media-info' 'Tab media-information route'
 Assert-Pattern $windowSource 'VK_LEFT\s+if\s+shift' 'Shift+Left large seek route'
 Assert-Pattern $windowSource 'VK_RIGHT\s+if\s+shift' 'Shift+Right large seek route'
 Assert-Pattern $windowSource 'VK_PRIOR\s*=>\s*app\.previous_video' 'PageUp previous-video route'
@@ -92,10 +93,10 @@ Assert-Pattern $luaSource 'draw_playback_error' 'localized recoverable error dra
 # Public documentation must describe the implemented interaction model and keep
 # unsupported assistive-technology claims explicitly pending.
 Assert-Pattern $readmeEnglish '`PageUp`/`PageDown`' 'English queue-shortcut documentation'
-Assert-Pattern $readmeEnglish '`Tab`/`Shift\+Tab`' 'English keyboard-focus documentation'
+Assert-Pattern $readmeEnglish '`F6`/`Shift\+F6`' 'English keyboard-focus documentation'
 Assert-Pattern $readmeEnglish 'Recoverable per-file playback errors' 'English recoverable-error documentation'
 Assert-Pattern $readmeKorean '`PageUp`/`PageDown`' 'Korean queue-shortcut documentation'
-Assert-Pattern $readmeKorean '`Tab`/`Shift\+Tab`' 'Korean keyboard-focus documentation'
+Assert-Pattern $readmeKorean '`F6`/`Shift\+F6`' 'Korean keyboard-focus documentation'
 Assert-Pattern $baseline 'Custom UI Automation tree \| \*\*Pending\*\*' 'UI Automation pending disclosure'
 Assert-Pattern $baseline 'Narrator \| \*\*Pending\*\*' 'Narrator pending disclosure'
 Assert-Pattern $baseline 'High Contrast \| \*\*Pending\*\*' 'High Contrast pending disclosure'
