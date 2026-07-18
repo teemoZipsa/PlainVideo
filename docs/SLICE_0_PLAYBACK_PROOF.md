@@ -54,4 +54,4 @@ Generated files stay under `.runtime/` and are not committed.
 
 ## Next gate
 
-Slice 0B should embed libmpv in a PlainVideo-owned window, preserve this interaction proof, validate drag/drop and rapid file replacement, and produce the first reproducible portable directory. A generated format matrix comes after the exact release runtime is locked. Display synchronization and experimental RIFE-based 2× interpolation remain later, separately measured slices.
+Slice 0B has now embedded libmpv in a PlainVideo-owned window, preserved the interaction proof, validated real drag/drop replacement, and produced a local developer portable directory. See [the Slice 0B libmpv proof](SLICE_0B_LIBMPV_PROOF.md) for the exact evidence and remaining cross-DPI, soak, and redistribution limits. A generated format matrix comes after the exact release runtime is licensed and locked. Display synchronization and experimental RIFE-based 2× interpolation remain later, separately measured slices.

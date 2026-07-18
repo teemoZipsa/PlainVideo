@@ -8,5 +8,8 @@
   "asset": "mpv-x86_64-20260610-git-304426c.7z",
   "downloadUrl": "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260610/mpv-x86_64-20260610-git-304426c.7z",
   "sha256": "facac536baa73c7b925771af5e39a3c9cb16b8d75b59a6e9800de89799dffca7",
+  "libmpvAsset": "mpv-dev-x86_64-20260610-git-304426c.7z",
+  "libmpvDownloadUrl": "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260610/mpv-dev-x86_64-20260610-git-304426c.7z",
+  "libmpvSha256": "8cbb25ea784f01afbb3f904217cab1317430a8bcfd5680fd827a866367f71cc9",
   "licenseDisposition": "Treat this default mpv build as GPL-2.0-or-later. It is downloaded for local development and is not a PlainVideo release artifact."
 }

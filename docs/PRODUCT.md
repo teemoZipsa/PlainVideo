@@ -23,7 +23,7 @@ Actual input reveals only the feedback needed for that action:
 
 Pointer movement by itself does not need to cover the video. Track selection and advanced actions can live in a contextual surface that appears only when explicitly requested.
 
-Close, always-on-top, and window movement must remain discoverable without recreating a conventional title bar. Slice 0A intentionally leaves this as an embedding-shell problem: `Alt+F4`/`q` close and `Alt`+drag moves the developer surface, but that is not the final first-time-user answer.
+Close, always-on-top, and window movement must remain discoverable without recreating a conventional title bar. Slice 0B now uses a right-click contextual menu for open, move, and close, while `Alt`+drag remains the direct movement path. Always-on-top and broader first-time-user usability remain later contextual-shell work.
 
 ## Interaction defaults
 

@@ -1,6 +1,6 @@
 # Architecture notes
 
-Status: Slice 0A playback-surface proof is implemented locally. It is evidence for the interaction and playback direction, not a shipped architecture or release artifact.
+Status: Slice 0B libmpv embedding is implemented and locally verified. It is an architecture proof, not a shipped release artifact.
 
 ## Slice 0A implementation
 
@@ -14,6 +14,20 @@ The current prototype deliberately uses the smallest real-playback path:
 
 This proves the content-first interaction against a real playback engine. It does **not** yet prove in-process embedding, a native overlay window, portable packaging, or a broad format matrix. Those remain the Slice 0B gate.
 
+## Slice 0B implementation
+
+The current prototype replaces the child-process window with a Rust-owned native shell:
+
+- PlainVideo creates a per-monitor-DPI-aware `WS_POPUP` window and owns drag/drop, keyboard, mouse, fullscreen, and contextual menu behavior;
+- the pinned `libmpv-2.dll` is loaded dynamically, and the core is configured from PlainVideo's isolated assets;
+- libmpv's OpenGL render API runs on a dedicated thread that exclusively owns the WGL context;
+- the UI thread issues asynchronous playback commands and drains client events without calling render functions;
+- resize and render callbacks are coalesced through a condition-variable handshake;
+- shutdown stops playback and the idle VO while rendering is active, flushes the final update, frees the render context on its owner thread, and then destroys the core;
+- a local developer portable directory copies the executable, libmpv, assets, notices, provenance, and a SHA-256 file manifest.
+
+This proves in-process embedding, transient Lua OSD reuse, real file-drop replacement, current-monitor fullscreen, and clean local teardown. It does **not** finish cross-DPI physical evidence, long-duration replacement soak, a broad format matrix, or redistribution licensing.
+
 ## Constraints
 
 - Windows-first and portable-first.
@@ -25,7 +39,7 @@ This proves the content-first interaction against a real playback engine. It doe
 
 ## Playback core
 
-The target embedded player should use **libmpv** rather than building a decoder, demuxer, clock, subtitle renderer, and GPU renderer from scratch. Slice 0A launches the pinned mpv executable; Slice 0B moves the proven interaction onto libmpv's render API.
+The embedded player uses **libmpv** rather than building a decoder, demuxer, clock, subtitle renderer, and GPU renderer from scratch. Slice 0A launched the pinned mpv executable; Slice 0B moved the proven interaction onto libmpv's render API.
 
 Why it is the leading candidate:
 
@@ -40,7 +54,7 @@ The primary player must not be an HTML `<video>` element. WebView media support 
 
 PlainView uses Tauri, React, and a WebView effectively because an image can live in the DOM. A native video renderer changes the constraints.
 
-The shell decision remains open until a spike proves all of the following together:
+The Rust-native Win32 shell is the proven Slice 0B baseline. A higher-level overlay toolkit remains optional until it proves all of the following without regressing this baseline:
 
 1. libmpv renders into the intended Windows surface with hardware decoding;
 2. a transparent or adjacent overlay receives input without flicker or focus bugs;
@@ -56,13 +70,15 @@ Candidate shells:
 
 Visual similarity to PlainView is a design-token and interaction requirement, not a reason to force the same rendering architecture.
 
-### Slice 0B exit criteria
+### Slice 0B exit criteria status
 
-1. Render through libmpv's render API in a PlainVideo-owned native window.
-2. Preserve the verified click, seek, fullscreen, subtitle, and no-permanent-UI behavior.
-3. Add a discoverable close/window-move path without restoring a conventional title bar.
-4. Prove rapid file replacement, DPI changes, both connected displays, and clean GPU teardown.
-5. Produce a portable directory from the exact licensed runtime inventory.
+1. **Verified:** render through libmpv's render API in a PlainVideo-owned native window.
+2. **Verified:** preserve click, seek, fullscreen, subtitle, localized idle, and no-permanent-UI behavior.
+3. **Implemented:** expose open, move, and close through a right-click menu, plus direct `Alt`+drag movement.
+4. **Mostly verified:** real rapid file replacement, both connected displays, a synthetic DPI message, and clean GPU teardown pass. Both physical displays are 96 DPI, so a real cross-scale transition and a longer soak remain.
+5. **Partial:** a reproducible local developer portable directory exists, but the complete licensed component/source inventory is not yet sufficient for redistribution.
+
+Exact evidence and limits are recorded in [`SLICE_0B_LIBMPV_PROOF.md`](SLICE_0B_LIBMPV_PROOF.md).
 
 ## Smooth motion ladder
 

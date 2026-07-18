@@ -32,7 +32,10 @@ local function idle_message()
 end
 
 local function draw_surface()
-    local is_idle = mp.get_property_bool("idle-active", true)
+    -- A fresh libmpv client has no path before its first load and may not yet
+    -- report idle-active. Treat that state as idle so the embedded shell does
+    -- not flash an unexplained black surface.
+    local is_idle = mp.get_property_bool("idle-active", false) or mp.get_property("path") == nil
 
     if not is_idle and feedback_kind == nil then
         overlay:remove()
@@ -165,6 +168,7 @@ mp.add_key_binding(nil, "volume-up", function() change_volume(2) end)
 mp.add_key_binding(nil, "volume-down", function() change_volume(-2) end)
 
 mp.observe_property("idle-active", "bool", draw_surface)
+mp.observe_property("path", "string", draw_surface)
 mp.observe_property("osd-dimensions", "native", draw_surface)
 mp.observe_property("time-pos", "number", function()
     if feedback_kind == "seek" then
@@ -175,3 +179,4 @@ mp.register_event("file-loaded", draw_surface)
 mp.register_event("shutdown", function()
     overlay:remove()
 end)
+mp.add_timeout(0, draw_surface)
