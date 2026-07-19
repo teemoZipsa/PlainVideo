@@ -6,8 +6,24 @@ directly in Windows packaging.
 
 `plainvideo-icon-master.png` is the canonical transparent 1024 x 1024 artwork.
 It normalizes the visible object to a square canvas with a 7% optical margin and
-is byte-identical to `png/plainvideo-1024.png`. All smaller PNG and ICO outputs
+is byte-identical to `png/plainvideo-1024.png`. All standalone PNG outputs
 derive from this master.
+
+`plainvideo-icon-windows-master.png` is the Windows-shell variant. It crops 38
+transparent pixels from each edge of the canonical master before returning to a
+1024 x 1024 canvas. The opaque artwork therefore fills about 85% of the width
+and 94.5% of the height, matching the visual weight of the other Plain taskbar
+icons without stretching the artwork. It supplies the 96, 128, and 256 pixel
+ICO frames.
+
+`plainvideo-icon-taskbar-master.png` is the optical small-size variant. A soft
+rounded mask removes the dark rear panel and retains the front playback panel,
+then a square crop enlarges that bright silhouette without stretching it. This
+prevents the rear panel from disappearing into a dark Windows taskbar and
+making the icon appear smaller than its alpha bounds. It supplies the 16, 20,
+24, 32, 40, 48, and 64 pixel ICO frames. The source-space mask is
+`(238, 230, 935, 925)` with radius 135 and 1.25 pixel feathering; the square
+crop is `(195, 185, 975, 965)`.
 
 ## Generated outputs
 
@@ -35,5 +51,7 @@ background and the following background-extraction instruction:
 
 The installed image-generation helper removed the key with border sampling, a
 soft matte, despill, transparent threshold 12, and opaque threshold 220. Pillow
-12.3.0 produced the committed resizes and multi-frame ICO. Neither tool is needed
-to build or run PlainVideo because all generated icon assets are committed.
+12.3.0 produced the repository resizes, Windows-shell crops, small-size optical
+mask, and mixed-source multi-frame ICO. Neither tool is needed to build or run
+PlainVideo because the generated icon assets are stored in the repository
+worktree.
