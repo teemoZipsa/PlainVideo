@@ -100,6 +100,74 @@ function Get-AllCaptures {
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
 }
 
+function ConvertTo-ProcessArgument {
+    param([Parameter(Mandatory)][string]$Value)
+
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') {
+        return $Value
+    }
+
+    $builder = [System.Text.StringBuilder]::new()
+    [void]$builder.Append('"')
+    $backslashCount = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq '\') {
+            $backslashCount++
+            continue
+        }
+        if ($character -eq '"') {
+            [void]$builder.Append(('\' * (($backslashCount * 2) + 1)))
+            [void]$builder.Append('"')
+            $backslashCount = 0
+            continue
+        }
+        if ($backslashCount -gt 0) {
+            [void]$builder.Append(('\' * $backslashCount))
+            $backslashCount = 0
+        }
+        [void]$builder.Append($character)
+    }
+    if ($backslashCount -gt 0) {
+        [void]$builder.Append(('\' * ($backslashCount * 2)))
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function Add-ProcessArgument {
+    param(
+        [Parameter(Mandatory)][System.Diagnostics.ProcessStartInfo]$StartInfo,
+        [Parameter(Mandatory)][string]$Value
+    )
+
+    # ArgumentList is unavailable in stock Windows PowerShell 5.1/.NET
+    # Framework. Keep the modern path when present and use Windows-compatible
+    # quoting for the legacy Arguments string otherwise.
+    if ($null -ne $StartInfo.PSObject.Properties['ArgumentList']) {
+        [void]$StartInfo.ArgumentList.Add($Value)
+        return
+    }
+    $quotedValue = ConvertTo-ProcessArgument -Value $Value
+    $StartInfo.Arguments = if ([string]::IsNullOrWhiteSpace($StartInfo.Arguments)) {
+        $quotedValue
+    } else {
+        "$($StartInfo.Arguments) $quotedValue"
+    }
+}
+
+function Stop-VerificationProcess {
+    param([Parameter(Mandatory)][System.Diagnostics.Process]$Process)
+
+    $killWithTree = $Process.GetType().GetMethod('Kill', [type[]]@([bool]))
+    if ($null -ne $killWithTree) {
+        $Process.Kill($true)
+    } else {
+        # Windows PowerShell 5.1 exposes only Kill(). PlainVideo runs in this
+        # process, so this preserves the timeout cleanup path on a stock Sandbox.
+        $Process.Kill()
+    }
+}
+
 function Get-PortableGitState {
     $git = Get-Command git -ErrorAction SilentlyContinue
     if (-not $git) { return $null }
@@ -254,12 +322,13 @@ foreach ($fixtureRow in $fixtureEvidence.rows) {
     $start.Environment['PLAINVIDEO_LIBMPV_PATH'] = $libmpv
     $start.Environment['PLAINVIDEO_SETTINGS_PATH'] = $settingsPath
     $start.Environment['PLAINVIDEO_DIAGNOSTIC_LOG'] = $logPath
+    $start.Environment['PLAINVIDEO_DIAGNOSTIC_IGNORE_INPUT'] = '1'
     $start.Environment['PLAINVIDEO_DIAGNOSTIC_SINGLE_FILE'] = '1'
     $start.Environment['PLAINVIDEO_DIAGNOSTIC_EXIT_MS'] = $diagnosticExitMs.ToString(
         [System.Globalization.CultureInfo]::InvariantCulture
     )
     $start.Environment['PLAINVIDEO_LOCALE'] = 'en-US'
-    [void]$start.ArgumentList.Add($mediaPath)
+    Add-ProcessArgument -StartInfo $start -Value $mediaPath
 
     $process = $null
     $timedOut = $false
@@ -269,7 +338,7 @@ foreach ($fixtureRow in $fixtureEvidence.rows) {
         $process = [System.Diagnostics.Process]::Start($start)
         if (-not $process.WaitForExit($PerRowTimeoutSeconds * 1000)) {
             $timedOut = $true
-            $process.Kill($true)
+            Stop-VerificationProcess -Process $process
             [void]$process.WaitForExit(5000)
         }
         $exitCode = $process.ExitCode
@@ -277,7 +346,7 @@ foreach ($fixtureRow in $fixtureEvidence.rows) {
     catch {
         $launchError = $_.Exception.Message
         if ($process -and -not $process.HasExited) {
-            $process.Kill($true)
+            Stop-VerificationProcess -Process $process
             [void]$process.WaitForExit(5000)
         }
     }
@@ -298,8 +367,8 @@ foreach ($fixtureRow in $fixtureEvidence.rows) {
         }
         $demuxerNames = @($demuxerNames + $mkvContainer | Select-Object -Unique)
     }
-    $videoTrackCodec = Get-FirstCapture -Text $logText -Pattern '(?m)^.*● Video\s+--vid=\d+\s+\((?<value>[A-Za-z0-9_]+)\b'
-    $audioTrackCodec = Get-FirstCapture -Text $logText -Pattern '(?m)^.*● Audio\s+--aid=\d+\s+\((?<value>[A-Za-z0-9_]+)\b'
+    $videoTrackCodec = Get-FirstCapture -Text $logText -Pattern '(?m)^.*\bVideo\s+--vid=\d+\s+\((?<value>[A-Za-z0-9_]+)\b'
+    $audioTrackCodec = Get-FirstCapture -Text $logText -Pattern '(?m)^.*\bAudio\s+--aid=\d+\s+\((?<value>[A-Za-z0-9_]+)\b'
     $videoDecoder = Get-FirstCapture -Text $logText -Pattern '(?m)^.*\[vd\]\s+Selected decoder: (?<value>\S+)'
     $audioDecoder = Get-FirstCapture -Text $logText -Pattern '(?m)^.*\[ad\]\s+Selected decoder: (?<value>\S+)'
     $hardwarePath = Get-FirstCapture -Text $logText -Pattern 'Using hardware decoding \((?<value>[^)]+)\)'
@@ -317,7 +386,7 @@ foreach ($fixtureRow in $fixtureEvidence.rows) {
     $playbackCompleted = $logText -match 'finished playback, success'
     $eofCode = Get-FirstCapture -Text $logText -Pattern 'EOF code:\s*(?<value>\d+)'
     $finishReason = Get-FirstCapture -Text $logText -Pattern 'finished playback, success \(reason (?<value>\d+)\)'
-    $subtitleLines = @([regex]::Matches($logText, '(?m)^.*[●○] Subs\s+--sid=.*$') |
+    $subtitleLines = @([regex]::Matches($logText, '(?m)^.*\bSubs\s+--sid=.*$') |
         ForEach-Object { $_.Value })
     $subtitlePresent = $subtitleLines.Count -gt 0
     $externalSubtitle = @($subtitleLines | Where-Object { $_ -match '\[external\]' }).Count -gt 0

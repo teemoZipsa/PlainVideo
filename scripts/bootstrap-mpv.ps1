@@ -18,6 +18,10 @@ $extractRoot = [System.IO.Path]::GetFullPath((Join-Path $runtimeRoot ('extract-'
 $mpvPath = Join-Path $installRoot 'mpv.exe'
 $libmpvPath = Join-Path $libmpvInstallRoot 'libmpv-2.dll'
 
+function Get-Sha256([string]$Path) {
+    (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
 function Assert-RuntimeChild([string]$Path) {
     $resolved = [System.IO.Path]::GetFullPath($Path)
     $prefix = $runtimeRoot.TrimEnd('\') + '\'
@@ -32,19 +36,24 @@ Assert-RuntimeChild $libmpvInstallRoot
 Assert-RuntimeChild $extractRoot
 
 if ((Test-Path -LiteralPath $mpvPath) -and (Test-Path -LiteralPath $libmpvPath) -and -not $Force) {
-    Write-Host "Pinned mpv and libmpv runtimes already exist."
-    Write-Host "mpv: $mpvPath"
-    Write-Host "libmpv: $libmpvPath"
-    & $mpvPath --version | Select-Object -First 4
-    exit 0
+    $installedMpvHash = Get-Sha256 $mpvPath
+    $installedLibmpvHash = Get-Sha256 $libmpvPath
+    if ($installedMpvHash -eq $manifest.mpvExecutableSha256.ToLowerInvariant() -and $installedLibmpvHash -eq $manifest.libmpvDllSha256.ToLowerInvariant()) {
+        Write-Host "Pinned mpv and libmpv runtimes already exist and match the manifest."
+        Write-Host "mpv: $mpvPath"
+        Write-Host "libmpv: $libmpvPath"
+        & $mpvPath --version | Select-Object -First 4
+        exit 0
+    }
+    Write-Warning 'Existing runtime binaries do not match the manifest and will be re-extracted.'
 }
 
 New-Item -ItemType Directory -Path $downloadRoot -Force | Out-Null
 
 $downloadRequired = -not (Test-Path -LiteralPath $archivePath)
 if (-not $downloadRequired) {
-    $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $downloadRequired = $actualHash -ne $manifest.sha256.ToLowerInvariant()
+    $actualHash = Get-Sha256 $archivePath
+    $downloadRequired = $actualHash -ne $manifest.archiveSha256.ToLowerInvariant()
 }
 
 if ($downloadRequired) {
@@ -55,15 +64,15 @@ if ($downloadRequired) {
     Invoke-WebRequest -UseBasicParsing -Uri $manifest.downloadUrl -OutFile $archivePath
 }
 
-$actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actualHash -ne $manifest.sha256.ToLowerInvariant()) {
-    throw "mpv archive SHA-256 mismatch. Expected $($manifest.sha256), got $actualHash."
+$actualHash = Get-Sha256 $archivePath
+if ($actualHash -ne $manifest.archiveSha256.ToLowerInvariant()) {
+    throw "mpv archive SHA-256 mismatch. Expected $($manifest.archiveSha256), got $actualHash."
 }
 
 $libmpvDownloadRequired = -not (Test-Path -LiteralPath $libmpvArchivePath)
 if (-not $libmpvDownloadRequired) {
-    $actualLibmpvHash = (Get-FileHash -LiteralPath $libmpvArchivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $libmpvDownloadRequired = $actualLibmpvHash -ne $manifest.libmpvSha256.ToLowerInvariant()
+    $actualLibmpvArchiveHash = Get-Sha256 $libmpvArchivePath
+    $libmpvDownloadRequired = $actualLibmpvArchiveHash -ne $manifest.libmpvArchiveSha256.ToLowerInvariant()
 }
 
 if ($libmpvDownloadRequired) {
@@ -74,9 +83,9 @@ if ($libmpvDownloadRequired) {
     Invoke-WebRequest -UseBasicParsing -Uri $manifest.libmpvDownloadUrl -OutFile $libmpvArchivePath
 }
 
-$actualLibmpvHash = (Get-FileHash -LiteralPath $libmpvArchivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actualLibmpvHash -ne $manifest.libmpvSha256.ToLowerInvariant()) {
-    throw "libmpv archive SHA-256 mismatch. Expected $($manifest.libmpvSha256), got $actualLibmpvHash."
+$actualLibmpvArchiveHash = Get-Sha256 $libmpvArchivePath
+if ($actualLibmpvArchiveHash -ne $manifest.libmpvArchiveSha256.ToLowerInvariant()) {
+    throw "libmpv archive SHA-256 mismatch. Expected $($manifest.libmpvArchiveSha256), got $actualLibmpvArchiveHash."
 }
 
 foreach ($path in @($extractRoot, $installRoot, $libmpvInstallRoot)) {
@@ -106,6 +115,10 @@ Get-ChildItem -LiteralPath $extractedMpv.Directory.FullName -Force | Copy-Item -
 if (-not (Test-Path -LiteralPath $mpvPath)) {
     throw "mpv.exe was not installed at the expected path: $mpvPath"
 }
+$actualMpvBinaryHash = Get-Sha256 $mpvPath
+if ($actualMpvBinaryHash -ne $manifest.mpvExecutableSha256.ToLowerInvariant()) {
+    throw "mpv.exe SHA-256 mismatch after extraction. Expected $($manifest.mpvExecutableSha256), got $actualMpvBinaryHash."
+}
 
 Assert-RuntimeChild $extractRoot
 Remove-Item -LiteralPath $extractRoot -Recurse -Force
@@ -127,6 +140,10 @@ Get-ChildItem -LiteralPath $extractedLibmpv.Directory.FullName -Force | Copy-Ite
 if (-not (Test-Path -LiteralPath $libmpvPath)) {
     throw "libmpv was not installed at the expected path: $libmpvPath"
 }
+$actualLibmpvDllHash = Get-Sha256 $libmpvPath
+if ($actualLibmpvDllHash -ne $manifest.libmpvDllSha256.ToLowerInvariant()) {
+    throw "libmpv-2.dll SHA-256 mismatch after extraction. Expected $($manifest.libmpvDllSha256), got $actualLibmpvDllHash."
+}
 
 Assert-RuntimeChild $extractRoot
 Remove-Item -LiteralPath $extractRoot -Recurse -Force
@@ -134,9 +151,11 @@ Remove-Item -LiteralPath $extractRoot -Recurse -Force
 $provenance = [ordered]@{
     installedAt = (Get-Date).ToUniversalTime().ToString('o')
     asset = $manifest.asset
-    sha256 = $actualHash
+    archiveSha256 = $actualHash
+    mpvExecutableSha256 = $actualMpvBinaryHash
     libmpvAsset = $manifest.libmpvAsset
-    libmpvSha256 = $actualLibmpvHash
+    libmpvArchiveSha256 = $actualLibmpvArchiveHash
+    libmpvDllSha256 = $actualLibmpvDllHash
     source = $manifest.upstreamRelease
 }
 $provenanceJson = $provenance | ConvertTo-Json

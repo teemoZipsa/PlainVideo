@@ -47,6 +47,69 @@ New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
 $invalidMedia = Join-Path $evidenceRoot 'unplayable.mp4'
 [System.IO.File]::WriteAllBytes($invalidMedia, [byte[]]::new(0))
 
+function ConvertTo-ProcessArgument {
+    param([Parameter(Mandatory)][string]$Value)
+
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') {
+        return $Value
+    }
+
+    $builder = [System.Text.StringBuilder]::new()
+    [void]$builder.Append('"')
+    $backslashCount = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq '\') {
+            $backslashCount++
+            continue
+        }
+        if ($character -eq '"') {
+            [void]$builder.Append(('\' * (($backslashCount * 2) + 1)))
+            [void]$builder.Append('"')
+            $backslashCount = 0
+            continue
+        }
+        if ($backslashCount -gt 0) {
+            [void]$builder.Append(('\' * $backslashCount))
+            $backslashCount = 0
+        }
+        [void]$builder.Append($character)
+    }
+    if ($backslashCount -gt 0) {
+        [void]$builder.Append(('\' * ($backslashCount * 2)))
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function Add-ProcessArgument {
+    param(
+        [Parameter(Mandatory)][System.Diagnostics.ProcessStartInfo]$StartInfo,
+        [Parameter(Mandatory)][string]$Value
+    )
+
+    if ($null -ne $StartInfo.PSObject.Properties['ArgumentList']) {
+        [void]$StartInfo.ArgumentList.Add($Value)
+        return
+    }
+    $quotedValue = ConvertTo-ProcessArgument -Value $Value
+    $StartInfo.Arguments = if ([string]::IsNullOrWhiteSpace($StartInfo.Arguments)) {
+        $quotedValue
+    } else {
+        "$($StartInfo.Arguments) $quotedValue"
+    }
+}
+
+function Stop-VerificationProcess {
+    param([Parameter(Mandatory)][System.Diagnostics.Process]$Process)
+
+    $killWithTree = $Process.GetType().GetMethod('Kill', [type[]]@([bool]))
+    if ($null -ne $killWithTree) {
+        $Process.Kill($true)
+    } else {
+        $Process.Kill()
+    }
+}
+
 function Invoke-RecoveryScenario {
     param(
         [Parameter(Mandatory)][string]$Id,
@@ -65,6 +128,7 @@ function Invoke-RecoveryScenario {
     $start.Environment['PLAINVIDEO_LIBMPV_PATH'] = $libmpv
     $start.Environment['PLAINVIDEO_SETTINGS_PATH'] = $settingsPath
     $start.Environment['PLAINVIDEO_DIAGNOSTIC_LOG'] = $logPath
+    $start.Environment['PLAINVIDEO_DIAGNOSTIC_IGNORE_INPUT'] = '1'
     $start.Environment['PLAINVIDEO_DIAGNOSTIC_EXIT_MS'] = '3500'
     $start.Environment['PLAINVIDEO_DIAGNOSTIC_SINGLE_FILE'] = '1'
     $start.Environment['PLAINVIDEO_LOCALE'] = $Locale
@@ -73,12 +137,12 @@ function Invoke-RecoveryScenario {
     } else {
         [void]$start.Environment.Remove('PLAINVIDEO_DIAGNOSTIC_REPLACE_PATH')
     }
-    [void]$start.ArgumentList.Add($invalidMedia)
+    Add-ProcessArgument -StartInfo $start -Value $invalidMedia
 
     $process = [System.Diagnostics.Process]::Start($start)
     $timedOut = -not $process.WaitForExit(12000)
     if ($timedOut) {
-        $process.Kill($true)
+        Stop-VerificationProcess -Process $process
         [void]$process.WaitForExit(3000)
     }
     $exitCode = $process.ExitCode

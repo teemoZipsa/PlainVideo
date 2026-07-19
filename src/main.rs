@@ -3,6 +3,7 @@
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -25,6 +26,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
+            record_startup_error(&error);
             show_error(&error);
             ExitCode::FAILURE
         }
@@ -94,12 +96,31 @@ fn is_app_root(path: &Path) -> bool {
             .is_file()
 }
 
+fn record_startup_error(message: &str) {
+    let Some(log_path) = env::var_os("PLAINVIDEO_DIAGNOSTIC_LOG") else {
+        return;
+    };
+    let sidecar = PathBuf::from(log_path).with_extension("app-errors.log");
+    if let Ok(mut file) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(sidecar)
+    {
+        let _ = writeln!(file, "startup: {message}");
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn find_libmpv(root: &Path) -> Result<PathBuf, String> {
     if let Some(path) = env::var_os("PLAINVIDEO_LIBMPV_PATH") {
         let path = PathBuf::from(path);
         if path.is_file() {
-            return Ok(path);
+            return fs::canonicalize(&path).map_err(|error| {
+                format!(
+                    "Could not resolve PLAINVIDEO_LIBMPV_PATH {}: {error}",
+                    path.display()
+                )
+            });
         }
         return Err(format!(
             "PLAINVIDEO_LIBMPV_PATH does not point to a file: {}",
@@ -107,27 +128,26 @@ fn find_libmpv(root: &Path) -> Result<PathBuf, String> {
         ));
     }
 
-    let mut candidates = vec![
-        root.join(".runtime").join("libmpv").join("libmpv-2.dll"),
-        root.join("libmpv-2.dll"),
-    ];
-    if let Ok(executable) = env::current_exe() {
-        if let Some(directory) = executable.parent() {
-            candidates.push(directory.join("libmpv-2.dll"));
-            candidates.push(directory.join("libmpv").join("libmpv-2.dll"));
-        }
-    }
-
-    if let Some(path) = env::var_os("PATH") {
-        candidates.extend(env::split_paths(&path).map(|directory| directory.join("libmpv-2.dll")));
-    }
-
-    candidates
+    libmpv_candidates(root)
         .into_iter()
         .find(|candidate| candidate.is_file())
         .ok_or_else(|| {
-            "PlainVideo needs its pinned libmpv runtime. Run scripts\\bootstrap-mpv.ps1, or set PLAINVIDEO_LIBMPV_PATH to libmpv-2.dll.".to_string()
+            "PlainVideo needs a pinned libmpv runtime beside plainvideo.exe. For local development, run scripts\\bootstrap-mpv.ps1; otherwise install the approved runtime or set PLAINVIDEO_LIBMPV_PATH explicitly.".to_string()
         })
+}
+
+#[cfg(target_os = "windows")]
+fn libmpv_candidates(root: &Path) -> Vec<PathBuf> {
+    let mut candidates = vec![root.join("libmpv-2.dll")];
+
+    // The checked-out repository is the sole development-only exception. A
+    // portable or installed build must load the runtime that is staged beside
+    // its validated application root, never an arbitrary DLL from PATH.
+    if root.join("Cargo.toml").is_file() {
+        candidates.push(root.join(".runtime").join("libmpv").join("libmpv-2.dll"));
+    }
+
+    candidates
 }
 
 #[cfg(target_os = "windows")]
@@ -196,6 +216,14 @@ mod tests {
     fn pinned_libmpv_is_a_root_candidate() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let expected = root.join(".runtime").join("libmpv").join("libmpv-2.dll");
+        assert!(libmpv_candidates(root).contains(&expected));
         assert_eq!(find_libmpv(root).expect("pinned libmpv"), expected);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn portable_candidate_does_not_include_development_runtime() {
+        let root = Path::new(r"C:\PlainVideoPortable");
+        assert_eq!(libmpv_candidates(root), vec![root.join("libmpv-2.dll")]);
     }
 }

@@ -206,6 +206,69 @@ function Get-MediaDurationSeconds {
     return $duration
 }
 
+function ConvertTo-ProcessArgument {
+    param([Parameter(Mandatory)][string]$Value)
+
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') {
+        return $Value
+    }
+
+    $builder = [System.Text.StringBuilder]::new()
+    [void]$builder.Append('"')
+    $backslashCount = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq '\') {
+            $backslashCount++
+            continue
+        }
+        if ($character -eq '"') {
+            [void]$builder.Append(('\' * (($backslashCount * 2) + 1)))
+            [void]$builder.Append('"')
+            $backslashCount = 0
+            continue
+        }
+        if ($backslashCount -gt 0) {
+            [void]$builder.Append(('\' * $backslashCount))
+            $backslashCount = 0
+        }
+        [void]$builder.Append($character)
+    }
+    if ($backslashCount -gt 0) {
+        [void]$builder.Append(('\' * ($backslashCount * 2)))
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function Add-ProcessArgument {
+    param(
+        [Parameter(Mandatory)][System.Diagnostics.ProcessStartInfo]$StartInfo,
+        [Parameter(Mandatory)][string]$Value
+    )
+
+    if ($null -ne $StartInfo.PSObject.Properties['ArgumentList']) {
+        [void]$StartInfo.ArgumentList.Add($Value)
+        return
+    }
+    $quotedValue = ConvertTo-ProcessArgument -Value $Value
+    $StartInfo.Arguments = if ([string]::IsNullOrWhiteSpace($StartInfo.Arguments)) {
+        $quotedValue
+    } else {
+        "$($StartInfo.Arguments) $quotedValue"
+    }
+}
+
+function Stop-VerificationProcess {
+    param([Parameter(Mandatory)][System.Diagnostics.Process]$Process)
+
+    $killWithTree = $Process.GetType().GetMethod('Kill', [type[]]@([bool]))
+    if ($null -ne $killWithTree) {
+        $Process.Kill($true)
+    } else {
+        $Process.Kill()
+    }
+}
+
 function Wait-PlainVideoWindow {
     param([Parameter(Mandatory)][System.Diagnostics.Process]$Process)
     $deadline = [DateTime]::UtcNow.AddSeconds(12)
@@ -452,6 +515,7 @@ function Invoke-SoakRun {
     $start.Environment['PLAINVIDEO_SETTINGS_PATH'] = $settingsPath
     $start.Environment['PLAINVIDEO_DIAGNOSTIC_LOG'] = $logPath
     $start.Environment['PLAINVIDEO_DIAGNOSTIC_HWDEC'] = $Hwdec
+    $start.Environment['PLAINVIDEO_DIAGNOSTIC_IGNORE_INPUT'] = '1'
     $start.Environment['PLAINVIDEO_DIAGNOSTIC_EXIT_MS'] = ($DurationSeconds * 1000).ToString(
         [System.Globalization.CultureInfo]::InvariantCulture
     )
@@ -463,7 +527,7 @@ function Invoke-SoakRun {
         $start.Environment['PLAINVIDEO_DIAGNOSTIC_REPLACE_PATH'] = $Replacement
     }
     foreach ($mediaPath in $MediaArguments) {
-        [void]$start.ArgumentList.Add($mediaPath)
+        Add-ProcessArgument -StartInfo $start -Value $mediaPath
     }
 
     $process = $null
@@ -506,7 +570,7 @@ function Invoke-SoakRun {
         }
         if (-not $process.HasExited) {
             $timedOut = $true
-            $process.Kill($true)
+            Stop-VerificationProcess -Process $process
             $forcedTermination = $true
             [void]$process.WaitForExit(5000)
         }
@@ -521,7 +585,7 @@ function Invoke-SoakRun {
                 [void]$process.WaitForExit(3000)
             }
             if (-not $process.HasExited) {
-                $process.Kill($true)
+                Stop-VerificationProcess -Process $process
                 $forcedTermination = $true
                 [void]$process.WaitForExit(5000)
             }

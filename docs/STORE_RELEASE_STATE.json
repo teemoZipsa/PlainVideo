@@ -45,7 +45,7 @@
     "nextMilestone": "runtime-redistribution-closure"
   },
   "blockingGates": [
-    "The pinned libmpv runtime is developer-only and lacks an approved redistribution profile.",
+    "A local shared-libmpv candidate has 24-DLL ordinary- and delay-import structural closure, package/source ownership evidence, a static-CRT target-OS/dynamic-load review, portable-root staging evidence, host playback evidence, and a clean Windows 11 Sandbox proof. It still lacks an approved redistribution profile, corresponding-source/legal disposition, and a selected Windows 10 minimum-image proof.",
     "The Partner Center reservation state has not been checked and no exact package identity or publisher is recorded.",
     "The original icon is embedded in the EXE and listing-art candidates are prepared, but no MSIX manifest, package-logo mapping, applicable Partner Center artwork-field confirmation, identity mapping, or deterministic Store packaging flow exists.",
     "No WACK, developer-signed installed-package, update, uninstall, or clean-VM package proof exists.",

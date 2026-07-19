@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::env;
 use std::ffi::OsString;
 use std::fs;
@@ -88,8 +89,7 @@ impl ResumeStore {
                 updated_at: unix_seconds(),
             });
         }
-        self.entries
-            .sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+        self.entries.sort_by_key(|entry| Reverse(entry.updated_at));
         self.entries.truncate(MAX_ENTRIES);
         self.save()
     }
@@ -177,7 +177,7 @@ fn parse_entries(contents: &str) -> Vec<ResumeEntry> {
             })
         })
         .collect();
-    entries.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+    entries.sort_by_key(|entry| Reverse(entry.updated_at));
     entries.truncate(MAX_ENTRIES);
     entries
 }

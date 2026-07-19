@@ -9,6 +9,9 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use libloading::Library;
+use libloading::os::windows::{
+    LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, LOAD_LIBRARY_SEARCH_SYSTEM32, Library as WindowsLibrary,
+};
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::Graphics::Gdi::{GetDC, ReleaseDC};
 use windows_sys::Win32::Graphics::OpenGL::{
@@ -32,6 +35,8 @@ const MPV_RENDER_PARAM_OPENGL_INIT_PARAMS: c_int = 2;
 const MPV_RENDER_PARAM_OPENGL_FBO: c_int = 3;
 const MPV_RENDER_PARAM_FLIP_Y: c_int = 4;
 const MPV_RENDER_UPDATE_FRAME: u64 = 1;
+const MPV_CLIENT_API_MAJOR: u32 = 2;
+const MPV_CLIENT_API_MIN_MINOR: u32 = 5;
 
 #[repr(C)]
 struct MpvHandle {
@@ -81,6 +86,7 @@ struct MpvOpenGlFbo {
 }
 
 type MpvCreate = unsafe extern "C" fn() -> *mut MpvHandle;
+type MpvClientApiVersion = unsafe extern "C" fn() -> u32;
 type MpvInitialize = unsafe extern "C" fn(*mut MpvHandle) -> c_int;
 type MpvTerminateDestroy = unsafe extern "C" fn(*mut MpvHandle);
 type MpvSetOptionString =
@@ -127,10 +133,31 @@ struct Api {
 
 impl Api {
     fn load(path: &Path) -> Result<Self, String> {
-        let library = unsafe { Library::new(path) }
-            .map_err(|error| format!("Could not load {}: {error}", path.display()))?;
+        // libmpv and every non-system runtime dependency are staged beside the
+        // selected DLL. Do not let PATH or the current directory satisfy a
+        // dependency from an unrelated installation.
+        let library: Library = unsafe {
+            WindowsLibrary::load_with_flags(
+                path,
+                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32,
+            )
+        }
+        .map(Into::into)
+        .map_err(|error| format!("Could not load {}: {error}", path.display()))?;
 
         unsafe {
+            let client_api_version: MpvClientApiVersion =
+                load_symbol(&library, b"mpv_client_api_version\0")?;
+            let actual_version = client_api_version();
+            let actual_major = actual_version >> 16;
+            let actual_minor = actual_version & 0xffff;
+            if actual_major != MPV_CLIENT_API_MAJOR || actual_minor < MPV_CLIENT_API_MIN_MINOR {
+                return Err(format!(
+                    "libmpv client API {actual_major}.{actual_minor} is incompatible; PlainVideo requires {}.{} or newer within major {}.",
+                    MPV_CLIENT_API_MAJOR, MPV_CLIENT_API_MIN_MINOR, MPV_CLIENT_API_MAJOR
+                ));
+            }
+
             Ok(Self {
                 create: load_symbol(&library, b"mpv_create\0")?,
                 initialize: load_symbol(&library, b"mpv_initialize\0")?,

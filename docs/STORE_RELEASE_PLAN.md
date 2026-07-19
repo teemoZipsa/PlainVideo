@@ -148,7 +148,7 @@ Submission, certification, and publication are distinct states. Update `STORE_RE
 | Milestone | Outcome | Current state |
 |---|---|---|
 | S0 — Store plan | Distribution choice, gates, bilingual listing draft, state file | Complete |
-| S1 — Runtime closure | Reproducible distributable libmpv/FFmpeg profile | Blocked by license/build inventory |
+| S1 — Runtime closure | Shared-libmpv candidate built, host-tested, and clean-Windows-11-Sandbox-tested | Blocked by legal/source closure and selected Windows 10 minimum-image proof |
 | S2 — Package proof | Partner identity, assets, manifest, x64 developer MSIX | Not started |
 | S3 — Installed-app proof | WACK, host/Sandbox, activation/update/uninstall | Not started |
 | S4 — Listing readiness | Privacy/support/source pages and localized captures | Artwork candidates prepared; applicable fields, pages, and screenshots not verified |
@@ -157,7 +157,7 @@ Submission, certification, and publication are distinct states. Update `STORE_RE
 
 ## Immediate next work
 
-1. Build and inventory an LGPL-compatible libmpv/FFmpeg candidate.
+1. Complete the candidate's transitive license/corresponding-source disposition, then repeat its clean structural and playback proof on the selected Windows 10 minimum image.
 2. Check whether `PlainVideo` is already reserved in Partner Center; reserve it if needed and record the exact identity values.
 3. Create the MSIX manifest template and map package logo resources from the icon master.
 4. Add deterministic Store-package build, install, WACK, and uninstall scripts.

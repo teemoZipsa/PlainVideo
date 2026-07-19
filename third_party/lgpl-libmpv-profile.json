@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate-not-release-approved",
+  "purpose": "Windows x64 shared-libmpv redistribution candidate; build and inventory proof only",
+  "architecture": "x86_64",
+  "runtimeLayout": "libmpv-2.dll and every non-system dependency DLL live beside plainvideo.exe",
+  "toolchain": {
+    "kind": "MSYS2 CLANG64",
+    "baseRelease": "2026-06-11",
+    "baseArchive": "msys2-base-x86_64-20260611.sfx.exe",
+    "downloadUrl": "https://github.com/msys2/msys2-installer/releases/download/2026-06-11/msys2-base-x86_64-20260611.sfx.exe",
+    "sha256": "c105946e64e08f099ac0e4647461ce762b95333ad211777666476a9a41451d65",
+    "defaultInstallRoot": "C:\\pv-tools\\msys64",
+    "installPolicy": "toolchain cache only; never include MSYS2 itself in a PlainVideo artifact",
+    "bootstrapPackages": [
+      "git",
+      "base-devel",
+      "mingw-w64-clang-x86_64-clang",
+      "mingw-w64-clang-x86_64-meson",
+      "mingw-w64-clang-x86_64-nasm",
+      "mingw-w64-clang-x86_64-luajit",
+      "mingw-w64-clang-x86_64-zlib",
+      "mingw-w64-clang-x86_64-freetype",
+      "mingw-w64-clang-x86_64-fribidi",
+      "mingw-w64-clang-x86_64-harfbuzz"
+    ]
+  },
+  "sources": [
+    {
+      "name": "mpv",
+      "repository": "https://github.com/mpv-player/mpv.git",
+      "tag": "v0.41.0",
+      "commit": "41f6a645068483470267271e1d09966ca3b9f413",
+      "license": "LGPL-2.1-or-later candidate only when built without GPL-only sources"
+    },
+    {
+      "name": "FFmpeg",
+      "repository": "https://git.ffmpeg.org/ffmpeg.git",
+      "tag": "n8.1.2",
+      "commit": "38b88335f99e76ed89ff3c93f877fdefce736c13",
+      "license": "LGPL-2.1-or-later candidate only when GPL, version3, and nonfree options remain disabled"
+    },
+    {
+      "name": "libplacebo",
+      "repository": "https://code.videolan.org/videolan/libplacebo.git",
+      "tag": "v7.360.0",
+      "commit": "b2ea27dceb6418aabfe9121174c6dbb232942998",
+      "license": "LGPL-2.1-or-later"
+    },
+    {
+      "name": "libass",
+      "repository": "https://github.com/libass/libass.git",
+      "tag": "0.17.4",
+      "commit": "bbb3c7f1570a4a021e52683f3fbdf74fe492ae84",
+      "license": "ISC"
+    }
+  ],
+  "ffmpegConfigure": [
+    "--enable-shared",
+    "--disable-static",
+    "--disable-programs",
+    "--disable-doc",
+    "--disable-debug",
+    "--disable-autodetect",
+    "--disable-gpl",
+    "--disable-nonfree",
+    "--disable-version3",
+    "--disable-avdevice",
+    "--disable-network",
+    "--enable-w32threads",
+    "--enable-d3d11va",
+    "--enable-dxva2",
+    "--enable-zlib"
+  ],
+  "libassMeson": [
+    "-Ddefault_library=shared",
+    "-Dauto_features=disabled",
+    "-Ddirectwrite=enabled",
+    "-Dfontconfig=disabled",
+    "-Dlibunibreak=disabled",
+    "-Dtest=disabled",
+    "-Dcompare=disabled",
+    "-Dprofile=disabled",
+    "-Dfuzz=disabled",
+    "-Dcheckasm=disabled"
+  ],
+  "libplaceboMeson": [
+    "-Ddefault_library=shared",
+    "-Dauto_features=disabled",
+    "-Dvulkan=disabled",
+    "-Dopengl=enabled",
+    "-Dd3d11=disabled",
+    "-Dglslang=disabled",
+    "-Dshaderc=disabled",
+    "-Dlcms=disabled",
+    "-Ddovi=disabled",
+    "-Ddemos=false",
+    "-Dtests=false",
+    "-Dbench=false",
+    "-Dfuzz=false"
+  ],
+  "mpvMeson": [
+    "-Ddefault_library=shared",
+    "-Dauto_features=disabled",
+    "-Dgpl=false",
+    "-Dcplayer=false",
+    "-Dlibmpv=true",
+    "-Dbuild-date=false",
+    "-Dlua=luajit",
+    "-Dwasapi=enabled",
+    "-Dwin32-threads=enabled",
+    "-Dgl=enabled",
+    "-Dgl-win32=enabled",
+    "-Dplain-gl=enabled",
+    "-Dd3d-hwaccel=enabled"
+  ],
+  "explicitlyExcluded": [
+    "x264",
+    "x265",
+    "xvid",
+    "GPL FFmpeg features",
+    "FFmpeg nonfree features",
+    "DVD and CDDA modules",
+    "VapourSynth",
+    "network protocols",
+    "mpv CLI player",
+    "JavaScript and C plugins",
+    "Vulkan and Direct3D video-output backends"
+  ],
+  "requiredEvidence": [
+    "exact source commits and source archives",
+    "recursive source submodule commits",
+    "patches and configure/Meson arguments",
+    "compiler and MSYS2 package lock",
+    "complete dependency DLL closure and SHA-256 inventory",
+    "license texts, notices, and corresponding-source publication plan",
+    "MP4, MKV, external SRT, hardware decode, and software fallback evidence"
+  ],
+  "releasePolicy": "This profile is not a legal approval. Do not publish or package it until the generated inventory, corresponding-source delivery plan, patent review, and legal disposition are complete."
+}

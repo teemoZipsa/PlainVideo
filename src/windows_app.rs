@@ -226,6 +226,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         set_window_always_on_top(window.hwnd, true)?;
     }
     let diagnostic_single_file = diagnostic_single_file();
+    let diagnostic_input_locked = diagnostic_input_locked();
     let media_queue = if media.len() == 1 && !diagnostic_single_file {
         MediaQueue::around(&media[0])
     } else {
@@ -265,6 +266,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         last_seek_drag: None,
         diagnostic_replacement: diagnostic_replacement(),
         diagnostic_single_file,
+        diagnostic_input_locked,
         last_error: None,
     });
 
@@ -346,6 +348,7 @@ struct App {
     last_seek_drag: Option<Instant>,
     diagnostic_replacement: Option<PathBuf>,
     diagnostic_single_file: bool,
+    diagnostic_input_locked: bool,
     last_error: Option<String>,
 }
 
@@ -1638,8 +1641,16 @@ unsafe extern "system" fn window_proc(
     } else {
         Some(unsafe { &mut *app_pointer })
     };
+    let diagnostic_input_locked = app.as_ref().is_some_and(|app| app.diagnostic_input_locked);
 
     match message {
+        WM_NCHITTEST if diagnostic_input_locked => HTCLIENT as LRESULT,
+        WM_LBUTTONDOWN | WM_LBUTTONUP | WM_LBUTTONDBLCLK | WM_CONTEXTMENU | WM_DROPFILES
+        | WM_KEYDOWN | WM_MOUSEMOVE | WM_MOUSEWHEEL | WM_MOUSELEAVE | WM_CLOSE
+            if diagnostic_input_locked =>
+        {
+            0
+        }
         WM_NCCALCSIZE if wparam != 0 && unsafe { IsZoomed(hwnd) } == 0 => 0,
         WM_NCACTIVATE if unsafe { IsZoomed(hwnd) } == 0 => {
             let _ = configure_frameless_shadow(hwnd);
@@ -2403,6 +2414,11 @@ fn configure_diagnostic_timers(hwnd: HWND, has_replacement: bool) -> Result<(), 
 fn diagnostic_single_file() -> bool {
     env::var_os("PLAINVIDEO_DIAGNOSTIC_LOG").is_some()
         && env::var("PLAINVIDEO_DIAGNOSTIC_SINGLE_FILE").as_deref() == Ok("1")
+}
+
+fn diagnostic_input_locked() -> bool {
+    env::var_os("PLAINVIDEO_DIAGNOSTIC_LOG").is_some()
+        && env::var("PLAINVIDEO_DIAGNOSTIC_IGNORE_INPUT").as_deref() == Ok("1")
 }
 
 fn message_loop() -> i32 {
