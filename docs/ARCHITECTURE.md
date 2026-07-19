@@ -106,6 +106,21 @@ Required safety behavior:
 
 The older `rife-ncnn-vulkan` command-line pipeline is useful evidence that portable Vulkan inference is possible, but it is not itself a real-time player integration. The spike must evaluate maintained libraries and model compatibility rather than shelling out once per frame.
 
+Slice 3A now has an isolated in-memory DLL and measurement tool. Its first RTX
+5070 result fails both activation budgets, so it is not connected to mpv or
+exposed in the UI. Exact timings, fallback evidence, source pins, and the
+unresolved model-conversion provenance gate are recorded in
+[`RIFE_SLICE_3A_BENCHMARK.md`](RIFE_SLICE_3A_BENCHMARK.md).
+
+The follow-up buffer spike removes the duplicate host planar preparation and
+adds a persistent staged Vulkan mode. The optimized path remains a real host
+BGRA8 upload/download boundary, not GPU-native input. Its final exact-build
+ABCCBA Quick result still fails both complete product budgets; the 24-fps ncnn
+round-trip alone is not sufficient activation evidence. Resource
+lifetime, VRAM sensitivity, timings, and the Windows zero-copy boundary are
+recorded in
+[`RIFE_SLICE_3A_BUFFER_OPTIMIZATION.md`](RIFE_SLICE_3A_BUFFER_OPTIMIZATION.md).
+
 ## Format claims
 
 The repository should eventually generate a support matrix from the exact shipped mpv/FFmpeg build:

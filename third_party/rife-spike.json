@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "status": "development-only-performance-spike",
+  "observedAt": "2026-07-19",
+  "referenceImplementation": {
+    "name": "VapourSynth-RIFE-ncnn-Vulkan",
+    "repository": "https://github.com/styler00dollar/VapourSynth-RIFE-ncnn-Vulkan",
+    "tag": "r9_mod_v33",
+    "commit": "c3ec6aabc07c8fa37a4f58d7fed9e2ad1fc1b13f",
+    "license": "MIT"
+  },
+  "model": {
+    "name": "RIFE 4.25-lite",
+    "referenceImplementationPath": "models/rife-v4.25-lite_ensembleFalse",
+    "convertedNcnnFiles": {
+      "flownet.bin": {
+        "bytes": 11276252,
+        "sha256": "350a15e464bea5ad378e06c0fb43996e90a0d35653d5a6ef6bc980d832538fb7"
+      },
+      "flownet.param": {
+        "canonicalLfBytes": 35830,
+        "canonicalLfSha256": "f750ec6723f05a800c8fb07ac0bf3537e741b6ff7fe61b3894e407bd10373a63",
+        "acceptedWindowsCrlfBytes": 36221,
+        "acceptedWindowsCrlfSha256": "ca7e7b74c0b662c1bdd8695385e9da2fca662d34974696a6f2536307f644ca9b"
+      }
+    },
+    "officialPracticalRifeObservation": {
+      "repository": "https://github.com/hzwer/Practical-RIFE",
+      "commit": "17d8c7a1005b37f4c97bfee04e316aaec7fdc536",
+      "modelPage": "https://drive.google.com/file/d/1zlKblGuKNatulJNFf5jdB-emp9AqGK05/view",
+      "archiveName": "RIFEv4.25lite_1018.zip",
+      "license": "MIT",
+      "verification": "External research observation only; this archive is not acquired or verified by the bootstrap script."
+    },
+    "conversionProvenance": "unverified",
+    "conversionBlocker": "The reference plugin does not publish a reproducible conversion recipe that proves its ncnn param/bin came from the pinned official Practical-RIFE weights. The files are prototype inputs only."
+  },
+  "runtime": {
+    "name": "ncnn",
+    "repository": "https://github.com/Tencent/ncnn",
+    "tag": "20250503",
+    "commit": "305837fd4a722ebc47c5d72e72d8ec9ae970e932",
+    "license": "BSD-3-Clause",
+    "vulkanLoader": "NCNN_SIMPLEVK",
+    "vulkanOnlineSpirv": true
+  },
+  "shaderCompiler": {
+    "name": "glslang",
+    "repository": "https://github.com/nihui/glslang",
+    "commit": "a9ac7d5f307e5db5b8c4fbf904bdba8fca6283bc",
+    "source": "ncnn recursive submodule"
+  },
+  "supportedSpikeContract": {
+    "abiVersion": 2,
+    "platform": "Windows x64",
+    "input": "1920x1080 BGRA8 SDR",
+    "factor": "2x",
+    "timestep": 0.5,
+    "tta": false,
+    "uhdMode": false,
+    "rifePadding": 128,
+    "comparisonClass": "host-bgra8-to-host-bgra8",
+    "pipelineModes": [
+      {
+        "id": "legacy-duplicate-host",
+        "mode": 0,
+        "purpose": "same-DLL baseline retaining the duplicate wrapper and checked-core planar host preparation"
+      },
+      {
+        "id": "persistent-host-direct-bgra",
+        "mode": 1,
+        "purpose": "direct BGRA8 packing into persistent ncnn host Mats with no wrapper planar workspace"
+      },
+      {
+        "id": "persistent-vulkan-staged",
+        "mode": 2,
+        "purpose": "direct BGRA8 fill into persistent mapped Vulkan staging with persistent ncnn allocators, command state, and fixed pre/postprocess device buffers; remains a synchronized host round trip"
+      }
+    ],
+    "gpuRoundTripDefinition": "Host steady-clock time around ncnn command setup, host-to-device upload, model execution, synchronized device-to-host download, and allocator work; not a Vulkan timestamp or kernel-only result.",
+    "persistentVulkanFixedMemoryEstimate": {
+      "mappedStagingMiB": 71.19,
+      "deviceBuffersMiB": 100.72,
+      "cpuHostOutputMiB": 23.73,
+      "excludes": "model, graph workspace, allocator block slack, and ordinary process memory"
+    },
+    "gpuNativeInputStatus": "unsupported in this spike: the pinned ncnn runtime has no Windows D3D11/Win32 external-memory import and synchronization boundary for these frames"
+  },
+  "performanceGates": [
+    {
+      "sourceFps": 24,
+      "targetFps": 48,
+      "p95LimitMs": 33.0
+    },
+    {
+      "sourceFps": 30,
+      "targetFps": 60,
+      "p95LimitMs": 27.0
+    }
+  ],
+  "releasePolicy": "Do not add this DLL, model, or its dependencies to Store or portable artifacts until conversion provenance and the complete redistribution inventory are closed."
+}
