@@ -48,11 +48,18 @@ Exit criteria:
 
 Locate or reserve `PlainVideo` in Partner Center before freezing package identity. The current Partner Center reservation state has not been checked. Do not invent `Identity Name` or `Publisher`; copy both values exactly from Partner Center.
 
-Add native release metadata:
+PlainVideo now has an original transparent master, a repository PNG/ICO size
+set, an icon embedded in `plainvideo.exe`, matching large/small native-window
+icons, a documented 300 x 300 app-tile candidate, and additional listing-art
+candidates. Poster and box art are currently documented by Microsoft as game
+fields rather than app fields, so applicable destinations must be confirmed in
+PlainVideo's actual Partner Center listing. The remaining native release
+metadata is:
 
-- Windows application icon and version resources in `plainvideo.exe`;
+- Windows version resources in `plainvideo.exe`;
 - stable product/publisher/company fields;
 - four-part Store package version mapped from the Cargo version;
+- MSIX package logo resources mapped from the existing icon master;
 - `Package.appxmanifest` for a full-trust desktop executable;
 - `runFullTrust` only as required for the packaged Win32 process;
 - `Windows.Desktop` target family and a minimum OS version chosen from actual Windows 10/11 tests;
@@ -144,7 +151,7 @@ Submission, certification, and publication are distinct states. Update `STORE_RE
 | S1 — Runtime closure | Reproducible distributable libmpv/FFmpeg profile | Blocked by license/build inventory |
 | S2 — Package proof | Partner identity, assets, manifest, x64 developer MSIX | Not started |
 | S3 — Installed-app proof | WACK, host/Sandbox, activation/update/uninstall | Not started |
-| S4 — Listing readiness | Privacy/support/source pages and localized captures | Not started |
+| S4 — Listing readiness | Privacy/support/source pages and localized captures | Artwork candidates prepared; applicable fields, pages, and screenshots not verified |
 | S5 — Partner Center flight | Exact package uploaded to a limited audience | Not started |
 | S6 — Public release | Certification passed and availability verified independently | Not started |
 
@@ -152,6 +159,6 @@ Submission, certification, and publication are distinct states. Update `STORE_RE
 
 1. Build and inventory an LGPL-compatible libmpv/FFmpeg candidate.
 2. Check whether `PlainVideo` is already reserved in Partner Center; reserve it if needed and record the exact identity values.
-3. Create original app icon/logo assets and the MSIX manifest template.
+3. Create the MSIX manifest template and map package logo resources from the icon master.
 4. Add deterministic Store-package build, install, WACK, and uninstall scripts.
-5. Publish privacy/support/source pages and produce separate Korean/English listing media.
+5. Confirm applicable artwork fields in the actual app listing, publish privacy/support/source pages, and produce separate Korean/English screenshots.

@@ -32,19 +32,19 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     DestroyMenu, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
     GetMessageW, GetSystemMetrics, GetWindowLongPtrW, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT,
     HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HWND_NOTOPMOST,
-    HWND_TOPMOST, IDC_ARROW, IDC_HAND, IDC_SIZEALL, IsZoomed, KillTimer, LoadCursorW, MF_CHECKED,
-    MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MINMAXINFO, MSG, PostQuitMessage,
-    RegisterClassExW, SIZE_MINIMIZED, SM_CXSCREEN, SM_CYSCREEN, SW_MAXIMIZE, SW_MINIMIZE,
-    SW_RESTORE, SW_SHOW, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetForegroundWindow, SetTimer,
-    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowCursor, ShowWindow, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP, WM_CANCELMODE, WM_CAPTURECHANGED,
-    WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES, WM_DWMCOMPOSITIONCHANGED,
-    WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST,
-    WM_NCPAINT, WM_PAINT, WM_QUIT, WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WNDCLASSEXW,
-    WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
-    WS_THICKFRAME,
+    HWND_TOPMOST, IDC_ARROW, IDC_HAND, IDC_SIZEALL, IMAGE_ICON, IsZoomed, KillTimer, LR_SHARED,
+    LoadCursorW, LoadImageW, MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MINMAXINFO,
+    MSG, PostQuitMessage, RegisterClassExW, SIZE_MINIMIZED, SM_CXICON, SM_CXSCREEN, SM_CXSMICON,
+    SM_CYICON, SM_CYSCREEN, SM_CYSMICON, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW,
+    SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+    SWP_NOZORDER, SetCursor, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos,
+    SetWindowTextW, ShowCursor, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    TranslateMessage, WM_APP, WM_CANCELMODE, WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU,
+    WM_DESTROY, WM_DPICHANGED, WM_DROPFILES, WM_DWMCOMPOSITIONCHANGED, WM_ERASEBKGND,
+    WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCPAINT, WM_PAINT,
+    WM_QUIT, WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES,
+    WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
 use crate::locale::{Locale, UiText};
@@ -62,6 +62,7 @@ use crate::windowing::{
 
 const WM_APP_RENDER_ERROR: u32 = WM_APP + 1;
 const WM_APP_MPV_EVENT: u32 = WM_APP + 2;
+const APP_ICON_RESOURCE_ID: usize = 101;
 const TIMER_SINGLE_CLICK: usize = 1;
 const TIMER_DIAGNOSTIC_REPLACE: usize = 2;
 const TIMER_DIAGNOSTIC_EXIT: usize = 3;
@@ -1545,6 +1546,30 @@ impl Window {
         }
         let class_name = wide("PlainVideo.RenderSurface");
         let title = wide("PlainVideo");
+        let icon_name = APP_ICON_RESOURCE_ID as *const u16;
+        let large_icon = unsafe {
+            LoadImageW(
+                instance,
+                icon_name,
+                IMAGE_ICON,
+                GetSystemMetrics(SM_CXICON),
+                GetSystemMetrics(SM_CYICON),
+                LR_SHARED,
+            )
+        };
+        let small_icon = unsafe {
+            LoadImageW(
+                instance,
+                icon_name,
+                IMAGE_ICON,
+                GetSystemMetrics(SM_CXSMICON),
+                GetSystemMetrics(SM_CYSMICON),
+                LR_SHARED,
+            )
+        };
+        if large_icon.is_null() || small_icon.is_null() {
+            return Err("PlainVideo could not load its Windows icon resource.".to_string());
+        }
         let class = WNDCLASSEXW {
             cbSize: size_of::<WNDCLASSEXW>() as u32,
             style: CS_OWNDC | CS_DBLCLKS,
@@ -1552,12 +1577,12 @@ impl Window {
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: instance,
-            hIcon: ptr::null_mut(),
+            hIcon: large_icon,
             hCursor: unsafe { LoadCursorW(ptr::null_mut(), IDC_ARROW) },
             hbrBackground: ptr::null_mut(),
             lpszMenuName: ptr::null(),
             lpszClassName: class_name.as_ptr(),
-            hIconSm: ptr::null_mut(),
+            hIconSm: small_icon,
         };
         if unsafe { RegisterClassExW(&class) } == 0 {
             return Err("PlainVideo could not register its native window class.".to_string());

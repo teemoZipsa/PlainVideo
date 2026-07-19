@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "observedAt": "2026-07-19T00:59:25+09:00",
+  "observedAt": "2026-07-19T08:51:29+09:00",
   "status": "planning",
   "repository": {
     "nameWithOwner": "teemoZipsa/PlainVideo",
     "visibility": "public",
     "defaultBranch": "master",
-    "baselineCommit": "784dbbc6b50854d98dad82bc37f3d716e30bdc00",
+    "baselineCommit": "3416a7bce91a25f290779112620ce00681940dd6",
     "githubActionsRepositoryPermission": "enabled",
     "localWorkflowCount": 0,
     "workflowPolicy": "Do not add, dispatch, rerun, or broaden workflows without explicit user approval."
@@ -47,8 +47,8 @@
   "blockingGates": [
     "The pinned libmpv runtime is developer-only and lacks an approved redistribution profile.",
     "The Partner Center reservation state has not been checked and no exact package identity or publisher is recorded.",
-    "No MSIX manifest, app identity resources, Store logos, or deterministic Store packaging flow exists.",
+    "The original icon is embedded in the EXE and listing-art candidates are prepared, but no MSIX manifest, package-logo mapping, applicable Partner Center artwork-field confirmation, identity mapping, or deterministic Store packaging flow exists.",
     "No WACK, developer-signed installed-package, update, uninstall, or clean-VM package proof exists.",
-    "No public privacy/support pages or rights-cleared bilingual Store screenshots exist."
+    "A documented 300 x 300 app-tile candidate and additional artwork candidates are prepared, but applicable listing fields, public privacy/support pages, and rights-cleared bilingual Store screenshots have not been verified."
   ]
 }
