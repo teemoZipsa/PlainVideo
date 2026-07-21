@@ -35,8 +35,11 @@ function Get-CargoVersion {
     return $version.Groups[1].Value
 }
 
-$buildArguments = @('-ForStoreUpload', '-NoSign')
-if ($SkipBuild) { $buildArguments += '-SkipBuild' }
+$buildArguments = @{
+    ForStoreUpload = $true
+    NoSign = $true
+}
+if ($SkipBuild) { $buildArguments.SkipBuild = $true }
 & (Join-Path $PSScriptRoot 'build-msix.ps1') @buildArguments
 if ($LASTEXITCODE -ne 0) { throw 'Store MSIX staging failed.' }
 
