@@ -1,6 +1,6 @@
 # Microsoft Store listing draft
 
-Status: product name reserved; Submission 1 bilingual copy is saved; localized screenshots are generated and visually verified locally but not uploaded or submitted
+Status: Submission 1 is in certification; bilingual copy, four localized screenshots per locale, poster art, box art, app tile, and applicable logo fields are saved in Partner Center
 
 Keep the two locales as separate Partner Center listing entries. Do not paste Korean and English into one field.
 
@@ -90,9 +90,9 @@ PlainVideo는 로컬 재생을 위한 앱입니다. 광고, 계정, 추천 피�
 - MKV
 - 미디어 플레이어
 
-## Planned listing media
+## Submitted listing media
 
-Prepared language-neutral Store artwork candidates:
+Uploaded Store artwork:
 
 - `assets/store-listing/upload/<locale>/poster-1440x2160.png`
 - `assets/store-listing/upload/<locale>/box-art-2160x2160.png`
@@ -103,11 +103,10 @@ Prepared language-neutral Store artwork candidates:
 The `en-US` and `ko-KR` poster/box-art copies are identical because they contain
 only the `PlainVideo` product name.
 
-The 300 x 300 app tile is documented for apps. Microsoft's current MSIX listing
-guidance describes poster and box art as game fields, and the exact use of the
-150 x 150 and 71 x 71 candidates has not been verified in PlainVideo's Partner
-Center listing. Do not count those files as submission-ready fields until the
-actual listing confirms an applicable destination.
+PlainVideo's live Partner Center listing exposed destinations for poster art,
+box art, app tile, 150 x 150, and 71 x 71 Store images. Both locales received
+poster, box, app-tile, and 150 x 150 assets; the English listing also received
+the optional 71 x 71 asset. Package logos remain available as the fallback.
 
 Rights-cleared 1600×900 PNG captures have been generated separately for each
 locale from PlainVideo and repository-generated deterministic smoke media:
@@ -121,4 +120,4 @@ Shared logos and non-text art belong under `assets/store-listing/upload/shared`.
 Localized screenshots live under `assets/store-listing/upload/en-US/screenshots`
 and `assets/store-listing/upload/ko-KR/screenshots`. Regenerate them from the
 final clean release commit before upload and keep the recorded SHA-256 evidence
-with the release record.
+with the release record. All eight were uploaded before certification submission.

@@ -1,7 +1,7 @@
 # Microsoft Store release plan
 
 Date: 2026-07-21
-Status: Partner Center product, identity, and Submission 1 draft created; no package upload, certification request, or public Store release exists
+Status: Submission 1 is in certification (pre-processing, step 2 of 4); manual publication hold is active and no public Microsoft Store release exists
 
 ## Product decision
 
@@ -27,7 +27,9 @@ Official references:
 
 ## Release gate 0: distributable playback runtime
 
-This is the current blocking gate. The pinned `shinchiro/mpv-winbuild-cmake` binary is conservatively treated as GPL-2.0-or-later and is explicitly marked developer-only. It must not enter an MSIX or public portable release yet.
+The original pinned `shinchiro/mpv-winbuild-cmake` binary remains conservatively
+treated as GPL-2.0-or-later and developer-only. Release 0.1.0 instead uses the
+separate approved shared-LGPL runtime profile with public corresponding source.
 
 Choose and document one legally reviewed route:
 
@@ -148,16 +150,16 @@ Submission, certification, and publication are distinct states. Update `STORE_RE
 | Milestone | Outcome | Current state |
 |---|---|---|
 | S0 — Store plan | Distribution choice, gates, bilingual listing draft, state file | Complete |
-| S1 — Runtime closure | Shared-libmpv candidate built, host-tested, and clean-Windows-11-Sandbox-tested | Publisher accepted residual worldwide codec-patent risk; exact source publication and selected Windows 10 minimum-image proof remain |
-| S2 — Package proof | Partner identity, assets, manifest, x64 developer MSIX | Developer MSIX built, signed, installed, and smoke-tested; Store upload remains gated |
-| S3 — Installed-app proof | WACK, host/Sandbox, activation/update/uninstall | Full host validation, local WACK PASS, installed smoke, and clean Windows 11 Sandbox exact-candidate proof complete; final clean-commit rebuild and update/uninstall evidence remain |
-| S4 — Listing readiness | Privacy/support/source pages and localized captures | Privacy/support/source files and eight localized 1600×900 captures are prepared locally; public URLs and Partner Center uploads remain |
-| S5 — Partner Center flight | Exact package uploaded to a limited audience | Not started |
+| S1 — Runtime closure | Shared-libmpv candidate built, host-tested, and clean-Windows-11-Sandbox-tested | Complete; corresponding source is public and publisher accepted residual worldwide codec-patent risk; selected Windows 10 minimum-image proof remains a documented limitation |
+| S2 — Package proof | Partner identity, assets, manifest, x64 developer MSIX | Complete; Store MSIX `0.1.0.0` validated by Partner Center and matching developer package passed signing/install checks |
+| S3 — Installed-app proof | WACK, host/Sandbox, activation/update/uninstall | Complete for a first release; full host validation, WACK PASS, Sandbox proof, activation, uninstall, and reinstall passed; prior-version update is not applicable |
+| S4 — Listing readiness | Privacy/support/source pages and localized captures | Complete; public pages and eight localized screenshots plus listing art were uploaded |
+| S5 — Partner Center flight | Exact package uploaded and submitted | In certification; pre-processing step 2 of 4 |
 | S6 — Public release | Certification passed and availability verified independently | Not started |
 
 ## Immediate next work
 
-1. Commit and publish the exact release source plus corresponding-source bundle after the publisher's recorded multimedia-patent/territory acceptance.
-2. Verify the privacy, support, notice, and source-offer pages at their final public URLs.
-3. Rebuild the Store package and portable ZIP from that clean commit, repeat final WACK/install/uninstall checks, and preserve the Windows 10 minimum-image limitation explicitly.
-4. Upload the package and eight verified localized screenshots, complete certification notes, and submit with the existing manual-publish hold.
+1. Monitor Submission 1 until certification passes or returns an actionable report.
+2. If certification passes, review the certified package status and use the existing manual `Publish now` control.
+3. Verify the public Store page and installation independently before changing the release state to Store-live.
+4. Preserve the selected Windows 10 minimum-image limitation until a real Windows 10 test image is exercised.

@@ -1,12 +1,13 @@
 {
   "schemaVersion": 1,
-  "observedAt": "2026-07-21T21:50:00+09:00",
-  "status": "release-source-publication-approved",
+  "observedAt": "2026-07-21T22:21:00+09:00",
+  "status": "partner-center-in-certification-pre-processing",
   "repository": {
     "nameWithOwner": "teemoZipsa/PlainVideo",
     "visibility": "public",
     "defaultBranch": "master",
     "baselineCommit": "731a612e798173664a3f053508dd79c0ba70b985",
+    "releaseCommit": "dd50e369330f095df962e80d4f1b7a8fecc21fe5",
     "githubActionsRepositoryPermission": "enabled",
     "localWorkflowCount": 0,
     "workflowPolicy": "Do not add, dispatch, rerun, or broaden workflows without explicit user approval."
@@ -30,7 +31,7 @@
     "telemetry": false
   },
   "partnerCenter": {
-    "status": "submission-1-in-draft",
+    "status": "submission-1-in-certification",
     "productNameReserved": true,
     "productName": "PlainVideo",
     "storeId": "9PDKQ88FKG1L",
@@ -41,33 +42,56 @@
     "packageFamilyName": "SeonkyuIM.PlainVideo_9c7j90kvgvwr0",
     "submissionId": "1152921505701456708",
     "pricingAndAvailability": "complete-worldwide-free",
-    "properties": "complete-photo-and-video-no-personal-information",
+    "properties": "complete-photo-and-video-public-privacy-policy",
     "ageRatings": "complete-iarc-3-plus",
-    "packages": "incomplete-no-store-package-uploaded",
+    "packages": "complete-validated-plainvideo-0.1.0.0-x64-store-msix",
     "storeListings": {
-      "status": "local-screenshots-ready-not-uploaded",
+      "status": "complete-bilingual-listings-and-media-uploaded",
       "locales": [
         "en-US",
         "ko-KR"
       ],
       "copySaved": true,
-      "screenshotsUploaded": false,
+      "screenshotsUploaded": true,
       "localScreenshotCount": 8,
       "localScreenshotSize": "1600x900",
-      "localEvidence": ".runtime/store-screenshots.json"
+      "localEvidence": ".runtime/store-screenshots.json",
+      "uploadedScreenshotCount": 8,
+      "uploadedAdditionalMedia": {
+        "en-US": [
+          "poster-1440x2160",
+          "box-art-2160x2160",
+          "app-tile-300x300",
+          "store-logo-150x150",
+          "store-logo-71x71"
+        ],
+        "ko-KR": [
+          "poster-1440x2160",
+          "box-art-2160x2160",
+          "app-tile-300x300",
+          "store-logo-150x150"
+        ]
+      }
     },
     "submissionOptions": "complete-hold-for-manual-publish-after-certification",
-    "certificationStatus": null,
-    "publicationStatus": null
+    "certificationNotes": "saved-and-reload-verified-no-credentials-required",
+    "certificationStatus": "in-certification-pre-processing-step-2-of-4",
+    "publicationStatus": "manual-publish-hold-not-public"
   },
   "localPackageEvidence": {
-    "status": "developer-proof-not-for-redistribution",
+    "status": "final-store-upload-candidate-and-signed-developer-proof",
     "packageVersion": "0.1.0.0",
-    "packageSha256": "ed316c238c7f70c9bd19c6964cf63d3449003683a265bdd86942baf75ae8d818",
-    "payloadFileCount": 43,
+    "packageSha256": "12a8db7565e95b8c38b2384f2868df0b888baa358a7c70201e9758f95fb3bee7",
+    "packageSizeBytes": 18406312,
+    "payloadFileCount": 66,
+    "storePackageSignature": "unsigned-for-microsoft-store-signing",
+    "signedDeveloperPackageSha256": "6bbc0467acf5788c9635308ee296754068d452d0feec8de0baf77039e88eb6f4",
     "signatureValidated": true,
     "installedPackageFullName": "SeonkyuIM.PlainVideo_0.1.0.0_x64__9c7j90kvgvwr0",
     "installedSmokePlayback": "passed",
+    "finalInstalledActivation": "passed",
+    "uninstallReinstall": "passed",
+    "updateValidation": "not-applicable-first-release-no-lower-version-package",
     "fullIntegratedValidation": {
       "status": "passed",
       "summary": ".runtime/validation/integrated/20260721-210120-533/summary.json",
@@ -83,29 +107,30 @@
     },
     "wack": {
       "overallResult": "PASS",
-      "reportSha256": "08773c97fb6ef2e9664271ce1f03c83a593eee67d7f9b2092758442a4f6cb2c1"
+      "reportSha256": "ea6b3bb68cee6ea8f506817c678b7d2bf2b3637c49cf5c3fd5391d85c7bd0f9b"
     },
     "correspondingSource": {
-      "status": "materialized-source-bundle-candidate",
+      "status": "public-release-asset-verified-http-200",
       "packageCount": 14,
       "directSourceArchiveCount": 10,
       "bundleSizeBytes": 268325686,
       "bundleSha256": "3e3089757120c42aa632d1683481df522a9989ab016c242f1509a38d3c8ffad8",
-      "inventorySha256": "025c6c0bc2d831d1543954d1b570380b129fcbc950fb9aaa39545a7f04272805"
+      "inventorySha256": "025c6c0bc2d831d1543954d1b570380b129fcbc950fb9aaa39545a7f04272805",
+      "url": "https://github.com/teemoZipsa/PlainVideo/releases/download/v0.1.0/PlainVideo-0.1.0-corresponding-source.tar.zst"
     }
   },
   "release": {
     "eligible": true,
     "publisherRiskDecision": "accepted-free-worldwide-distribution-2026-07-21",
-    "packageVersion": null,
-    "packageSha256": null,
-    "nextMilestone": "publish-source-before-binary-build"
+    "packageVersion": "0.1.0.0",
+    "packageSha256": "12a8db7565e95b8c38b2384f2868df0b888baa358a7c70201e9758f95fb3bee7",
+    "portableSha256": "92c6cbf8ab30c8a80bbcd48b757293f41e6e32c46ddbba0c0b86a47fa08c5a03",
+    "githubRelease": "https://github.com/teemoZipsa/PlainVideo/releases/tag/v0.1.0",
+    "nextMilestone": "certification-completion-then-manual-publication"
   },
   "blockingGates": [
-    "The publisher accepted the residual multimedia-patent and worldwide territorial distribution risk for free distribution. The 24-DLL runtime has exact direct and transitive source, recipe, patch, license, and source-offer engineering material, but the source bundle URL is not public yet.",
-    "Partner Center product PlainVideo and Submission 1 are in draft. Pricing, properties, IARC 3+ age ratings, bilingual listing copy, and manual publishing hold are saved, but no package or screenshots have been uploaded and the submission has not been sent for certification.",
-    "The manifest, deterministic MSIX build, developer signing, installation, playback smoke, file associations, full host validation, WACK, and clean Windows 11 Sandbox exact-candidate proof pass locally. Release source publication is approved; the Store build remains fail-closed until its public URL responds successfully. A clean final commit, Store-upload package, and final update/uninstall test remain.",
-    "Privacy and support files plus eight rights-cleared bilingual screenshots exist locally, but the pages are not public at their final URLs and the screenshots must be regenerated from the final clean commit before upload.",
+    "Submission 1 is in Partner Center certification at pre-processing step 2 of 4. Certification has not passed and the Microsoft Store listing is not public.",
+    "Publishing is held for a manual Publish now action after certification, so certification completion will not automatically make the Store release public.",
     "The selected Windows 10 minimum-image proof remains open."
   ]
 }
