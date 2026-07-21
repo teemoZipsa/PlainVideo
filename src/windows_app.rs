@@ -134,6 +134,7 @@ enum WindowControl {
     Theme,
     Pin,
     Minimize,
+    Fullscreen,
     Close,
 }
 
@@ -143,7 +144,6 @@ enum PlaybackControl {
     Seek,
     Volume,
     Subtitles,
-    Fullscreen,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -159,7 +159,6 @@ struct PlaybackLayout {
     seek: RECT,
     volume: RECT,
     subtitles: RECT,
-    fullscreen: RECT,
 }
 
 impl PlaybackControl {
@@ -169,7 +168,6 @@ impl PlaybackControl {
             Self::Seek => "seek",
             Self::Volume => "volume",
             Self::Subtitles => "subtitles",
-            Self::Fullscreen => "fullscreen",
         }
     }
 }
@@ -189,6 +187,7 @@ impl WindowControl {
             Self::Theme => "theme",
             Self::Pin => "pin",
             Self::Minimize => "minimize",
+            Self::Fullscreen => "fullscreen",
             Self::Close => "close",
         }
     }
@@ -749,16 +748,16 @@ impl App {
             PressedControl::Playback(PlaybackControl::PlayPause),
             PressedControl::Playback(PlaybackControl::Volume),
             PressedControl::Playback(PlaybackControl::Subtitles),
-            PressedControl::Playback(PlaybackControl::Fullscreen),
             PressedControl::Window(WindowControl::Theme),
             PressedControl::Window(WindowControl::Pin),
             PressedControl::Window(WindowControl::Minimize),
+            PressedControl::Window(WindowControl::Fullscreen),
             PressedControl::Window(WindowControl::Close),
         ];
         let order = if self.has_media {
             &ORDER[..]
         } else {
-            &ORDER[4..]
+            &ORDER[3..]
         };
         let current = self
             .keyboard_focus
@@ -797,7 +796,6 @@ impl App {
                         PlaybackControl::Seek => rect_center(layout.seek),
                         PlaybackControl::Volume => rect_center(layout.volume),
                         PlaybackControl::Subtitles => rect_center(layout.subtitles),
-                        PlaybackControl::Fullscreen => rect_center(layout.fullscreen),
                     })
                     .unwrap_or(POINT { x: 0, y: 0 });
                 self.activate_playback_control(hwnd, control, point);
@@ -826,6 +824,7 @@ impl App {
                 self.save_window_bounds_if_restorable(hwnd);
                 unsafe { ShowWindow(hwnd, SW_MINIMIZE) };
             }
+            WindowControl::Fullscreen => self.toggle_fullscreen(hwnd),
             WindowControl::Close => {
                 self.save_window_bounds_if_restorable(hwnd);
                 unsafe { PostQuitMessage(0) };
@@ -1115,9 +1114,6 @@ impl App {
                 }
             }
             PlaybackControl::Subtitles => self.show_subtitle_menu(hwnd),
-            PlaybackControl::Fullscreen => {
-                self.toggle_fullscreen(hwnd);
-            }
         }
     }
 
@@ -2137,7 +2133,7 @@ fn window_control_at_point(client_width: i32, point: POINT, dpi: u32) -> Option<
     let size = scale_metric(WINDOW_CONTROL_SIZE, dpi);
     let gap = scale_metric(WINDOW_CONTROL_GAP, dpi);
     let margin = scale_metric(WINDOW_CONTROL_MARGIN, dpi);
-    let total_width = size * 4 + gap * 3;
+    let total_width = size * 5 + gap * 4;
     let left = client_width - margin - total_width;
     if client_width <= total_width + margin * 2
         || point.y < margin
@@ -2158,7 +2154,8 @@ fn window_control_at_point(client_width: i32, point: POINT, dpi: u32) -> Option<
         0 => Some(WindowControl::Theme),
         1 => Some(WindowControl::Pin),
         2 => Some(WindowControl::Minimize),
-        3 => Some(WindowControl::Close),
+        3 => Some(WindowControl::Fullscreen),
+        4 => Some(WindowControl::Close),
         _ => None,
     }
 }
@@ -2202,7 +2199,7 @@ fn playback_layout_for_size(width: i32, height: i32, dpi: u32) -> Option<Playbac
     let maximum_width = scale_metric(PLAYBACK_BAR_MAX_WIDTH, dpi);
     let bar_width = (width - outer_margin * 2).min(maximum_width);
     let minimum_seek_width = scale_metric(32, dpi);
-    let fixed_width = button * 3 + gap * 4 + inner_margin * 2 + minimum_seek_width;
+    let fixed_width = button * 2 + gap * 3 + inner_margin * 2 + minimum_seek_width;
     let available_volume_width = bar_width - fixed_width;
     let volume_width = available_volume_width.min(scale_metric(PLAYBACK_VOLUME_MAX_WIDTH, dpi));
     if bar_width <= 0
@@ -2224,8 +2221,7 @@ fn playback_layout_for_size(width: i32, height: i32, dpi: u32) -> Option<Playbac
     let inner_left = bar.left + inner_margin;
     let inner_right = bar.right - inner_margin;
     let play_pause = rect_from_xywh(inner_left, control_top, button, button);
-    let fullscreen = rect_from_xywh(inner_right - button, control_top, button, button);
-    let subtitles = rect_from_xywh(fullscreen.left - gap - button, control_top, button, button);
+    let subtitles = rect_from_xywh(inner_right - button, control_top, button, button);
     let volume = rect_from_xywh(
         subtitles.left - gap - volume_width,
         control_top,
@@ -2244,7 +2240,6 @@ fn playback_layout_for_size(width: i32, height: i32, dpi: u32) -> Option<Playbac
         seek,
         volume,
         subtitles,
-        fullscreen,
     })
 }
 
@@ -2255,7 +2250,6 @@ fn playback_control_at(hwnd: HWND, point: POINT, dpi: u32) -> Option<PlaybackCon
         (PlaybackControl::Seek, layout.seek),
         (PlaybackControl::Volume, layout.volume),
         (PlaybackControl::Subtitles, layout.subtitles),
-        (PlaybackControl::Fullscreen, layout.fullscreen),
     ]
     .into_iter()
     .find_map(|(control, rect)| rect_contains(rect, point).then_some(control))
@@ -2711,16 +2705,20 @@ mod tests {
     #[test]
     fn plainview_style_window_controls_are_top_right_only() {
         assert_eq!(
-            window_control_at_point(1280, POINT { x: 1133, y: 27 }, 96),
+            window_control_at_point(1280, POINT { x: 1093, y: 27 }, 96),
             Some(WindowControl::Theme)
         );
         assert_eq!(
-            window_control_at_point(1280, POINT { x: 1173, y: 27 }, 96),
+            window_control_at_point(1280, POINT { x: 1133, y: 27 }, 96),
             Some(WindowControl::Pin)
         );
         assert_eq!(
-            window_control_at_point(1280, POINT { x: 1213, y: 27 }, 96),
+            window_control_at_point(1280, POINT { x: 1173, y: 27 }, 96),
             Some(WindowControl::Minimize)
+        );
+        assert_eq!(
+            window_control_at_point(1280, POINT { x: 1213, y: 27 }, 96),
+            Some(WindowControl::Fullscreen)
         );
         assert_eq!(
             window_control_at_point(1280, POINT { x: 1253, y: 27 }, 96),
@@ -2730,6 +2728,17 @@ mod tests {
             window_control_at_point(1280, POINT { x: 640, y: 27 }, 96),
             None
         );
+
+        let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
+        let playback_controls = lua
+            .split_once("local function draw_playback_controls")
+            .and_then(|(_, rest)| rest.split_once("local function draw_status"))
+            .map(|(body, _)| body)
+            .expect("bottom playback controls");
+        assert!(lua.contains(
+            "local controls = { \"theme\", \"pin\", \"minimize\", \"fullscreen\", \"close\" }"
+        ));
+        assert!(!playback_controls.contains("fullscreen"));
     }
 
     #[test]
@@ -2758,7 +2767,6 @@ mod tests {
                 assert!(layout.play_pause.right <= layout.seek.left);
                 assert!(layout.seek.right <= layout.volume.left);
                 assert!(layout.volume.right <= layout.subtitles.left);
-                assert!(layout.subtitles.right <= layout.fullscreen.left);
                 assert!(layout.seek.right - layout.seek.left + tolerance >= scale_metric(32, dpi));
             }
         }
@@ -2814,14 +2822,16 @@ mod tests {
         let minimum_width = minimum.volume.right - minimum.volume.left;
         let regular_width = regular.volume.right - regular.volume.left;
 
-        assert_eq!(minimum_width, PLAYBACK_VOLUME_MIN_WIDTH);
+        assert!(minimum_width >= PLAYBACK_VOLUME_MIN_WIDTH);
         assert_eq!(regular_width, PLAYBACK_VOLUME_MAX_WIDTH);
-        assert!(regular_width > minimum_width * 2);
+        assert!(regular_width > minimum_width);
         let (track_left, track_right) = volume_track_bounds(&regular, 96);
         assert!(track_right - track_left >= 80);
 
         let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
         assert!(lua.contains("tooltip_label = string.format(\"%s %d%%\""));
+        assert!(lua.contains("tooltip_width_for(tooltip_label"));
+        assert!(!lua.contains("math.min(px(150)"));
         assert!(!lua.contains("0–100%%"));
     }
 

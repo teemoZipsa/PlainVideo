@@ -46,13 +46,13 @@ PlainVideo's custom-drawn ASS overlay does not yet expose a custom UI Automation
 | Capture | Save screenshot | `S` | Requests a video screenshot from libmpv. |
 | App | Close | `Q` or `Alt+F4` | Closes PlainVideo. |
 
-Pointer equivalents remain available: click the video to play or pause, double-click for fullscreen, use the mouse wheel for volume, drag the seek bar, click the speaker icon to mute, click or drag the adjacent volume track, and right-click for open, retry, previous/next, audio, subtitle, and close actions.
+Pointer equivalents remain available: click the video to play or pause, double-click or use the top-right button for fullscreen, use the mouse wheel for volume, drag the seek bar, click the speaker icon to mute, click or drag the adjacent volume track, and right-click for open, retry, previous/next, audio, subtitle, and close actions.
 
 ## 100-200% scaling expectations
 
 - The minimum client target remains 280×240 logical pixels and scales to the current monitor DPI in physical pixels.
 - The full-width window-move region remains 56 logical pixels high. Visible playback and window controls must stay client hit targets rather than drag targets.
-- Window buttons use a 34 logical-pixel tile. Playback buttons use a 36 logical-pixel tile, and the combined speaker/volume target expands from 72×36 to 152×36 logical pixels as space permits, with the current percentage shown at regular window sizes.
+- Window buttons use a 34 logical-pixel tile. Playback buttons use a 36 logical-pixel tile, and the combined speaker/volume target remains at least 72×36 and expands to 152×36 logical pixels as space permits, with the current percentage shown at regular window sizes.
 - The playback bar has a bounded maximum width. At compact sizes, secondary time labels and nonessential hints may disappear before any functional control is clipped or overlapped.
 - Primary and secondary are the only text-size tiers. Text sizing is calculated from logical viewport size, per-monitor DPI, and Windows text scale rather than treating physical pixels as logical pixels.
 - Both Korean and English layouts must remain within the client area at 100%, 125%, 150%, 175%, and 200% scale. A difference of at most two physical pixels is rounding, not a layout overflow.

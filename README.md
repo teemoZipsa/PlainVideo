@@ -37,7 +37,7 @@ Display synchronization and AI frame generation are intentionally treated as dif
 - Translucent feedback and a compact playback bar that appear only after pointer/input activity; no permanent toolbar
 - A pointer that hides after 1.6 seconds during playback and returns on mouse movement
 - A full-width invisible 56 px top move zone with a move cursor and no visible handle
-- PlainView-style top-right theme, always-on-top, minimize, and close controls, plus transient play, seek, volume-slider/mute, subtitle, and fullscreen controls
+- PlainView-style top-right theme, always-on-top, minimize, fullscreen, and close controls, plus transient play, seek, volume-slider/mute, and subtitle controls
 - Physical-pixel window placement across monitors, DPI-scaled 280×240 minimum sizing, and DWM border suppression with the native shadow retained
 - Automatic discovery of same-name external SRT subtitles, plus contextual subtitle and audio-track selection and external subtitle loading
 - A localized empty state with no Korean/English mixing and a `Ctrl+O` open path

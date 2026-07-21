@@ -140,6 +140,15 @@ local function type_size(tier, width, height)
     return math.floor(TYPE_SIZE[tier] * viewport_scale * accessibility_scale * safe_ui_scale + 0.5)
 end
 
+local function tooltip_width_for(value, font_size, maximum_width)
+    local units = 0
+    for character in tostring(value or ""):gmatch("[^\128-\191][\128-\191]*") do
+        units = units + (#character == 1 and 0.56 or 1.0)
+    end
+    local content_width = math.ceil(units * font_size)
+    return math.min(maximum_width, math.max(px(48), content_width + px(18)))
+end
+
 local function ass_escape(value)
     return tostring(value or "")
         :gsub("\\", "\\\\")
@@ -611,6 +620,19 @@ local function draw_minimize_icon(center_x, center_y, palette)
     )
 end
 
+local function draw_fullscreen_icon(center_x, center_y, palette)
+    local outer, inner = px(10), px(4)
+    local path = string.format(
+        "m %d %d l %d %d %d %d m %d %d l %d %d %d %d " ..
+        "m %d %d l %d %d %d %d m %d %d l %d %d %d %d",
+        center_x - outer, center_y - inner, center_x - outer, center_y - outer, center_x - inner, center_y - outer,
+        center_x + inner, center_y - outer, center_x + outer, center_y - outer, center_x + outer, center_y - inner,
+        center_x - outer, center_y + inner, center_x - outer, center_y + outer, center_x - inner, center_y + outer,
+        center_x + inner, center_y + outer, center_x + outer, center_y + outer, center_x + outer, center_y + inner
+    )
+    return path_event(path, palette.text, "&H08&")
+end
+
 local function draw_window_controls(width, height)
     if height < px(60) then
         return ""
@@ -619,13 +641,13 @@ local function draw_window_controls(width, height)
     local size = px(34)
     local gap = px(6)
     local margin = px(10)
-    local total_width = size * 4 + gap * 3
+    local total_width = size * 5 + gap * 4
     if width <= total_width + margin * 2 then
         return ""
     end
     local left = width - margin - total_width
     local top = margin
-    local controls = { "theme", "pin", "minimize", "close" }
+    local controls = { "theme", "pin", "minimize", "fullscreen", "close" }
     local events = {}
 
     for index, name in ipairs(controls) do
@@ -659,6 +681,8 @@ local function draw_window_controls(width, height)
             table.insert(events, draw_pin_icon(center_x, center_y - 1, palette))
         elseif name == "minimize" then
             table.insert(events, draw_minimize_icon(center_x, center_y, palette))
+        elseif name == "fullscreen" then
+            table.insert(events, draw_fullscreen_icon(center_x, center_y, palette))
         else
             table.insert(events, draw_close_icon(center_x, center_y, palette))
         end
@@ -666,7 +690,8 @@ local function draw_window_controls(width, height)
 
     local tooltip_control = window_control_hover ~= "none" and window_control_hover or focused_control
     if tooltip_control == "theme" or tooltip_control == "pin"
-        or tooltip_control == "minimize" or tooltip_control == "close" then
+        or tooltip_control == "minimize" or tooltip_control == "fullscreen"
+        or tooltip_control == "close" then
         local label
         local index
         if tooltip_control == "theme" then
@@ -678,11 +703,15 @@ local function draw_window_controls(width, height)
         elseif tooltip_control == "minimize" then
             label = copy.minimize
             index = 3
+        elseif tooltip_control == "fullscreen" then
+            label = copy.fullscreen
+            index = 4
         else
             label = copy.close
-            index = 4
+            index = 5
         end
-        local tooltip_width = math.min(px(150), width - margin * 2)
+        local tooltip_size = type_size("secondary", width, height)
+        local tooltip_width = tooltip_width_for(label, tooltip_size, width - margin * 2)
         local center_x = left + (index - 1) * (size + gap) + math.floor(size / 2)
         center_x = clamp(center_x, math.floor(tooltip_width / 2) + margin, width - math.floor(tooltip_width / 2) - margin)
         local tooltip_top = top + size + px(7)
@@ -693,7 +722,7 @@ local function draw_window_controls(width, height)
             px(8), palette.panel, palette.panel_alpha
         ))
         table.insert(events, text_event(
-            5, center_x, tooltip_top + math.floor(tooltip_height / 2), type_size("secondary", width, height),
+            5, center_x, tooltip_top + math.floor(tooltip_height / 2), tooltip_size,
             palette.text, "&H08&", false, label
         ))
     end
@@ -738,19 +767,6 @@ local function draw_speaker_icon(center_x, center_y, palette)
     return table.concat(events, "\n")
 end
 
-local function draw_fullscreen_icon(center_x, center_y, palette)
-    local outer, inner = px(10), px(4)
-    local path = string.format(
-        "m %d %d l %d %d %d %d m %d %d l %d %d %d %d " ..
-        "m %d %d l %d %d %d %d m %d %d l %d %d %d %d",
-        center_x - outer, center_y - inner, center_x - outer, center_y - outer, center_x - inner, center_y - outer,
-        center_x + inner, center_y - outer, center_x + outer, center_y - outer, center_x + outer, center_y - inner,
-        center_x - outer, center_y + inner, center_x - outer, center_y + outer, center_x - inner, center_y + outer,
-        center_x + inner, center_y + outer, center_x + outer, center_y + outer, center_x + outer, center_y + inner
-    )
-    return path_event(path, palette.text, "&H08&")
-end
-
 local function append_control_tile(events, name, left, top, right, bottom, palette)
     local background = palette.surface
     local alpha = palette.surface_alpha
@@ -774,7 +790,7 @@ local function draw_playback_controls(width, height)
     local gap = px(6)
     local inner_margin = px(10)
     local bar_width = math.min(width - outer_margin * 2, px(860))
-    local fixed_width = button * 3 + gap * 4 + inner_margin * 2 + px(32)
+    local fixed_width = button * 2 + gap * 3 + inner_margin * 2 + px(32)
     local volume_width = math.min(px(152), bar_width - fixed_width)
     local minimum_width = fixed_width + volume_width
     if volume_width + px(3) < px(72) or bar_width < minimum_width
@@ -791,8 +807,7 @@ local function draw_playback_controls(width, height)
     local inner_left = left + inner_margin
     local inner_right = right - inner_margin
     local play_left = inner_left
-    local fullscreen_left = inner_right - button
-    local subtitle_left = fullscreen_left - gap - button
+    local subtitle_left = inner_right - button
     local volume_left = subtitle_left - gap - volume_width
     local seek_left = play_left + button + gap
     local seek_right = volume_left - gap
@@ -812,7 +827,6 @@ local function draw_playback_controls(width, height)
     append_control_tile(events, "play", play_left, control_top, play_left + button, control_top + button, palette)
     append_control_tile(events, "volume", volume_left, control_top, volume_left + volume_width, control_top + button, palette)
     append_control_tile(events, "subtitles", subtitle_left, control_top, subtitle_left + button, control_top + button, palette)
-    append_control_tile(events, "fullscreen", fullscreen_left, control_top, fullscreen_left + button, control_top + button, palette)
 
     if seekable and duration > 0 then
         table.insert(events, box_event(track_left, track_top, track_right, track_bottom, px(2), palette.track, "&H58&"))
@@ -851,7 +865,6 @@ local function draw_playback_controls(width, height)
         type_size("secondary", width, height), subtitle_active and palette.accent or palette.text,
         "&H08&", true, "CC"
     ))
-    table.insert(events, draw_fullscreen_icon(fullscreen_left + math.floor(button / 2), center_y, palette))
     if seekable and seek_right - seek_left >= px(180) then
         local label_y = top + px(42)
         table.insert(events, text_event(4, seek_left + px(4), label_y,
@@ -872,19 +885,17 @@ local function draw_playback_controls(width, height)
     elseif tooltip_name == "subtitles" then
         tooltip_label = copy.subtitles
         tooltip_center = subtitle_left + math.floor(button / 2)
-    elseif tooltip_name == "fullscreen" then
-        tooltip_label = copy.fullscreen
-        tooltip_center = fullscreen_left + math.floor(button / 2)
     end
     if tooltip_label and top >= px(42) then
-        local tooltip_width = math.min(px(150), width - outer_margin * 2)
+        local tooltip_size = type_size("secondary", width, height)
+        local tooltip_width = tooltip_width_for(tooltip_label, tooltip_size, width - outer_margin * 2)
         tooltip_center = clamp(tooltip_center, math.floor(tooltip_width / 2) + outer_margin,
             width - math.floor(tooltip_width / 2) - outer_margin)
         table.insert(events, box_event(tooltip_center - math.floor(tooltip_width / 2), top - px(36),
             tooltip_center + math.floor(tooltip_width / 2), top - px(6), px(8),
             palette.panel, palette.panel_alpha))
         table.insert(events, text_event(5, tooltip_center, top - px(21),
-            type_size("secondary", width, height), palette.text, "&H08&", false, tooltip_label))
+            tooltip_size, palette.text, "&H08&", false, tooltip_label))
     end
     return table.concat(events, "\n")
 end
