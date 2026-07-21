@@ -85,7 +85,7 @@ const PLAYBACK_BAR_MARGIN: i32 = 12;
 const PLAYBACK_BUTTON_SIZE: i32 = 36;
 const PLAYBACK_BUTTON_GAP: i32 = 6;
 const PLAYBACK_VOLUME_MIN_WIDTH: i32 = 72;
-const PLAYBACK_VOLUME_MAX_WIDTH: i32 = 152;
+const PLAYBACK_VOLUME_MAX_WIDTH: i32 = 144;
 const MENU_OPEN: usize = 100;
 const MENU_PREVIOUS: usize = 101;
 const MENU_CLOSE: usize = 102;
@@ -2279,12 +2279,12 @@ fn seek_track_bounds(layout: &PlaybackLayout, dpi: u32) -> (i32, i32) {
 fn volume_track_bounds(layout: &PlaybackLayout, dpi: u32) -> (i32, i32) {
     let width = layout.volume.right - layout.volume.left;
     let trailing = if width >= scale_metric(104, dpi) {
-        scale_metric(42, dpi)
+        scale_metric(38, dpi)
     } else {
         scale_metric(6, dpi)
     };
     (
-        layout.volume.left + scale_metric(30, dpi),
+        layout.volume.left + scale_metric(26, dpi),
         layout.volume.right - trailing,
     )
 }
