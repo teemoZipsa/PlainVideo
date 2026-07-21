@@ -20,9 +20,9 @@ use windows_sys::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    GetDoubleClickTime, GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT,
-    TrackMouseEvent, VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_F, VK_F6, VK_LEFT, VK_NEXT, VK_O, VK_PRIOR,
-    VK_RETURN, VK_RIGHT, VK_S, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
+    GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
+    VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_F, VK_F6, VK_LEFT, VK_NEXT, VK_O, VK_PRIOR, VK_RETURN,
+    VK_RIGHT, VK_S, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
 };
 use windows_sys::Win32::UI::Shell::{
     DragAcceptFiles, DragFinish, DragQueryFileW, HDROP, ShellExecuteW,
@@ -72,6 +72,7 @@ const TIMER_DIAGNOSTIC_EXIT: usize = 3;
 const TIMER_HIDE_CURSOR: usize = 4;
 const TIMER_RESUME_PROGRESS: usize = 5;
 const TIMER_SEEK_PREVIEW: usize = 6;
+const SURFACE_CLICK_DELAY_MS: u32 = 100;
 const RESUME_SAVE_INTERVAL_MS: u32 = 10_000;
 const CURSOR_HIDE_DELAY_MS: u32 = 1_600;
 const SEEK_PREVIEW_DELAY_MS: u32 = 120;
@@ -174,6 +175,34 @@ struct PreviewCandidate {
     owner_right: i32,
 }
 
+#[derive(Clone, Copy)]
+struct PendingSurfaceClick {
+    paused_before: bool,
+    executed: bool,
+}
+
+impl PendingSurfaceClick {
+    fn new(paused_before: bool) -> Self {
+        Self {
+            paused_before,
+            executed: false,
+        }
+    }
+
+    fn execute(&mut self) -> bool {
+        if self.executed {
+            false
+        } else {
+            self.executed = true;
+            true
+        }
+    }
+
+    fn restore_after_double_click(self) -> Option<bool> {
+        self.executed.then_some(self.paused_before)
+    }
+}
+
 impl PlaybackControl {
     fn message_name(self) -> &'static str {
         match self {
@@ -261,6 +290,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         locale,
         suppress_click: false,
         ignore_unpaired_button_up: false,
+        pending_surface_click: None,
         cursor_hidden: false,
         window_controls_visible: false,
         hovered_control: None,
@@ -350,6 +380,7 @@ struct App {
     locale: Locale,
     suppress_click: bool,
     ignore_unpaired_button_up: bool,
+    pending_surface_click: Option<PendingSurfaceClick>,
     cursor_hidden: bool,
     window_controls_visible: bool,
     hovered_control: Option<WindowControl>,
@@ -1751,6 +1782,7 @@ unsafe extern "system" fn window_proc(
             if let Some(app) = app {
                 app.suppress_click = true;
                 app.ignore_unpaired_button_up = true;
+                app.pending_surface_click = None;
                 app.pressed_control = None;
                 app.volume_drag_active = false;
                 app.last_seek_drag = None;
@@ -1763,6 +1795,7 @@ unsafe extern "system" fn window_proc(
             if let Some(app) = app {
                 app.suppress_click = true;
                 app.ignore_unpaired_button_up = true;
+                app.pending_surface_click = None;
                 unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
             }
             0
@@ -1905,6 +1938,8 @@ unsafe extern "system" fn window_proc(
         }
         WM_LBUTTONDOWN => {
             if let Some(app) = app {
+                unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
+                app.pending_surface_click = None;
                 app.ignore_unpaired_button_up = false;
                 app.clear_keyboard_focus();
                 let point = client_point(lparam);
@@ -1947,6 +1982,7 @@ unsafe extern "system" fn window_proc(
                 if app.ignore_unpaired_button_up {
                     app.ignore_unpaired_button_up = false;
                     app.suppress_click = false;
+                    app.pending_surface_click = None;
                     unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
                     return 0;
                 }
@@ -1999,13 +2035,15 @@ unsafe extern "system" fn window_proc(
                 }
                 if app.suppress_click {
                     app.suppress_click = false;
+                    app.pending_surface_click = None;
                     unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
                     return 0;
                 }
-            }
-            unsafe {
-                KillTimer(hwnd, TIMER_SINGLE_CLICK);
-                SetTimer(hwnd, TIMER_SINGLE_CLICK, GetDoubleClickTime(), None);
+                app.pending_surface_click = Some(PendingSurfaceClick::new(app.player.is_paused()));
+                unsafe {
+                    KillTimer(hwnd, TIMER_SINGLE_CLICK);
+                    SetTimer(hwnd, TIMER_SINGLE_CLICK, SURFACE_CLICK_DELAY_MS, None);
+                }
             }
             0
         }
@@ -2015,6 +2053,7 @@ unsafe extern "system" fn window_proc(
                 app.volume_drag_active = false;
                 app.last_seek_drag = None;
                 app.suppress_click = false;
+                app.pending_surface_click = None;
                 app.sync_window_controls();
             }
             0
@@ -2022,6 +2061,12 @@ unsafe extern "system" fn window_proc(
         WM_LBUTTONDBLCLK => {
             unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
             if let Some(app) = app {
+                if let Some(click) = app.pending_surface_click.take() {
+                    if let Some(paused) = click.restore_after_double_click() {
+                        let paused = if paused { "yes" } else { "no" };
+                        app.command(&["set", "pause", paused]);
+                    }
+                }
                 app.suppress_click = true;
                 let point = client_point(lparam);
                 if window_control_at_point(
@@ -2040,6 +2085,7 @@ unsafe extern "system" fn window_proc(
         WM_EXITSIZEMOVE => {
             if let Some(app) = app {
                 app.suppress_click = false;
+                app.pending_surface_click = None;
                 app.pressed_control = None;
                 app.volume_drag_active = false;
                 app.last_seek_drag = None;
@@ -2071,7 +2117,12 @@ unsafe extern "system" fn window_proc(
             match wparam {
                 TIMER_SINGLE_CLICK => {
                     if let Some(app) = app {
-                        if !app.ignore_unpaired_button_up {
+                        let should_toggle = !app.ignore_unpaired_button_up
+                            && app
+                                .pending_surface_click
+                                .as_mut()
+                                .is_some_and(PendingSurfaceClick::execute);
+                        if should_toggle {
                             app.binding("plainvideo/toggle-pause");
                         }
                     }
@@ -2891,6 +2942,17 @@ mod tests {
             .expect("button release handling");
         assert!(button_up.contains("if app.ignore_unpaired_button_up"));
         assert!(button_up.contains("return 0"));
+    }
+
+    #[test]
+    fn surface_click_is_fast_and_reconciles_with_double_click_fullscreen() {
+        let mut click = PendingSurfaceClick::new(false);
+        assert!(click.execute());
+        assert!(!click.execute());
+        assert_eq!(click.restore_after_double_click(), Some(false));
+
+        let fast_double_click = PendingSurfaceClick::new(false);
+        assert_eq!(fast_double_click.restore_after_double_click(), None);
     }
 
     #[test]
