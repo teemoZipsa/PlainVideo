@@ -2790,6 +2790,35 @@ mod tests {
     }
 
     #[test]
+    fn tab_toggles_media_info_without_toggling_playback() {
+        let source = include_str!("windows_app.rs");
+        let tab_branch = source
+            .split_once("if key == VK_TAB")
+            .and_then(|(_, rest)| rest.split_once("let shift ="))
+            .map(|(body, _)| body)
+            .expect("Tab key branch");
+
+        assert!(tab_branch.contains("app.toggle_media_info();"));
+        assert!(tab_branch.contains("return;"));
+        assert!(!tab_branch.contains("toggle-pause"));
+    }
+
+    #[test]
+    fn media_info_uses_an_unobscured_left_aligned_diagnostic_overlay() {
+        let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
+        let media_info = lua
+            .split_once("local function draw_media_info")
+            .and_then(|(_, rest)| rest.split_once("local function draw_idle"))
+            .map(|(body, _)| body)
+            .expect("media information renderer");
+
+        assert!(media_info.contains("outlined_text_event(7, padding"));
+        assert!(!media_info.contains("box_event("));
+        assert!(!media_info.contains("right_x"));
+        assert!(!media_info.contains("left + px(500)"));
+    }
+
+    #[test]
     fn wheel_delta_preserves_signed_high_word() {
         assert_eq!(wheel_delta((120_u32 as usize) << 16), 120);
         assert_eq!(wheel_delta(((u16::MAX - 119) as usize) << 16), -120);

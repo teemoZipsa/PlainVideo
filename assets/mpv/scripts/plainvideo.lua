@@ -48,6 +48,8 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     audio = "오디오",
     subtitle = "자막",
     speed = "속도",
+    queue = "재생목록",
+    position = "재생 위치",
     none = "없음",
     software = "소프트웨어",
 } or {
@@ -72,6 +74,8 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     audio = "Audio",
     subtitle = "Subtitles",
     speed = "Speed",
+    queue = "Queue",
+    position = "Position",
     none = "None",
     software = "Software",
 }
@@ -213,6 +217,20 @@ local function text_event(alignment, x, y, size, color, alpha, bold, value)
     )
 end
 
+local function outlined_text_event(alignment, x, y, size, color, bold, value)
+    return string.format(
+        "{\\an%d\\pos(%d,%d)\\fnSegoe UI Variable\\fs%d\\b%d\\bord2\\shad0" ..
+        "\\1c%s\\1a&H00&\\3c&H101010&\\3a&H10&}%s",
+        alignment,
+        x,
+        y,
+        size,
+        bold and 1 or 0,
+        color,
+        ass_escape(value)
+    )
+end
+
 local function clipped_text_event(alignment, x, y, size, color, alpha, bold, value,
     left, top, right, bottom)
     return string.format("{\\clip(%d,%d,%d,%d)}%s", left, top, right, bottom,
@@ -258,18 +276,10 @@ end
 
 local function draw_media_info(width, height)
     local palette = theme_palette()
-    local left = px(12)
-    local top = px(12)
-    local right = math.min(width - px(12), left + px(500))
-    if right - left < px(160) then
-        return ""
-    end
-
-    local title_height = px(30)
-    local row_height = px(23)
-    local padding = px(14)
-    local bottom = math.min(height - px(12), top + padding * 2 + title_height + row_height * 6)
-    if bottom - top < px(120) then
+    local padding = math.max(px(18), math.floor(width * 0.015))
+    local top = math.max(px(18), math.floor(height * 0.025))
+    local bottom = height - math.max(px(54), math.floor(height * 0.06))
+    if width < px(180) or bottom - top < px(120) then
         return ""
     end
 
@@ -281,6 +291,9 @@ local function draw_media_info(width, height)
     local video_height = mp.get_property_number("video-params/h", 0)
     local fps = mp.get_property_number("container-fps",
         mp.get_property_number("estimated-vf-fps", 0))
+    local pixel_format = first_nonempty(mp.get_property("video-params/pixelformat"), copy.none)
+    local color_primaries = first_nonempty(mp.get_property("video-params/primaries"), "")
+    local color_transfer = first_nonempty(mp.get_property("video-params/gamma"), "")
     local decoder = uppercase(mp.get_property("hwdec-current", ""), copy.software)
     local audio_track = selected_track("audio")
     local audio_codec = uppercase(mp.get_property("audio-codec-name",
@@ -301,6 +314,7 @@ local function draw_media_info(width, height)
         end
     end
     local speed = mp.get_property_number("speed", 1)
+    local percent = duration > 0 and clamp(position / duration * 100, 0, 100) or 0
 
     local video_parts = { video_codec }
     if video_width > 0 and video_height > 0 then
@@ -313,30 +327,71 @@ local function draw_media_info(width, height)
     if channels and channels ~= "" then table.insert(audio_parts, channels) end
     if sample_rate > 0 then table.insert(audio_parts, decimal(sample_rate / 1000, 1) .. " kHz") end
 
+    local video_detail_parts = { pixel_format }
+    if color_primaries ~= "" then table.insert(video_detail_parts, color_primaries) end
+    if color_transfer ~= "" and color_transfer ~= color_primaries then
+        table.insert(video_detail_parts, color_transfer)
+    end
+
+    -- Keep the picture unobscured and lay readable diagnostics directly over
+    -- its upper-left edge, like a traditional player/debug information view.
     local lines = {
-        string.format("%d / %d · %s / %s", media_queue_position, media_queue_count,
-            format_time(position), format_time(duration)),
-        copy.video .. "  " .. table.concat(video_parts, " · "),
-        copy.decoder .. "  " .. decoder,
-        copy.audio .. "  " .. table.concat(audio_parts, " · "),
-        copy.subtitle .. "  " .. subtitle,
-        copy.speed .. "  " .. decimal(speed, 2) .. "×",
+        {
+            color = palette.text,
+            bold = false,
+            value = string.format("%s  %s / %s  (%.1f%%)", copy.position,
+                format_time(position), format_time(duration), percent),
+        },
+        {
+            color = palette.secondary,
+            bold = false,
+            value = string.format("%s  %d / %d   ·   %s  %s×", copy.queue,
+                media_queue_position, media_queue_count, copy.speed, decimal(speed, 2)),
+        },
+        { gap = true },
+        {
+            color = palette.text,
+            bold = true,
+            value = copy.video .. "  " .. table.concat(video_parts, " · "),
+        },
+        {
+            color = palette.secondary,
+            bold = false,
+            value = "Input  " .. table.concat(video_detail_parts, " · "),
+        },
+        {
+            color = palette.secondary,
+            bold = false,
+            value = copy.decoder .. "  " .. decoder,
+        },
+        { gap = true },
+        {
+            color = palette.text,
+            bold = true,
+            value = copy.audio .. "  " .. table.concat(audio_parts, " · "),
+        },
+        {
+            color = palette.secondary,
+            bold = false,
+            value = copy.subtitle .. "  " .. subtitle,
+        },
     }
 
+    local title_size = type_size("primary", width, height) + px(2)
+    local body_size = type_size("secondary", width, height) + px(2)
+    local row_height = math.max(px(26), body_size + px(8))
     local events = {
-        box_event(left, top, right, bottom, px(12), palette.panel, "&H28&"),
-        clipped_text_event(7, left + padding, top + padding,
-            type_size("primary", width, height), palette.text, "&H00&", true,
-            filename, left + padding, top + padding, right - padding, bottom - padding),
+        outlined_text_event(7, padding, top, title_size, palette.accent, true, filename),
     }
-    local line_y = top + padding + title_height
+    local line_y = top + math.max(px(38), title_size + px(11))
     for _, line in ipairs(lines) do
-        if line_y + row_height <= bottom - px(4) then
-            table.insert(events, clipped_text_event(7, left + padding, line_y,
-                type_size("secondary", width, height), palette.secondary, "&H08&", false,
-                line, left + padding, top + padding, right - padding, bottom - padding))
+        if line.gap then
+            line_y = line_y + math.floor(row_height * 0.45)
+        elseif line_y + row_height <= bottom then
+            table.insert(events, outlined_text_event(7, padding, line_y, body_size,
+                line.color, line.bold, line.value))
+            line_y = line_y + row_height
         end
-        line_y = line_y + row_height
     end
     return table.concat(events, "\n")
 end
