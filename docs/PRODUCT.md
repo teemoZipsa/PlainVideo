@@ -16,7 +16,7 @@ During ordinary playback, the window contains only:
 
 Actual input reveals only the feedback needed for that action:
 
-- play or pause briefly shows a centered glyph;
+- play or pause briefly shows a centered glyph for the action currently available, matching the bottom play/pause control;
 - seeking briefly shows current time, duration, and a thin progress line;
 - volume adjustment briefly shows a percentage;
 - the empty surface shows one localized drop hint.

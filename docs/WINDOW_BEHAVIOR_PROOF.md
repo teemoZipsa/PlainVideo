@@ -1,6 +1,6 @@
 # Windows window-behavior proof
 
-Date: 2026-07-19
+Date: 2026-07-20
 Status: locally verified on the current two-monitor Windows machine; pre-alpha, not distributable
 
 ## Scope
@@ -13,7 +13,7 @@ This pass ports the current PlainView window-behavior principles into PlainVideo
 - Minimized, maximized, fullscreen, and effectively off-screen rectangles never replace the last valid normal bounds. A window must retain at least a 48×48 physical-pixel overlap with one current work area to be restorable.
 - Media-size resize preserves the current position first, fits the video within 90% of the current monitor work area, honors the DPI-scaled minimum, then clamps the result into that work area. Two physical pixels or less are treated as DPI rounding, not real overflow.
 - The frameless window uses an opaque `WS_POPUP | WS_THICKFRAME` surface with minimize/maximize/system styles, no layered transparency, `DWMWA_BORDER_COLOR = DWMWA_COLOR_NONE`, a one-pixel `DwmExtendFrameIntoClientArea` margin, and `WM_NCCALCSIZE` client extension. This removes the visible DWM border while retaining native composition and shadow behavior.
-- The top 56 logical pixels across the full client width are an invisible native `HTCAPTION` move zone. There is no dot handle or move button. The zone uses `IDC_SIZEALL`, and entering it reveals the transient overlays.
+- When no media is loaded, the entire non-control client surface is an invisible native `HTCAPTION` move zone, so the empty window can be moved from anywhere. During playback and on the playback-error surface, the move zone remains limited to the top 56 logical pixels across the full client width. There is no dot handle or move button. The zone uses `IDC_SIZEALL`, and entering it reveals the transient overlays.
 - Top-right theme, pin, minimize, and close controls, plus bottom play/pause, seek, speaker/volume, subtitle, and fullscreen controls, return `HTCLIENT` and cannot start a window drag. Native mouse capture routes an outside mouse-up back to the window, and capture is also cleared on `WM_CAPTURECHANGED` and `WM_CANCELMODE`, so a boundary crossing cannot leave an interaction locked.
 - The baseline minimum is 280×240 logical pixels and scales with `GetDpiForWindow`. Overlay geometry has a DPI-scaled maximum width, a compact seek-track fallback, and only two text tiers. Text scaling is capped progressively at narrow widths so a 200% preference does not clip the controls.
 

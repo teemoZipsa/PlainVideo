@@ -998,7 +998,10 @@ end
 local function toggle_pause()
     local paused = not mp.get_property_bool("pause", false)
     mp.set_property_bool("pause", paused)
-    show_feedback(paused and "pause" or "play", 0.65)
+    -- Match the transient center glyph to the bottom control: both show the
+    -- action available now, rather than mixing the completed action with the
+    -- next action.
+    show_feedback(paused and "play" or "pause", 0.65)
 end
 
 local function seek(seconds)

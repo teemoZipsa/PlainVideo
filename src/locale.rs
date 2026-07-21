@@ -28,6 +28,8 @@ pub struct UiText {
     pub save_screenshot: &'static str,
     pub open_file_location: &'static str,
     pub fullscreen: &'static str,
+    pub about: &'static str,
+    pub about_details: &'static str,
     pub close: &'static str,
     pub file_dialog_title: &'static str,
     pub media_files: &'static str,
@@ -62,6 +64,8 @@ const KOREAN: UiText = UiText {
     save_screenshot: "스크린샷 저장\tS",
     open_file_location: "파일 위치 열기",
     fullscreen: "전체 화면\tF",
+    about: "PlainVideo 정보…",
+    about_details: "로컬 영상을 재생하는 오픈 소스 플레이어입니다.\n\n개인정보: 계정, 광고, 원격 측정 없음\n재생 엔진: mpv, FFmpeg 및 관련 오픈 소스 라이브러리\n\n소스 및 라이선스:\nhttps://github.com/teemoZipsa/PlainVideo\n\n개인정보 처리방침:\nhttps://github.com/teemoZipsa/PlainVideo/blob/master/PRIVACY.md\n\n지원:\nhttps://github.com/teemoZipsa/PlainVideo/blob/master/SUPPORT.md",
     close: "닫기\tAlt+F4",
     file_dialog_title: "영상 열기",
     media_files: "미디어 파일",
@@ -96,6 +100,8 @@ const ENGLISH: UiText = UiText {
     save_screenshot: "Save screenshot\tS",
     open_file_location: "Open file location",
     fullscreen: "Full screen\tF",
+    about: "About PlainVideo…",
+    about_details: "An open-source player for local video files.\n\nPrivacy: no account, ads, or telemetry\nPlayback engine: mpv, FFmpeg, and related open-source libraries\n\nSource and licenses:\nhttps://github.com/teemoZipsa/PlainVideo\n\nPrivacy policy:\nhttps://github.com/teemoZipsa/PlainVideo/blob/master/PRIVACY.md\n\nSupport:\nhttps://github.com/teemoZipsa/PlainVideo/blob/master/SUPPORT.md",
     close: "Close\tAlt+F4",
     file_dialog_title: "Open video",
     media_files: "Media files",
@@ -191,6 +197,8 @@ mod tests {
             assert!(!text.save_screenshot.is_empty());
             assert!(!text.open_file_location.is_empty());
             assert!(!text.fullscreen.is_empty());
+            assert!(!text.about.is_empty());
+            assert!(!text.about_details.is_empty());
             assert!(!text.close.is_empty());
             assert!(!text.file_dialog_title.is_empty());
             assert!(!text.media_files.is_empty());

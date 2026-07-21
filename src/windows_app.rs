@@ -33,18 +33,19 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetMessageW, GetSystemMetrics, GetWindowLongPtrW, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT,
     HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HWND_NOTOPMOST,
     HWND_TOPMOST, IDC_ARROW, IDC_HAND, IDC_SIZEALL, IMAGE_ICON, IsZoomed, KillTimer, LR_SHARED,
-    LoadCursorW, LoadImageW, MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MINMAXINFO,
-    MSG, PostQuitMessage, RegisterClassExW, SIZE_MINIMIZED, SM_CXICON, SM_CXSCREEN, SM_CXSMICON,
-    SM_CYICON, SM_CYSCREEN, SM_CYSMICON, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW,
-    SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
-    SWP_NOZORDER, SetCursor, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos,
-    SetWindowTextW, ShowCursor, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
-    TranslateMessage, WM_APP, WM_CANCELMODE, WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU,
-    WM_DESTROY, WM_DPICHANGED, WM_DROPFILES, WM_DWMCOMPOSITIONCHANGED, WM_ERASEBKGND,
-    WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCPAINT, WM_PAINT,
-    WM_QUIT, WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES,
-    WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    LoadCursorW, LoadImageW, MB_ICONINFORMATION, MB_OK, MF_CHECKED, MF_GRAYED, MF_POPUP,
+    MF_SEPARATOR, MF_STRING, MINMAXINFO, MSG, MessageBoxW, PostQuitMessage, RegisterClassExW,
+    SIZE_MINIMIZED, SM_CXICON, SM_CXSCREEN, SM_CXSMICON, SM_CYICON, SM_CYSCREEN, SM_CYSMICON,
+    SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetForegroundWindow,
+    SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowCursor, ShowWindow,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP, WM_CANCELMODE,
+    WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES,
+    WM_DWMCOMPOSITIONCHANGED, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_KEYDOWN,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE,
+    WM_NCCALCSIZE, WM_NCHITTEST, WM_NCPAINT, WM_PAINT, WM_QUIT, WM_SETCURSOR, WM_SETTINGCHANGE,
+    WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_MAXIMIZEBOX,
+    WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
 use crate::locale::{Locale, UiText};
@@ -90,6 +91,7 @@ const MENU_SCREENSHOT: usize = 106;
 const MENU_OPEN_LOCATION: usize = 107;
 const MENU_FULLSCREEN: usize = 108;
 const MENU_RESTART: usize = 109;
+const MENU_ABOUT: usize = 110;
 const MENU_SUBTITLE_OFF: usize = 200;
 const MENU_SUBTITLE_OPEN: usize = 201;
 const MENU_AUDIO_OFF: usize = 300;
@@ -1179,6 +1181,7 @@ impl App {
         let save_screenshot = wide(text.save_screenshot);
         let open_file_location_label = wide(text.open_file_location);
         let fullscreen = wide(text.fullscreen);
+        let about = wide(text.about);
         let close = wide(text.close);
         let current_speed = self.player.playback_speed();
         unsafe {
@@ -1320,6 +1323,7 @@ impl App {
                 AppendMenuW(menu, MF_STRING, MENU_FULLSCREEN, fullscreen.as_ptr());
             }
             AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
+            AppendMenuW(menu, MF_STRING, MENU_ABOUT, about.as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_CLOSE, close.as_ptr());
             SetForegroundWindow(hwnd);
             let mut point: POINT = mem::zeroed();
@@ -1365,6 +1369,7 @@ impl App {
                     }
                 }
                 MENU_FULLSCREEN => self.toggle_fullscreen(hwnd),
+                MENU_ABOUT => show_about(hwnd, text),
                 MENU_SUBTITLE_OFF => {
                     self.disable_subtitles_ui();
                 }
@@ -1683,8 +1688,7 @@ unsafe extern "system" fn window_proc(
                     if events.file_loaded {
                         app.apply_pending_resume();
                     }
-                    if events.media_ready {
-                        app.has_media = true;
+                    if events.media_ready && app.has_media {
                         app.clear_playback_error();
                         app.resize_to_pending_media(hwnd);
                     }
@@ -2274,10 +2278,27 @@ fn hit_test_client(hwnd: HWND, point: POINT, app: &App) -> LRESULT {
     {
         return HTCLIENT as LRESULT;
     }
-    if !app.fullscreen && move_zone_contains_point(width, point, app.dpi) {
+    let idle_surface = !app.has_media && !app.playback_error_visible;
+    if !app.fullscreen
+        && draggable_surface_contains_point(width, height, point, app.dpi, idle_surface)
+    {
         HTCAPTION as LRESULT
     } else {
         HTCLIENT as LRESULT
+    }
+}
+
+fn draggable_surface_contains_point(
+    client_width: i32,
+    client_height: i32,
+    point: POINT,
+    dpi: u32,
+    idle_surface: bool,
+) -> bool {
+    if idle_surface {
+        point.x >= 0 && point.x < client_width && point.y >= 0 && point.y < client_height
+    } else {
+        move_zone_contains_point(client_width, point, dpi)
     }
 }
 
@@ -2569,6 +2590,23 @@ fn audio_track_label(text: &UiText, track: &AudioTrack, index: usize) -> String 
     label
 }
 
+fn show_about(hwnd: HWND, text: &UiText) {
+    let title = wide(&format!("PlainVideo {}", env!("CARGO_PKG_VERSION")));
+    let details = wide(&format!(
+        "PlainVideo {}\n\n{}",
+        env!("CARGO_PKG_VERSION"),
+        text.about_details
+    ));
+    unsafe {
+        MessageBoxW(
+            hwnd,
+            details.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONINFORMATION,
+        );
+    }
+}
+
 fn set_locale_environment(locale: Locale) {
     unsafe { env::set_var("PLAINVIDEO_LOCALE", locale.canonical_tag()) };
 }
@@ -2614,6 +2652,49 @@ mod tests {
         assert!(move_zone_contains_point(1280, POINT { x: 1279, y: 55 }, 96));
         assert!(!move_zone_contains_point(1280, POINT { x: 640, y: 56 }, 96));
         assert!(move_zone_contains_point(2560, POINT { x: 10, y: 111 }, 192));
+    }
+
+    #[test]
+    fn idle_surface_is_draggable_across_the_client_area() {
+        assert!(draggable_surface_contains_point(
+            1280,
+            720,
+            POINT { x: 640, y: 360 },
+            96,
+            true
+        ));
+        assert!(draggable_surface_contains_point(
+            1280,
+            720,
+            POINT { x: 10, y: 700 },
+            96,
+            true
+        ));
+        assert!(!draggable_surface_contains_point(
+            1280,
+            720,
+            POINT { x: 1280, y: 360 },
+            96,
+            true
+        ));
+    }
+
+    #[test]
+    fn playback_surface_keeps_the_top_only_move_zone() {
+        assert!(draggable_surface_contains_point(
+            1280,
+            720,
+            POINT { x: 640, y: 40 },
+            96,
+            false
+        ));
+        assert!(!draggable_surface_contains_point(
+            1280,
+            720,
+            POINT { x: 640, y: 360 },
+            96,
+            false
+        ));
     }
 
     #[test]
@@ -2699,6 +2780,13 @@ mod tests {
 
         assert!(redraw.contains("overlay.data = table.concat"));
         assert!(!redraw.contains("overlay:remove()"));
+    }
+
+    #[test]
+    fn centered_play_pause_feedback_matches_the_available_action() {
+        let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
+        assert!(lua.contains("show_feedback(paused and \"play\" or \"pause\", 0.65)"));
+        assert!(!lua.contains("show_feedback(paused and \"pause\" or \"play\", 0.65)"));
     }
 
     #[test]
