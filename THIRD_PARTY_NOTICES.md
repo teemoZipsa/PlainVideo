@@ -19,24 +19,44 @@ mpv is GPL-2.0-or-later by default and can be built under LGPL-2.1-or-later only
 
 This runtime is a **developer dependency only**. It must not be copied into a PlainVideo release until the exact build configuration, complete component inventory, corresponding source offer, and redistribution notices have been reviewed and checked in.
 
-## Shared libmpv redistribution candidate
+## PlainVideo 0.1.0 shared libmpv release candidate
 
 [`third_party/lgpl-libmpv-profile.json`](third_party/lgpl-libmpv-profile.json)
 pins a separate Windows x64 source-build candidate for mpv, FFmpeg,
 libplacebo, and libass. It asks FFmpeg to disable GPL, nonfree, and version-3
 options and builds shared DLLs, while mpv uses `gpl=false` and exposes only
-`libmpv`. The candidate build, package lock, runtime hashes, copied direct
-license texts, and dependency closure evidence are generated only under the
-ignored `.runtime/lgpl-libmpv` directory.
+`libmpv`. The candidate build, package lock, runtime hashes, copied license
+texts, and dependency closure evidence are generated under the ignored
+`.runtime/lgpl-libmpv` directory.
 
-`capture-lgpl-runtime-closure.ps1 -MaterializeEvidence` can bind the staged
-DLLs to observed MSYS2 package archives/signatures, package license payloads,
-and pinned direct source archives under the ignored local evidence directory.
-That capture is not a release approval or a redistribution notice set. In
-particular, the complete transitive source/recipe and patch set, LuaJIT source
-and license material, codec patent review, LGPL relinking/source-delivery
-requirements, and a legal distribution disposition remain open. No candidate
-DLL may enter a public portable or Store package until those gates are closed.
+The 24-DLL closure has been bound to the exact direct sources or MSYS2 binary
+packages. The 0.1.0 corresponding-source bundle additionally retains every
+official MSYS2 source-only package, exact recipe commit and patch, all direct
+source/submodule archives, build arguments, and a SHA-256 inventory. LuaJIT's
+upstream MIT `COPYRIGHT` is included separately because its binary MSYS2
+package omitted a `share/licenses` payload. See `SOURCE_OFFER.md` for the
+publication location and three-year fallback offer.
+
+The staged runtime components and selected terms are:
+
+- mpv — LGPL-2.1-or-later candidate with `gpl=false`;
+- FFmpeg — LGPL-2.1-or-later candidate built without GPL, nonfree, or
+  version-3 options;
+- libplacebo — LGPL-2.1-or-later;
+- libass — ISC;
+- Brotli and LuaJIT — MIT;
+- bzip2, libpng, PCRE2, and zlib — their permissive project licenses;
+- FreeType — FreeType License (FTL) option;
+- FriBidi, GLib, Graphite2, and the distributed libiconv/libintl runtime
+  portions — LGPL-2.1-or-later;
+- HarfBuzz — MIT;
+- libc++ — Apache-2.0 with LLVM exception.
+
+Every copied license text remains authoritative over this summary. The
+engineering source and notice set is complete. The publisher accepted the
+remaining multimedia-patent and worldwide distribution risk on 2026-07-21;
+that decision is not a legal opinion that no patents apply. See
+`docs/RUNTIME_DISTRIBUTION_REVIEW.md`.
 
 ## RIFE performance-spike dependencies
 

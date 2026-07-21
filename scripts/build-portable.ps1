@@ -58,10 +58,15 @@ if (-not (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf)) {
 $runtimeManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw | ConvertFrom-Json
 $runtimeManifestHash = (Get-FileHash -LiteralPath $runtimeManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $runtimeInputs = [System.Collections.Generic.List[object]]::new()
-$runtimeStatus = [string]$runtimeManifest.status
+$runtimeStatus = if ($null -ne $runtimeManifest.PSObject.Properties['status']) {
+    [string]$runtimeManifest.status
+}
+else {
+    'developer-only'
+}
 $runtimeVerificationEvidence = $null
 
-if ($null -eq $runtimeManifest.runtimeFiles) {
+if ($null -eq $runtimeManifest.PSObject.Properties['runtimeFiles']) {
     $libmpv = Join-Path $runtimeRoot 'libmpv\libmpv-2.dll'
     if (-not (Test-Path -LiteralPath $libmpv -PathType Leaf)) {
         throw "Required portable input is missing: $libmpv"

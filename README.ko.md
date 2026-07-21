@@ -93,6 +93,8 @@ PlainVideo는 서로 다른 두 기능을 구분합니다.
 
 `PlainVideo`는 이미지에는 PlainView, 영상에는 PlainVideo라는 제품군 관계와 앱의 용도를 함께 드러내는 이름입니다. Microsoft Store 등 바이너리 공개 배포 전에는 상표와 스토어 이름 사용 가능 여부를 다시 확인합니다.
 
+Microsoft Store 출시용 [개인정보 처리방침](PRIVACY.md)과 [지원 안내](SUPPORT.md)도 함께 제공합니다.
+
 ## 라이선스
 
 PlainVideo가 직접 작성한 코드는 [MIT License](LICENSE)로 공개합니다. mpv, FFmpeg, RIFE 모델 등 번들되는 구성 요소는 각각의 라이선스를 따르며, 첫 배포 전에 정확한 빌드 옵션과 고지 파일을 고정합니다.

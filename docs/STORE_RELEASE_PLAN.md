@@ -1,7 +1,7 @@
 # Microsoft Store release plan
 
-Date: 2026-07-19
-Status: planning; no Partner Center identity, package, submission, certification, or public Store release exists
+Date: 2026-07-21
+Status: Partner Center product, identity, and Submission 1 draft created; no package upload, certification request, or public Store release exists
 
 ## Product decision
 
@@ -46,7 +46,7 @@ Exit criteria:
 
 ## Release gate 1: Store identity and native app metadata
 
-Locate or reserve `PlainVideo` in Partner Center before freezing package identity. The current Partner Center reservation state has not been checked. Do not invent `Identity Name` or `Publisher`; copy both values exactly from Partner Center.
+`PlainVideo` was reserved as an MSIX or PWA app in Partner Center on 2026-07-21. Store ID is `9PDKQ88FKG1L`, package identity name is `SeonkyuIM.PlainVideo`, publisher is `CN=8958BE04-B1E7-4AE6-84E9-592921EBB405`, and publisher display name is `SeonkyuIM`. These observed values, rather than inferred account values, are the manifest source of truth.
 
 PlainVideo now has an original transparent master, a repository PNG/ICO size
 set, an icon embedded in `plainvideo.exe`, matching large/small native-window
@@ -148,17 +148,16 @@ Submission, certification, and publication are distinct states. Update `STORE_RE
 | Milestone | Outcome | Current state |
 |---|---|---|
 | S0 — Store plan | Distribution choice, gates, bilingual listing draft, state file | Complete |
-| S1 — Runtime closure | Shared-libmpv candidate built, host-tested, and clean-Windows-11-Sandbox-tested | Blocked by legal/source closure and selected Windows 10 minimum-image proof |
-| S2 — Package proof | Partner identity, assets, manifest, x64 developer MSIX | Not started |
-| S3 — Installed-app proof | WACK, host/Sandbox, activation/update/uninstall | Not started |
-| S4 — Listing readiness | Privacy/support/source pages and localized captures | Artwork candidates prepared; applicable fields, pages, and screenshots not verified |
+| S1 — Runtime closure | Shared-libmpv candidate built, host-tested, and clean-Windows-11-Sandbox-tested | Publisher accepted residual worldwide codec-patent risk; exact source publication and selected Windows 10 minimum-image proof remain |
+| S2 — Package proof | Partner identity, assets, manifest, x64 developer MSIX | Developer MSIX built, signed, installed, and smoke-tested; Store upload remains gated |
+| S3 — Installed-app proof | WACK, host/Sandbox, activation/update/uninstall | Full host validation, local WACK PASS, installed smoke, and clean Windows 11 Sandbox exact-candidate proof complete; final clean-commit rebuild and update/uninstall evidence remain |
+| S4 — Listing readiness | Privacy/support/source pages and localized captures | Privacy/support/source files and eight localized 1600×900 captures are prepared locally; public URLs and Partner Center uploads remain |
 | S5 — Partner Center flight | Exact package uploaded to a limited audience | Not started |
 | S6 — Public release | Certification passed and availability verified independently | Not started |
 
 ## Immediate next work
 
-1. Complete the candidate's transitive license/corresponding-source disposition, then repeat its clean structural and playback proof on the selected Windows 10 minimum image.
-2. Check whether `PlainVideo` is already reserved in Partner Center; reserve it if needed and record the exact identity values.
-3. Create the MSIX manifest template and map package logo resources from the icon master.
-4. Add deterministic Store-package build, install, WACK, and uninstall scripts.
-5. Confirm applicable artwork fields in the actual app listing, publish privacy/support/source pages, and produce separate Korean/English screenshots.
+1. Commit and publish the exact release source plus corresponding-source bundle after the publisher's recorded multimedia-patent/territory acceptance.
+2. Verify the privacy, support, notice, and source-offer pages at their final public URLs.
+3. Rebuild the Store package and portable ZIP from that clean commit, repeat final WACK/install/uninstall checks, and preserve the Windows 10 minimum-image limitation explicitly.
+4. Upload the package and eight verified localized screenshots, complete certification notes, and submit with the existing manual-publish hold.

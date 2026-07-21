@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/msys2/MINGW-packages.git",
+  "purpose": "Exact MSYS2 recipe provenance for the transitive DLLs in the PlainVideo LGPL libmpv candidate",
+  "packages": [
+    {
+      "pkgbase": "mingw-w64-brotli",
+      "version": "1.2.0-1",
+      "buildDateUtc": "2025-11-06T03:57:00Z",
+      "recipeCommit": "9b344635687ddaf0703725e32965f212ce40208e",
+      "pkgbuildSha256": "894120dac11e7fffd72224148e22d424075fabf23a8cafbf4f2c5390c73755c9"
+    },
+    {
+      "pkgbase": "mingw-w64-bzip2",
+      "version": "1.0.8-3",
+      "buildDateUtc": "2023-09-27T06:56:45Z",
+      "recipeCommit": "ec20e79e229ab7e7b5c92cbc7fc63fa30366a590",
+      "pkgbuildSha256": "ee9b625471832b48f743171ee263cfd3d7a856dcc6859b6914ad437d7bbaf2d3"
+    },
+    {
+      "pkgbase": "mingw-w64-freetype",
+      "version": "2.14.3-1",
+      "buildDateUtc": "2026-03-26T23:17:16Z",
+      "recipeCommit": "0d2db97d784e88cf4dc0ae0fc23c4c77c11b65fa",
+      "pkgbuildSha256": "6b8fb0122bf6adbb608240a000aea22b7fe2c3cf2eba533155b3a9864d1511fd"
+    },
+    {
+      "pkgbase": "mingw-w64-fribidi",
+      "version": "1.0.16-1",
+      "buildDateUtc": "2024-09-27T08:21:31Z",
+      "recipeCommit": "1b186c7a9d46f95cd9ebb694d98297fc39ccba7a",
+      "pkgbuildSha256": "8b0dfca7f26b9f1b7f32fef6ab348b7c7d07b2c568c1b9d75820346f026316b6"
+    },
+    {
+      "pkgbase": "mingw-w64-gettext",
+      "version": "1.0-1",
+      "buildDateUtc": "2026-01-31T12:16:55Z",
+      "recipeCommit": "efb77424dfbeaaa22d96621274765d7ab5a3344f",
+      "pkgbuildSha256": "853ef80a50588f29355722a4513f24cf1a5f8de06e0b5ee326580464db539741"
+    },
+    {
+      "pkgbase": "mingw-w64-glib2",
+      "version": "2.88.2-1",
+      "buildDateUtc": "2026-06-27T07:31:33Z",
+      "recipeCommit": "b9dda6620b1f46b818248afea7f1752ff293e9f5",
+      "pkgbuildSha256": "c2126ab9fef88aa62315f5a0d1038d1b9edeccbbe6e409a4faed4e1ade9edad5"
+    },
+    {
+      "pkgbase": "mingw-w64-graphite2",
+      "version": "1.3.15-1",
+      "buildDateUtc": "2026-06-03T22:18:41Z",
+      "recipeCommit": "290de186c366023606c765b657f42b22bc773ee1",
+      "pkgbuildSha256": "2fd68eeb0a96760c64f203506004dd0485fc588bdc0fb83684665821493df6d5"
+    },
+    {
+      "pkgbase": "mingw-w64-harfbuzz",
+      "version": "14.2.1-1",
+      "buildDateUtc": "2026-06-03T08:20:13Z",
+      "recipeCommit": "f6cea0231aadd54e5ba1515733557f4e7cc69cd2",
+      "pkgbuildSha256": "5f4337bf429ad0bbca2b70b752f799787483da6971d65885c6f868f8bd670c80"
+    },
+    {
+      "pkgbase": "mingw-w64-libc++",
+      "version": "22.1.8-1",
+      "buildDateUtc": "2026-07-01T03:21:10Z",
+      "recipeCommit": "0e49d538be8f77422f9f2fbff025394903669d26",
+      "pkgbuildSha256": "4b7394e3bb1398472c4bfebc2354bc59a606a1bb4f17a906eb45ad1c05507ef9"
+    },
+    {
+      "pkgbase": "mingw-w64-libiconv",
+      "version": "1.19-1",
+      "buildDateUtc": "2026-03-14T08:45:35Z",
+      "recipeCommit": "045d46aedb9fdbd93b0900b1e20c1a6c73f23072",
+      "pkgbuildSha256": "9b3212d06910560fb59e017e0b73a29d392a5082d3a47a613e61509bd7dcd475"
+    },
+    {
+      "pkgbase": "mingw-w64-libpng",
+      "version": "1.6.58-1",
+      "buildDateUtc": "2026-04-17T14:44:09Z",
+      "recipeCommit": "2b3bf1afc95d20fad32ae5461593b0b078d7ca30",
+      "pkgbuildSha256": "d398f1e6ea9e549a638491308155e47e27a0953781ccce28707243f6eff29c81"
+    },
+    {
+      "pkgbase": "mingw-w64-luajit",
+      "version": "2.1.1782381659-1",
+      "buildDateUtc": "2026-06-27T08:05:42Z",
+      "recipeCommit": "dc967db788324da82e7ec7827f1baebfd47be323",
+      "pkgbuildSha256": "c2997d63c88c5c19ddd3c65a8908ee518eefcfaee3dff8f1c70c5c20813fb7dd"
+    },
+    {
+      "pkgbase": "mingw-w64-pcre2",
+      "version": "10.47-1",
+      "buildDateUtc": "2025-10-22T16:43:28Z",
+      "recipeCommit": "44099a566c9544d23d462e480d9ce216d4e15649",
+      "pkgbuildSha256": "38ef9a81fd7bccdd6f76d6064a4ea72e9fedcade411eb32c135afc81859cb4b1"
+    },
+    {
+      "pkgbase": "mingw-w64-zlib",
+      "version": "1.3.2-2",
+      "buildDateUtc": "2026-03-05T08:19:06Z",
+      "recipeCommit": "6430831b570304e48982fce7d65af399b801ceab",
+      "pkgbuildSha256": "8a4a54a964eab7efa313e2faa8267052bc237ef61f8adf82a55cc93f4028db8a"
+    }
+  ]
+}

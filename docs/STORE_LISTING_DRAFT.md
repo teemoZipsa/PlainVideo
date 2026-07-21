@@ -1,6 +1,6 @@
 # Microsoft Store listing draft
 
-Status: planning copy only; product-name reservation and Partner Center fields are not yet verified
+Status: product name reserved; Submission 1 bilingual copy is saved; localized screenshots are generated and visually verified locally but not uploaded or submitted
 
 Keep the two locales as separate Partner Center listing entries. Do not paste Korean and English into one field.
 
@@ -10,7 +10,7 @@ Keep the two locales as separate Partner Center listing entries. Do not paste Ko
 
 PlainVideo
 
-Reservation pending.
+Reserved in Partner Center on 2026-07-21.
 
 ### Short description
 
@@ -53,7 +53,7 @@ The first Store release will list only formats and hardware paths verified again
 
 PlainVideo
 
-이름 예약 전 초안입니다.
+2026-07-21 Partner Center에서 이름을 예약했습니다.
 
 ### 간단한 설명
 
@@ -109,11 +109,16 @@ guidance describes poster and box art as game fields, and the exact use of the
 Center listing. Do not count those files as submission-ready fields until the
 actual listing confirms an applicable destination.
 
-Create rights-cleared 1920×1080 PNG captures separately for each locale:
+Rights-cleared 1600×900 PNG captures have been generated separately for each
+locale from PlainVideo and repository-generated deterministic smoke media:
 
-1. `01-content-first-playback.png`
-2. `02-transient-controls.png`
-3. `03-subtitle-selection.png`
-4. `04-multi-monitor-window.png`
+1. `01-drop-zone.png`
+2. `02-content-first-playback.png`
+3. `03-transient-controls.png`
+4. `04-subtitle-menu.png`
 
-Shared logos and non-text art belong under `assets/store-listing/upload/shared`. Localized screenshots belong under `assets/store-listing/upload/en-US/screenshots` and `assets/store-listing/upload/ko-KR/screenshots` when they are produced. Generated screenshots and claims must come from the exact release candidate, not the current developer-only runtime.
+Shared logos and non-text art belong under `assets/store-listing/upload/shared`.
+Localized screenshots live under `assets/store-listing/upload/en-US/screenshots`
+and `assets/store-listing/upload/ko-KR/screenshots`. Regenerate them from the
+final clean release commit before upload and keep the recorded SHA-256 evidence
+with the release record.

@@ -23,9 +23,48 @@ fn main() {
     let rc_path = output_dir.join("plainvideo.rc");
     let resource_path = output_dir.join("plainvideo.res");
     let escaped_icon_path = icon_path.to_string_lossy().replace('\\', "\\\\");
+    let major = env::var("CARGO_PKG_VERSION_MAJOR").unwrap();
+    let minor = env::var("CARGO_PKG_VERSION_MINOR").unwrap();
+    let patch = env::var("CARGO_PKG_VERSION_PATCH").unwrap();
+    let version = env::var("CARGO_PKG_VERSION").unwrap();
 
-    fs::write(&rc_path, format!("101 ICON \"{escaped_icon_path}\"\r\n"))
-        .expect("PlainVideo could not write its Windows resource script");
+    fs::write(
+        &rc_path,
+        format!(
+            r#"101 ICON "{escaped_icon_path}"
+
+1 VERSIONINFO
+FILEVERSION {major},{minor},{patch},0
+PRODUCTVERSION {major},{minor},{patch},0
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0x0L
+FILEOS 0x40004L
+FILETYPE 0x1L
+FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "SeonkyuIM\0"
+            VALUE "FileDescription", "PlainVideo\0"
+            VALUE "FileVersion", "{version}.0\0"
+            VALUE "InternalName", "plainvideo\0"
+            VALUE "LegalCopyright", "Copyright (c) 2026 SeonkyuIM\0"
+            VALUE "OriginalFilename", "plainvideo.exe\0"
+            VALUE "ProductName", "PlainVideo\0"
+            VALUE "ProductVersion", "{version}.0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END
+"#
+        ),
+    )
+    .expect("PlainVideo could not write its Windows resource script");
 
     let output = Command::new("rc.exe")
         .arg("/nologo")

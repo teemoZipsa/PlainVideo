@@ -75,3 +75,5 @@ See [Product definition](docs/PRODUCT.md) and [Architecture notes](docs/ARCHITEC
 ## License
 
 Original PlainVideo code is released under the [MIT License](LICENSE). Bundled playback engines, codecs, models, and runtimes retain their own licenses; the exact distribution profile and notices will be locked before the first binary release.
+
+See the [privacy policy](PRIVACY.md) and [support guide](SUPPORT.md) for the planned Microsoft Store release.

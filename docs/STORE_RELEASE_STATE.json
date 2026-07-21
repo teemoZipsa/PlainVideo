@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "observedAt": "2026-07-19T08:51:29+09:00",
-  "status": "planning",
+  "observedAt": "2026-07-21T21:50:00+09:00",
+  "status": "release-source-publication-approved",
   "repository": {
     "nameWithOwner": "teemoZipsa/PlainVideo",
     "visibility": "public",
     "defaultBranch": "master",
-    "baselineCommit": "3416a7bce91a25f290779112620ce00681940dd6",
+    "baselineCommit": "731a612e798173664a3f053508dd79c0ba70b985",
     "githubActionsRepositoryPermission": "enabled",
     "localWorkflowCount": 0,
     "workflowPolicy": "Do not add, dispatch, rerun, or broaden workflows without explicit user approval."
@@ -30,25 +30,82 @@
     "telemetry": false
   },
   "partnerCenter": {
-    "status": "not-checked",
-    "productNameReserved": null,
-    "packageIdentityName": null,
-    "publisher": null,
-    "submissionId": null,
+    "status": "submission-1-in-draft",
+    "productNameReserved": true,
+    "productName": "PlainVideo",
+    "storeId": "9PDKQ88FKG1L",
+    "storeUrl": "https://apps.microsoft.com/detail/9PDKQ88FKG1L",
+    "packageIdentityName": "SeonkyuIM.PlainVideo",
+    "publisher": "CN=8958BE04-B1E7-4AE6-84E9-592921EBB405",
+    "publisherDisplayName": "SeonkyuIM",
+    "packageFamilyName": "SeonkyuIM.PlainVideo_9c7j90kvgvwr0",
+    "submissionId": "1152921505701456708",
+    "pricingAndAvailability": "complete-worldwide-free",
+    "properties": "complete-photo-and-video-no-personal-information",
+    "ageRatings": "complete-iarc-3-plus",
+    "packages": "incomplete-no-store-package-uploaded",
+    "storeListings": {
+      "status": "local-screenshots-ready-not-uploaded",
+      "locales": [
+        "en-US",
+        "ko-KR"
+      ],
+      "copySaved": true,
+      "screenshotsUploaded": false,
+      "localScreenshotCount": 8,
+      "localScreenshotSize": "1600x900",
+      "localEvidence": ".runtime/store-screenshots.json"
+    },
+    "submissionOptions": "complete-hold-for-manual-publish-after-certification",
     "certificationStatus": null,
     "publicationStatus": null
   },
+  "localPackageEvidence": {
+    "status": "developer-proof-not-for-redistribution",
+    "packageVersion": "0.1.0.0",
+    "packageSha256": "ed316c238c7f70c9bd19c6964cf63d3449003683a265bdd86942baf75ae8d818",
+    "payloadFileCount": 43,
+    "signatureValidated": true,
+    "installedPackageFullName": "SeonkyuIM.PlainVideo_0.1.0.0_x64__9c7j90kvgvwr0",
+    "installedSmokePlayback": "passed",
+    "fullIntegratedValidation": {
+      "status": "passed",
+      "summary": ".runtime/validation/integrated/20260721-210120-533/summary.json",
+      "stepCount": 13,
+      "failedStepCount": 0,
+      "rustTestCount": 30,
+      "formatMatrix": "10-of-10-passed",
+      "playbackSoak": "122-verified-0-failed"
+    },
+    "cleanMachine": {
+      "status": "verified-windows-11-sandbox",
+      "proof": ".runtime/clean-machine/stage-20260721-213511-627/evidence/result-20260721-213552-441/clean-machine/clean-machine-proof.json"
+    },
+    "wack": {
+      "overallResult": "PASS",
+      "reportSha256": "08773c97fb6ef2e9664271ce1f03c83a593eee67d7f9b2092758442a4f6cb2c1"
+    },
+    "correspondingSource": {
+      "status": "materialized-source-bundle-candidate",
+      "packageCount": 14,
+      "directSourceArchiveCount": 10,
+      "bundleSizeBytes": 268325686,
+      "bundleSha256": "3e3089757120c42aa632d1683481df522a9989ab016c242f1509a38d3c8ffad8",
+      "inventorySha256": "025c6c0bc2d831d1543954d1b570380b129fcbc950fb9aaa39545a7f04272805"
+    }
+  },
   "release": {
-    "eligible": false,
+    "eligible": true,
+    "publisherRiskDecision": "accepted-free-worldwide-distribution-2026-07-21",
     "packageVersion": null,
     "packageSha256": null,
-    "nextMilestone": "runtime-redistribution-closure"
+    "nextMilestone": "publish-source-before-binary-build"
   },
   "blockingGates": [
-    "A local shared-libmpv candidate has 24-DLL ordinary- and delay-import structural closure, package/source ownership evidence, a static-CRT target-OS/dynamic-load review, portable-root staging evidence, host playback evidence, and a clean Windows 11 Sandbox proof. It still lacks an approved redistribution profile, corresponding-source/legal disposition, and a selected Windows 10 minimum-image proof.",
-    "The Partner Center reservation state has not been checked and no exact package identity or publisher is recorded.",
-    "The original icon is embedded in the EXE and listing-art candidates are prepared, but no MSIX manifest, package-logo mapping, applicable Partner Center artwork-field confirmation, identity mapping, or deterministic Store packaging flow exists.",
-    "No WACK, developer-signed installed-package, update, uninstall, or clean-VM package proof exists.",
-    "A documented 300 x 300 app-tile candidate and additional artwork candidates are prepared, but applicable listing fields, public privacy/support pages, and rights-cleared bilingual Store screenshots have not been verified."
+    "The publisher accepted the residual multimedia-patent and worldwide territorial distribution risk for free distribution. The 24-DLL runtime has exact direct and transitive source, recipe, patch, license, and source-offer engineering material, but the source bundle URL is not public yet.",
+    "Partner Center product PlainVideo and Submission 1 are in draft. Pricing, properties, IARC 3+ age ratings, bilingual listing copy, and manual publishing hold are saved, but no package or screenshots have been uploaded and the submission has not been sent for certification.",
+    "The manifest, deterministic MSIX build, developer signing, installation, playback smoke, file associations, full host validation, WACK, and clean Windows 11 Sandbox exact-candidate proof pass locally. Release source publication is approved; the Store build remains fail-closed until its public URL responds successfully. A clean final commit, Store-upload package, and final update/uninstall test remain.",
+    "Privacy and support files plus eight rights-cleared bilingual screenshots exist locally, but the pages are not public at their final URLs and the screenshots must be regenerated from the final clean commit before upload.",
+    "The selected Windows 10 minimum-image proof remains open."
   ]
 }
