@@ -80,7 +80,8 @@ const PLAYBACK_BAR_HEIGHT: i32 = 56;
 const PLAYBACK_BAR_MARGIN: i32 = 12;
 const PLAYBACK_BUTTON_SIZE: i32 = 36;
 const PLAYBACK_BUTTON_GAP: i32 = 6;
-const PLAYBACK_VOLUME_WIDTH: i32 = 64;
+const PLAYBACK_VOLUME_MIN_WIDTH: i32 = 72;
+const PLAYBACK_VOLUME_MAX_WIDTH: i32 = 152;
 const MENU_OPEN: usize = 100;
 const MENU_PREVIOUS: usize = 101;
 const MENU_CLOSE: usize = 102;
@@ -2044,6 +2045,7 @@ fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
         VK_SPACE => {
             if !app.activate_keyboard_focus(hwnd) {
                 app.binding("plainvideo/toggle-pause");
+                app.note_pointer_activity(hwnd);
             }
         }
         VK_LEFT if shift => {
@@ -2174,9 +2176,15 @@ fn seek_track_bounds(layout: &PlaybackLayout, dpi: u32) -> (i32, i32) {
 }
 
 fn volume_track_bounds(layout: &PlaybackLayout, dpi: u32) -> (i32, i32) {
+    let width = layout.volume.right - layout.volume.left;
+    let trailing = if width >= scale_metric(104, dpi) {
+        scale_metric(42, dpi)
+    } else {
+        scale_metric(6, dpi)
+    };
     (
         layout.volume.left + scale_metric(30, dpi),
-        layout.volume.right - scale_metric(6, dpi),
+        layout.volume.right - trailing,
     )
 }
 
@@ -2189,15 +2197,18 @@ fn playback_layout_for_size(width: i32, height: i32, dpi: u32) -> Option<Playbac
     let outer_margin = scale_metric(PLAYBACK_BAR_MARGIN, dpi);
     let bar_height = scale_metric(PLAYBACK_BAR_HEIGHT, dpi);
     let button = scale_metric(PLAYBACK_BUTTON_SIZE, dpi);
-    let volume_width = scale_metric(PLAYBACK_VOLUME_WIDTH, dpi);
     let gap = scale_metric(PLAYBACK_BUTTON_GAP, dpi);
     let inner_margin = scale_metric(10, dpi);
     let maximum_width = scale_metric(PLAYBACK_BAR_MAX_WIDTH, dpi);
     let bar_width = (width - outer_margin * 2).min(maximum_width);
+    let minimum_seek_width = scale_metric(32, dpi);
+    let fixed_width = button * 3 + gap * 4 + inner_margin * 2 + minimum_seek_width;
+    let available_volume_width = bar_width - fixed_width;
+    let volume_width = available_volume_width.min(scale_metric(PLAYBACK_VOLUME_MAX_WIDTH, dpi));
     if bar_width <= 0
         || height < bar_height + outer_margin * 2
-        || bar_width
-            < button * 3 + volume_width + gap * 4 + inner_margin * 2 + scale_metric(32, dpi)
+        || volume_width + scale_metric(3, dpi) < scale_metric(PLAYBACK_VOLUME_MIN_WIDTH, dpi)
+        || bar_width < fixed_width + volume_width
     {
         return None;
     }
@@ -2783,10 +2794,35 @@ mod tests {
     }
 
     #[test]
-    fn centered_play_pause_feedback_matches_the_available_action() {
+    fn play_pause_uses_the_bottom_control_without_center_feedback() {
         let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
-        assert!(lua.contains("show_feedback(paused and \"play\" or \"pause\", 0.65)"));
-        assert!(!lua.contains("show_feedback(paused and \"pause\" or \"play\", 0.65)"));
+        let toggle = lua
+            .split_once("local function toggle_pause()")
+            .and_then(|(_, rest)| rest.split_once("local function seek"))
+            .map(|(body, _)| body)
+            .expect("play/pause toggle");
+
+        assert!(toggle.contains("mp.set_property_bool(\"pause\", paused)"));
+        assert!(!toggle.contains("show_feedback"));
+        assert!(!lua.contains("draw_playback_feedback"));
+    }
+
+    #[test]
+    fn volume_control_expands_and_reserves_space_for_a_percent_value() {
+        let minimum = playback_layout_for_size(280, 240, 96).expect("minimum layout");
+        let regular = playback_layout_for_size(1280, 720, 96).expect("regular layout");
+        let minimum_width = minimum.volume.right - minimum.volume.left;
+        let regular_width = regular.volume.right - regular.volume.left;
+
+        assert_eq!(minimum_width, PLAYBACK_VOLUME_MIN_WIDTH);
+        assert_eq!(regular_width, PLAYBACK_VOLUME_MAX_WIDTH);
+        assert!(regular_width > minimum_width * 2);
+        let (track_left, track_right) = volume_track_bounds(&regular, 96);
+        assert!(track_right - track_left >= 80);
+
+        let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
+        assert!(lua.contains("tooltip_label = string.format(\"%s %d%%\""));
+        assert!(!lua.contains("0–100%%"));
     }
 
     #[test]

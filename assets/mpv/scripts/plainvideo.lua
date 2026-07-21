@@ -476,55 +476,6 @@ local function draw_playback_error(width, height)
     return table.concat(events, "\n")
 end
 
-local function draw_playback_feedback(width, height, kind)
-    local palette = theme_palette()
-    local scale = clamp(math.min(width / ui_scale / 1280, height / ui_scale / 720), 0.82, 1.35) * ui_scale
-    local center_x = math.floor(width / 2)
-    local center_y = math.floor(height / 2)
-    local tile = math.floor(68 * scale)
-    local half_tile = math.floor(tile / 2)
-    local icon_half = math.floor(13 * scale)
-    local background = box_event(
-        center_x - half_tile,
-        center_y - half_tile,
-        center_x + half_tile,
-        center_y + half_tile,
-        math.floor(20 * scale),
-        palette.panel,
-        palette.panel_alpha
-    )
-
-    local icon
-    if kind == "pause" then
-        local bar = math.max(4, math.floor(6 * scale))
-        local gap = math.max(4, math.floor(5 * scale))
-        local left_x = center_x - gap - bar
-        local right_x = center_x + gap
-        icon = string.format(
-            "{\\an7\\pos(0,0)\\bord0\\shad0\\p1\\1c" .. palette.text .. "\\1a&H08&}" ..
-            "m %d %d l %d %d %d %d %d %d " ..
-            "m %d %d l %d %d %d %d %d %d{\\p0}",
-            left_x, center_y - icon_half, left_x + bar, center_y - icon_half,
-            left_x + bar, center_y + icon_half, left_x, center_y + icon_half,
-            right_x, center_y - icon_half, right_x + bar, center_y - icon_half,
-            right_x + bar, center_y + icon_half, right_x, center_y + icon_half
-        )
-    else
-        local icon_x = center_x + math.floor(2 * scale)
-        icon = string.format(
-            "{\\an7\\pos(0,0)\\bord0\\shad0\\p1\\1c" .. palette.text .. "\\1a&H08&}" ..
-            "m %d %d l %d %d %d %d{\\p0}",
-            icon_x - icon_half,
-            center_y - icon_half,
-            icon_x + icon_half,
-            center_y,
-            icon_x - icon_half,
-            center_y + icon_half
-        )
-    end
-    return background .. "\n" .. icon
-end
-
 local function draw_seek(width, height)
     local palette = theme_palette()
     local duration = mp.get_property_number("duration", 0)
@@ -820,12 +771,14 @@ local function draw_playback_controls(width, height)
     local outer_margin = px(12)
     local bar_height = px(56)
     local button = px(36)
-    local volume_width = px(64)
     local gap = px(6)
     local inner_margin = px(10)
     local bar_width = math.min(width - outer_margin * 2, px(860))
-    local minimum_width = button * 3 + volume_width + gap * 4 + inner_margin * 2 + px(32)
-    if bar_width < minimum_width or height < bar_height + outer_margin * 2 then
+    local fixed_width = button * 3 + gap * 4 + inner_margin * 2 + px(32)
+    local volume_width = math.min(px(152), bar_width - fixed_width)
+    local minimum_width = fixed_width + volume_width
+    if volume_width + px(3) < px(72) or bar_width < minimum_width
+        or height < bar_height + outer_margin * 2 then
         return ""
     end
 
@@ -874,15 +827,22 @@ local function draw_playback_controls(width, height)
     table.insert(events, draw_play_pause_icon(play_left + math.floor(button / 2), center_y, palette))
     local speaker_x = volume_left + px(13)
     table.insert(events, draw_speaker_icon(speaker_x, center_y, palette))
+    local show_volume_value = volume_width >= px(104)
     local volume_track_left = volume_left + px(30)
-    local volume_track_right = volume_left + volume_width - px(6)
-    local volume = clamp(mp.get_property_number("volume", 100) / 100, 0, 1)
+    local volume_track_right = volume_left + volume_width - (show_volume_value and px(42) or px(6))
+    local volume_percent = math.floor(mp.get_property_number("volume", 100) + 0.5)
+    local volume = clamp(volume_percent / 100, 0, 1)
     local volume_filled = volume_track_left + math.floor((volume_track_right - volume_track_left) * volume)
     table.insert(events, box_event(volume_track_left, center_y - px(2), volume_track_right,
         center_y + px(1), px(2), palette.track, "&H58&"))
     if volume_filled > volume_track_left and not mp.get_property_bool("mute", false) then
         table.insert(events, box_event(volume_track_left, center_y - px(2), volume_filled,
             center_y + px(1), px(2), palette.accent, "&H08&"))
+    end
+    if show_volume_value then
+        table.insert(events, text_event(6, volume_left + volume_width - px(7), center_y,
+            math.max(px(10), type_size("secondary", width, height) - px(1)),
+            palette.secondary, "&H08&", false, string.format("%d%%", volume_percent)))
     end
     local sid = mp.get_property("sid", "no")
     local subtitle_active = sid ~= "no" and sid ~= "false" and sid ~= "auto"
@@ -907,7 +867,7 @@ local function draw_playback_controls(width, height)
         tooltip_label = mp.get_property_bool("pause", false) and copy.play or copy.pause
         tooltip_center = play_left + math.floor(button / 2)
     elseif tooltip_name == "volume" then
-        tooltip_label = mp.get_property_bool("mute", false) and copy.unmute or copy.mute
+        tooltip_label = string.format("%s %d%%", copy.volume, volume_percent)
         tooltip_center = volume_left + math.floor(volume_width / 2)
     elseif tooltip_name == "subtitles" then
         tooltip_label = copy.subtitles
@@ -973,8 +933,6 @@ local function draw_surface()
         table.insert(events, draw_playback_error(width, height))
     elseif is_idle then
         table.insert(events, draw_idle(width, height))
-    elseif feedback_kind == "pause" or feedback_kind == "play" then
-        table.insert(events, draw_playback_feedback(width, height, feedback_kind))
     elseif feedback_kind == "seek" and not window_controls_visible then
         table.insert(events, draw_seek(width, height))
     elseif feedback_kind == "volume" and not window_controls_visible then
@@ -1053,10 +1011,6 @@ end
 local function toggle_pause()
     local paused = not mp.get_property_bool("pause", false)
     mp.set_property_bool("pause", paused)
-    -- Match the transient center glyph to the bottom control: both show the
-    -- action available now, rather than mixing the completed action with the
-    -- next action.
-    show_feedback(paused and "play" or "pause", 0.65)
 end
 
 local function seek(seconds)

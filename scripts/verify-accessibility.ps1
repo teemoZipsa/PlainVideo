@@ -79,7 +79,8 @@ Assert-Pattern $windowingSource 'BASE_MIN_WINDOW_HEIGHT:\s*i32\s*=\s*240' '240 l
 Assert-Pattern $windowingSource 'BASE_DRAG_ZONE_HEIGHT:\s*i32\s*=\s*56' '56 logical-pixel move region'
 Assert-Pattern $windowingSource 'LAYOUT_ROUNDING_TOLERANCE:\s*i32\s*=\s*2' 'two-pixel rounding tolerance'
 Assert-Pattern $windowSource 'PLAYBACK_BUTTON_SIZE:\s*i32\s*=\s*36' '36 logical-pixel playback control'
-Assert-Pattern $windowSource 'PLAYBACK_VOLUME_WIDTH:\s*i32\s*=\s*64' '64 logical-pixel volume control'
+Assert-Pattern $windowSource 'PLAYBACK_VOLUME_MIN_WIDTH:\s*i32\s*=\s*72' '72 logical-pixel minimum volume control'
+Assert-Pattern $windowSource 'PLAYBACK_VOLUME_MAX_WIDTH:\s*i32\s*=\s*152' '152 logical-pixel expanded volume control'
 
 # The custom overlay must retain exactly the two intended type tiers and scale
 # text from logical dimensions while drawing keyboard focus.
