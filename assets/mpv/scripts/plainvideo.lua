@@ -153,6 +153,21 @@ local function tooltip_width_for(value, font_size, maximum_width, horizontal_pad
     return math.min(maximum_width, math.max(px(48), content_width + (horizontal_padding or px(18))))
 end
 
+local function transient_panel_bounds(width, height, requested_width, requested_height)
+    local outer_margin = px(12)
+    local available_width = width - outer_margin * 2
+    local available_height = height - outer_margin * 2
+    if available_width <= px(48) or available_height <= px(24) then
+        return nil
+    end
+    local panel_width = math.min(requested_width, available_width)
+    local panel_height = math.min(requested_height, available_height)
+    local left = math.floor((width - panel_width) / 2)
+    local top = clamp(math.max(px(18), math.floor(height * 0.035)),
+        outer_margin, height - outer_margin - panel_height)
+    return left, top, left + panel_width, top + panel_height
+end
+
 local function ass_escape(value)
     return tostring(value or "")
         :gsub("\\", "\\\\")
@@ -494,61 +509,60 @@ local function draw_seek(width, height)
     local duration = mp.get_property_number("duration", 0)
     local position = mp.get_property_number("time-pos", 0)
     local progress = duration > 0 and clamp(position / duration, 0, 1) or 0
-    local panel_width = math.floor(clamp(width * 0.64, math.min(320, width - 24), math.min(840, width - 24)))
-    local panel_height = 58
-    local bottom = height - math.max(18, math.floor(height * 0.03))
-    local top = bottom - panel_height
-    local left = math.floor((width - panel_width) / 2)
-    local right = left + panel_width
-    local track_left = left + 18
-    local track_right = right - 18
-    local track_top = top + 17
-    local track_bottom = track_top + 3
+    local left, top, right, bottom = transient_panel_bounds(
+        width, height, px(360), px(56))
+    if not left then
+        return ""
+    end
+    local track_left = left + px(18)
+    local track_right = right - px(18)
+    local track_top = bottom - px(14)
+    local track_bottom = track_top + px(3)
     local filled = track_left + math.floor((track_right - track_left) * progress)
+    local position_text = duration > 0
+        and string.format("%s / %s", format_time(position), format_time(duration))
+        or format_time(position)
 
     local events = {
-        box_event(left, top, right, bottom, 16, palette.panel, palette.panel_alpha),
-        box_event(track_left, track_top, track_right, track_bottom, 2, palette.track, "&H58&"),
+        box_event(left, top, right, bottom, px(16), palette.panel, palette.panel_alpha),
+        text_event(4, track_left, top + px(20), type_size("secondary", width, height),
+            palette.text, "&H08&", true, copy.position),
+        text_event(6, track_right, top + px(20), type_size("secondary", width, height),
+            palette.secondary, "&H10&", false, position_text),
+        box_event(track_left, track_top, track_right, track_bottom, px(2), palette.track, "&H58&"),
     }
     if filled > track_left then
-        table.insert(events, box_event(track_left, track_top, filled, track_bottom, 2, palette.text, "&H08&"))
+        table.insert(events, box_event(track_left, track_top, filled, track_bottom,
+            px(2), palette.text, "&H08&"))
     end
-    table.insert(events, text_event(
-        4, track_left, top + 39, type_size("secondary", width, height),
-        palette.text, "&H08&", false, format_time(position)
-    ))
-    table.insert(events, text_event(
-        6, track_right, top + 39, type_size("secondary", width, height),
-        palette.secondary, "&H10&", false, format_time(duration)
-    ))
     return table.concat(events, "\n")
 end
 
 local function draw_volume(width, height)
     local palette = theme_palette()
     local volume = math.floor(mp.get_property_number("volume", 0) + 0.5)
-    local panel_width = math.floor(math.min(240, width - 24))
-    local panel_height = 56
-    local left = math.floor((width - panel_width) / 2)
-    local right = left + panel_width
-    local top = math.max(18, math.floor(height * 0.035))
-    local bottom = top + panel_height
-    local track_left = left + 18
-    local track_right = right - 18
-    local track_top = bottom - 14
-    local track_bottom = track_top + 3
+    local left, top, right, bottom = transient_panel_bounds(
+        width, height, px(240), px(56))
+    if not left then
+        return ""
+    end
+    local track_left = left + px(18)
+    local track_right = right - px(18)
+    local track_top = bottom - px(14)
+    local track_bottom = track_top + px(3)
     local filled = track_left + math.floor((track_right - track_left) * clamp(volume / 100, 0, 1))
 
     local events = {
-        box_event(left, top, right, bottom, 16, palette.panel, palette.panel_alpha),
-        text_event(4, track_left, top + 20, type_size("secondary", width, height),
+        box_event(left, top, right, bottom, px(16), palette.panel, palette.panel_alpha),
+        text_event(4, track_left, top + px(20), type_size("secondary", width, height),
             palette.text, "&H08&", true, copy.volume),
-        text_event(6, track_right, top + 20, type_size("secondary", width, height),
+        text_event(6, track_right, top + px(20), type_size("secondary", width, height),
             palette.secondary, "&H10&", false, string.format("%d%%", volume)),
-        box_event(track_left, track_top, track_right, track_bottom, 2, palette.track, "&H58&"),
+        box_event(track_left, track_top, track_right, track_bottom, px(2), palette.track, "&H58&"),
     }
     if filled > track_left then
-        table.insert(events, box_event(track_left, track_top, filled, track_bottom, 2, palette.text, "&H08&"))
+        table.insert(events, box_event(track_left, track_top, filled, track_bottom,
+            px(2), palette.text, "&H08&"))
     end
     return table.concat(events, "\n")
 end
@@ -913,16 +927,18 @@ local function draw_status(width, height)
         return ""
     end
     local palette = theme_palette()
-    local status_width = math.min(width - px(24), px(420))
-    if status_width <= px(80) then
+    local font_size = type_size("secondary", width, height)
+    local status_width = tooltip_width_for(
+        status_message, font_size, math.min(width - px(24), px(420)), px(32))
+    local left, top, right, bottom = transient_panel_bounds(
+        width, height, status_width, px(40))
+    if not left then
         return ""
     end
     local center_x = math.floor(width / 2)
-    local top = math.min(height - px(52), px(68))
-    return box_event(center_x - math.floor(status_width / 2), top,
-        center_x + math.floor(status_width / 2), top + px(36), px(10),
+    return box_event(left, top, right, bottom, px(12),
         palette.panel, palette.panel_alpha) .. "\n" ..
-        text_event(5, center_x, top + px(18), type_size("secondary", width, height),
+        text_event(5, center_x, top + math.floor((bottom - top) / 2), font_size,
             palette.text, "&H08&", false, status_message)
 end
 
@@ -952,9 +968,9 @@ local function draw_surface()
         table.insert(events, draw_playback_error(width, height))
     elseif is_idle then
         table.insert(events, draw_idle(width, height))
-    elseif feedback_kind == "seek" and not window_controls_visible then
+    elseif feedback_kind == "seek" then
         table.insert(events, draw_seek(width, height))
-    elseif feedback_kind == "volume" and not window_controls_visible then
+    elseif feedback_kind == "volume" then
         table.insert(events, draw_volume(width, height))
     end
     if window_controls_visible then
@@ -1002,13 +1018,20 @@ local function set_media_info(action, position, count)
 end
 
 local function show_status_message(message)
+    feedback_kind = nil
+    if feedback_timer then
+        feedback_timer:kill()
+        feedback_timer = nil
+    end
     status_message = message ~= "" and message or nil
     if status_timer then
         status_timer:kill()
+        status_timer = nil
     end
     if status_message then
         status_timer = mp.add_timeout(1.8, function()
             status_message = nil
+            status_timer = nil
             draw_surface()
         end)
     end
@@ -1016,12 +1039,19 @@ local function show_status_message(message)
 end
 
 local function show_feedback(kind, duration)
+    status_message = nil
+    if status_timer then
+        status_timer:kill()
+        status_timer = nil
+    end
     feedback_kind = kind
     if feedback_timer then
         feedback_timer:kill()
+        feedback_timer = nil
     end
     feedback_timer = mp.add_timeout(duration, function()
         feedback_kind = nil
+        feedback_timer = nil
         draw_surface()
     end)
     draw_surface()

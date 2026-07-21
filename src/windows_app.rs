@@ -1192,9 +1192,6 @@ impl App {
             return;
         }
         let _ = self.player.command(&["set", "mute", "no"]);
-        let _ = self
-            .player
-            .command(&["script-message", "plainvideo-volume-feedback"]);
     }
 
     fn adjust_volume(&mut self, amount: f64) {
@@ -3088,6 +3085,37 @@ mod tests {
         assert!(lua.contains("compact_volume and 0.8 or 1.0"));
         assert!(!lua.contains("math.min(px(150)"));
         assert!(!lua.contains("0–100%%"));
+    }
+
+    #[test]
+    fn transient_feedback_shares_one_top_lane_without_duplicate_pointer_volume() {
+        let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
+        assert!(lua.contains("local function transient_panel_bounds"));
+        assert!(lua.contains("feedback_kind == \"seek\" then"));
+        assert!(lua.contains("feedback_kind == \"volume\" then"));
+        assert!(!lua.contains("feedback_kind == \"volume\" and not window_controls_visible"));
+
+        let status = lua
+            .split_once("local function show_status_message(message)")
+            .and_then(|(_, rest)| rest.split_once("local function show_feedback"))
+            .map(|(body, _)| body)
+            .expect("status feedback function");
+        assert!(status.contains("feedback_kind = nil"));
+
+        let feedback = lua
+            .split_once("local function show_feedback(kind, duration)")
+            .and_then(|(_, rest)| rest.split_once("local function toggle_pause"))
+            .map(|(body, _)| body)
+            .expect("feedback function");
+        assert!(feedback.contains("status_message = nil"));
+
+        let source = include_str!("windows_app.rs");
+        let pointer_volume = source
+            .split_once("fn set_volume_from_pointer")
+            .and_then(|(_, rest)| rest.split_once("fn adjust_volume"))
+            .map(|(body, _)| body)
+            .expect("pointer volume function");
+        assert!(!pointer_volume.contains("plainvideo-volume-feedback"));
     }
 
     #[test]
