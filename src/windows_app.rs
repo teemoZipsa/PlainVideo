@@ -291,6 +291,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         suppress_click: false,
         ignore_unpaired_button_up: false,
         pending_surface_click: None,
+        context_menu_open: false,
         cursor_hidden: false,
         window_controls_visible: false,
         hovered_control: None,
@@ -381,6 +382,7 @@ struct App {
     suppress_click: bool,
     ignore_unpaired_button_up: bool,
     pending_surface_click: Option<PendingSurfaceClick>,
+    context_menu_open: bool,
     cursor_hidden: bool,
     window_controls_visible: bool,
     hovered_control: Option<WindowControl>,
@@ -1331,6 +1333,7 @@ impl App {
     fn show_context_menu(&mut self, hwnd: HWND) {
         self.set_window_controls_visible(false);
         self.show_cursor();
+        set_standard_cursor();
         unsafe { KillTimer(hwnd, TIMER_HIDE_CURSOR) };
         let menu = unsafe { CreatePopupMenu() };
         if menu.is_null() {
@@ -1536,6 +1539,8 @@ impl App {
             SetForegroundWindow(hwnd);
             let mut point: POINT = mem::zeroed();
             GetCursorPos(&mut point);
+            self.context_menu_open = true;
+            set_standard_cursor();
             let selected = TrackPopupMenu(
                 menu,
                 TPM_RETURNCMD | TPM_RIGHTBUTTON,
@@ -1545,6 +1550,7 @@ impl App {
                 hwnd,
                 ptr::null(),
             ) as usize;
+            self.context_menu_open = false;
             if !has_playable_media {
                 DestroyMenu(subtitle_menu);
                 DestroyMenu(audio_menu);
@@ -1892,6 +1898,10 @@ unsafe extern "system" fn window_proc(
             unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
         }
         WM_SETCURSOR => {
+            if app.as_ref().is_some_and(|app| app.context_menu_open) {
+                set_standard_cursor();
+                return 1;
+            }
             if loword(lparam as usize) as u32 == HTCAPTION {
                 let cursor = unsafe { LoadCursorW(ptr::null_mut(), IDC_SIZEALL) };
                 if !cursor.is_null() {
@@ -2809,6 +2819,13 @@ fn wide(value: &str) -> Vec<u16> {
     OsStr::new(value).encode_wide().chain(Some(0)).collect()
 }
 
+fn set_standard_cursor() {
+    let cursor = unsafe { LoadCursorW(ptr::null_mut(), IDC_ARROW) };
+    if !cursor.is_null() {
+        unsafe { SetCursor(cursor) };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2818,6 +2835,39 @@ mod tests {
         assert_eq!(MENU_OPEN, 100);
         assert_eq!(MENU_SUBTITLE_TRACK_BASE, 1_000);
         assert_ne!(WM_CONTEXTMENU, WM_PAINT);
+    }
+
+    #[test]
+    fn context_menu_replaces_the_caption_drag_cursor_with_an_arrow() {
+        let source = include_str!("windows_app.rs");
+        let context_menu = source
+            .split_once("fn show_context_menu")
+            .and_then(|(_, rest)| rest.split_once("fn dropped_files"))
+            .map(|(body, _)| body)
+            .expect("context menu implementation");
+        let cursor_position = context_menu
+            .find("context_menu_open = true;")
+            .expect("popup cursor guard");
+        let popup_position = context_menu
+            .find("TrackPopupMenu(")
+            .expect("popup menu invocation");
+        assert!(cursor_position < popup_position);
+        assert!(context_menu.contains("context_menu_open = false;"));
+
+        let standard_cursor = source
+            .split_once("fn set_standard_cursor()")
+            .and_then(|(_, rest)| rest.split_once("#[cfg(test)]"))
+            .map(|(body, _)| body)
+            .expect("standard cursor helper");
+        assert!(standard_cursor.contains("IDC_ARROW"));
+
+        let cursor_handler = source
+            .split_once("WM_SETCURSOR =>")
+            .and_then(|(_, rest)| rest.split_once("WM_DPICHANGED"))
+            .map(|(body, _)| body)
+            .expect("cursor handler");
+        assert!(cursor_handler.contains("app.context_menu_open"));
+        assert!(cursor_handler.contains("set_standard_cursor();"));
     }
 
     #[test]
