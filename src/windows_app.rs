@@ -41,11 +41,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowCursor, ShowWindow,
     TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP, WM_CANCELMODE,
     WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES,
-    WM_DWMCOMPOSITIONCHANGED, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_KEYDOWN,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE,
-    WM_NCCALCSIZE, WM_NCHITTEST, WM_NCPAINT, WM_PAINT, WM_QUIT, WM_SETCURSOR, WM_SETTINGCHANGE,
-    WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_MAXIMIZEBOX,
-    WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    WM_DWMCOMPOSITIONCHANGED, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO,
+    WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCLBUTTONDOWN, WM_NCPAINT, WM_PAINT, WM_QUIT,
+    WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES,
+    WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
 use crate::locale::{Locale, UiText};
@@ -260,6 +260,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         fullscreen: false,
         locale,
         suppress_click: false,
+        ignore_unpaired_button_up: false,
         cursor_hidden: false,
         window_controls_visible: false,
         hovered_control: None,
@@ -348,6 +349,7 @@ struct App {
     fullscreen: bool,
     locale: Locale,
     suppress_click: bool,
+    ignore_unpaired_button_up: bool,
     cursor_hidden: bool,
     window_controls_visible: bool,
     hovered_control: Option<WindowControl>,
@@ -1745,6 +1747,26 @@ unsafe extern "system" fn window_proc(
             0
         }
         WM_NCCALCSIZE if wparam != 0 && unsafe { IsZoomed(hwnd) } == 0 => 0,
+        WM_NCLBUTTONDOWN if wparam as u32 == HTCAPTION => {
+            if let Some(app) = app {
+                app.suppress_click = true;
+                app.ignore_unpaired_button_up = true;
+                app.pressed_control = None;
+                app.volume_drag_active = false;
+                app.last_seek_drag = None;
+                app.hide_seek_preview(hwnd);
+                unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
+            }
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
+        WM_ENTERSIZEMOVE => {
+            if let Some(app) = app {
+                app.suppress_click = true;
+                app.ignore_unpaired_button_up = true;
+                unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
+            }
+            0
+        }
         WM_NCACTIVATE if unsafe { IsZoomed(hwnd) } == 0 => {
             let _ = configure_frameless_shadow(hwnd);
             1
@@ -1883,6 +1905,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_LBUTTONDOWN => {
             if let Some(app) = app {
+                app.ignore_unpaired_button_up = false;
                 app.clear_keyboard_focus();
                 let point = client_point(lparam);
                 let pressed = if app.window_controls_visible {
@@ -1921,6 +1944,12 @@ unsafe extern "system" fn window_proc(
         }
         WM_LBUTTONUP => {
             if let Some(app) = app {
+                if app.ignore_unpaired_button_up {
+                    app.ignore_unpaired_button_up = false;
+                    app.suppress_click = false;
+                    unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
+                    return 0;
+                }
                 let point = client_point(lparam);
                 if let Some(pressed) = app.pressed_control.take() {
                     let volume_drag_active = app.volume_drag_active;
@@ -2042,7 +2071,9 @@ unsafe extern "system" fn window_proc(
             match wparam {
                 TIMER_SINGLE_CLICK => {
                     if let Some(app) = app {
-                        app.binding("plainvideo/toggle-pause");
+                        if !app.ignore_unpaired_button_up {
+                            app.binding("plainvideo/toggle-pause");
+                        }
                     }
                 }
                 TIMER_DIAGNOSTIC_REPLACE => {
@@ -2840,6 +2871,26 @@ mod tests {
             96,
             false
         ));
+    }
+
+    #[test]
+    fn caption_drag_cannot_leak_into_the_delayed_playback_click() {
+        let source = include_str!("windows_app.rs");
+        let caption_drag = source
+            .split_once("WM_NCLBUTTONDOWN if wparam as u32 == HTCAPTION")
+            .and_then(|(_, rest)| rest.split_once("WM_NCACTIVATE"))
+            .map(|(body, _)| body)
+            .expect("caption drag handling");
+        assert!(caption_drag.contains("ignore_unpaired_button_up = true"));
+        assert!(caption_drag.contains("KillTimer(hwnd, TIMER_SINGLE_CLICK)"));
+
+        let button_up = source
+            .split_once("WM_LBUTTONUP =>")
+            .and_then(|(_, rest)| rest.split_once("WM_CAPTURECHANGED"))
+            .map(|(body, _)| body)
+            .expect("button release handling");
+        assert!(button_up.contains("if app.ignore_unpaired_button_up"));
+        assert!(button_up.contains("return 0"));
     }
 
     #[test]
