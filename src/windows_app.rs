@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    BeginPaint, EndPaint, PAINTSTRUCT, ScreenToClient, UpdateWindow,
+    BeginPaint, ClientToScreen, EndPaint, PAINTSTRUCT, ScreenToClient, UpdateWindow,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::Dialogs::{
@@ -52,9 +52,10 @@ use crate::locale::{Locale, UiText};
 use crate::media_queue::{
     MEDIA_DIALOG_PATTERN, MediaQueue, SUBTITLE_DIALOG_PATTERN, is_subtitle_path,
 };
-use crate::mpv::{AudioTrack, Player, SubtitleTrack, diagnostic_replacement};
+use crate::mpv::{AudioTrack, Player, SubtitleTrack, ThumbnailService, diagnostic_replacement};
 use crate::preferences::{Preferences, PreferencesStore};
 use crate::resume::ResumeStore;
+use crate::seek_preview::SeekPreview;
 use crate::windowing::{
     BASE_DRAG_ZONE_HEIGHT, WindowBounds, apply_min_track_size, configure_frameless_shadow,
     current_dpi, current_monitor_bounds, resize_window_to_media, restorable_window_bounds,
@@ -63,14 +64,17 @@ use crate::windowing::{
 
 const WM_APP_RENDER_ERROR: u32 = WM_APP + 1;
 const WM_APP_MPV_EVENT: u32 = WM_APP + 2;
+const WM_APP_THUMBNAIL_READY: u32 = WM_APP + 3;
 const APP_ICON_RESOURCE_ID: usize = 101;
 const TIMER_SINGLE_CLICK: usize = 1;
 const TIMER_DIAGNOSTIC_REPLACE: usize = 2;
 const TIMER_DIAGNOSTIC_EXIT: usize = 3;
 const TIMER_HIDE_CURSOR: usize = 4;
 const TIMER_RESUME_PROGRESS: usize = 5;
+const TIMER_SEEK_PREVIEW: usize = 6;
 const RESUME_SAVE_INTERVAL_MS: u32 = 10_000;
 const CURSOR_HIDE_DELAY_MS: u32 = 1_600;
+const SEEK_PREVIEW_DELAY_MS: u32 = 120;
 const WINDOW_CONTROL_SIZE: i32 = 34;
 const WINDOW_CONTROL_GAP: i32 = 6;
 const WINDOW_CONTROL_MARGIN: i32 = 10;
@@ -161,6 +165,15 @@ struct PlaybackLayout {
     subtitles: RECT,
 }
 
+#[derive(Clone, Copy)]
+struct PreviewCandidate {
+    seconds: f64,
+    anchor_x: i32,
+    bar_top: i32,
+    owner_left: i32,
+    owner_right: i32,
+}
+
 impl PlaybackControl {
     fn message_name(self) -> &'static str {
         match self {
@@ -215,6 +228,9 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         WM_APP_RENDER_ERROR,
         WM_APP_MPV_EVENT,
     )?;
+    let seek_preview = SeekPreview::create(window.hwnd).ok();
+    let thumbnail_service =
+        ThumbnailService::create(libmpv.clone(), window.hwnd, WM_APP_THUMBNAIL_READY).ok();
     // With the render context now ready, create the idle VO so libmpv can
     // draw PlainVideo's localized empty-surface overlay before the first file.
     player.command(&["set", "force-window", "immediate"])?;
@@ -267,6 +283,11 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         last_subtitle_id: None,
         playback_error_visible: false,
         last_seek_drag: None,
+        seek_preview,
+        thumbnail_service,
+        preview_candidate: None,
+        preview_generation: None,
+        preview_visible: false,
         diagnostic_replacement: diagnostic_replacement(),
         diagnostic_single_file,
         diagnostic_input_locked,
@@ -350,6 +371,11 @@ struct App {
     last_subtitle_id: Option<i64>,
     playback_error_visible: bool,
     last_seek_drag: Option<Instant>,
+    seek_preview: Option<SeekPreview>,
+    thumbnail_service: Option<ThumbnailService>,
+    preview_candidate: Option<PreviewCandidate>,
+    preview_generation: Option<u64>,
+    preview_visible: bool,
     diagnostic_replacement: Option<PathBuf>,
     diagnostic_single_file: bool,
     diagnostic_input_locked: bool,
@@ -409,6 +435,7 @@ impl App {
     }
 
     fn load_path(&mut self, path: &Path) {
+        self.hide_seek_preview(self.hwnd);
         self.save_resume_progress();
         self.clear_playback_error();
         self.has_media = true;
@@ -467,6 +494,7 @@ impl App {
     }
 
     fn show_playback_error(&mut self, error: String) {
+        self.hide_seek_preview(self.hwnd);
         self.has_media = false;
         self.pending_media_resize = false;
         self.clear_keyboard_focus();
@@ -556,6 +584,7 @@ impl App {
         }
         self.window_controls_visible = visible;
         if !visible {
+            self.hide_seek_preview(self.hwnd);
             self.hovered_control = None;
             self.hovered_playback = None;
             self.pressed_control = None;
@@ -627,6 +656,7 @@ impl App {
             unsafe { SetTimer(hwnd, TIMER_HIDE_CURSOR, CURSOR_HIDE_DELAY_MS, None) };
             return;
         }
+        self.hide_seek_preview(hwnd);
         self.set_window_controls_visible(false);
         self.hide_cursor_if_inside(hwnd);
     }
@@ -660,6 +690,7 @@ impl App {
             None
         };
         self.set_hovered_playback(hovered_playback);
+        self.update_seek_preview(hwnd, client_point(lparam));
     }
 
     fn pointer_left(&mut self, hwnd: HWND) {
@@ -667,10 +698,135 @@ impl App {
         if self.pressed_control.is_some() {
             return;
         }
+        self.hide_seek_preview(hwnd);
         self.set_window_controls_visible(false);
         self.hovered_playback = None;
         self.show_cursor();
         unsafe { KillTimer(hwnd, TIMER_HIDE_CURSOR) };
+    }
+
+    fn update_seek_preview(&mut self, hwnd: HWND, point: POINT) {
+        let preview_active = self.has_media
+            && !self.playback_error_visible
+            && (self.hovered_playback == Some(PlaybackControl::Seek)
+                || self.pressed_control == Some(PressedControl::Playback(PlaybackControl::Seek)));
+        let Some(layout) = preview_active
+            .then(|| playback_layout(hwnd, self.dpi))
+            .flatten()
+        else {
+            self.hide_seek_preview(hwnd);
+            return;
+        };
+        let Some(duration) = self.player.duration().filter(|duration| *duration > 0.0) else {
+            self.hide_seek_preview(hwnd);
+            return;
+        };
+        if !self.player.is_seekable() {
+            self.hide_seek_preview(hwnd);
+            return;
+        }
+        let (track_left, track_right) = seek_track_bounds(&layout, self.dpi);
+        let percent = track_percent(point.x, track_left, track_right);
+        let seconds = (duration * percent / 100.0).clamp(0.0, (duration - 0.05).max(0.0));
+        let mut origin = POINT { x: 0, y: 0 };
+        if unsafe { ClientToScreen(hwnd, &mut origin) } == 0 {
+            self.hide_seek_preview(hwnd);
+            return;
+        }
+        let candidate = PreviewCandidate {
+            seconds,
+            anchor_x: origin.x + point.x.clamp(track_left, track_right),
+            bar_top: origin.y + layout.bar.top,
+            owner_left: origin.x,
+            owner_right: origin.x + client_size(hwnd).map(|size| size.0).unwrap_or_default(),
+        };
+        if self.preview_candidate.is_some_and(|previous| {
+            previous.anchor_x == candidate.anchor_x
+                && previous.bar_top == candidate.bar_top
+                && (previous.seconds - candidate.seconds).abs() < 0.01
+        }) {
+            return;
+        }
+        self.preview_candidate = Some(candidate);
+        if self.preview_visible {
+            self.show_preview_time();
+        }
+        unsafe {
+            KillTimer(hwnd, TIMER_SEEK_PREVIEW);
+            SetTimer(hwnd, TIMER_SEEK_PREVIEW, SEEK_PREVIEW_DELAY_MS, None);
+        }
+    }
+
+    fn show_preview_time(&mut self) {
+        let Some(candidate) = self.preview_candidate else {
+            return;
+        };
+        if let Some(preview) = self.seek_preview.as_mut() {
+            preview.show_time(
+                candidate.seconds,
+                candidate.anchor_x,
+                candidate.bar_top,
+                candidate.owner_left,
+                candidate.owner_right,
+            );
+            self.preview_visible = true;
+        }
+    }
+
+    fn request_seek_preview(&mut self) {
+        if self.seek_preview.is_none() {
+            return;
+        }
+        let (Some(candidate), Some(path)) = (self.preview_candidate, self.active_path.clone())
+        else {
+            return;
+        };
+        self.show_preview_time();
+        if path.is_file() && !path.to_string_lossy().starts_with(r"\\") {
+            if let Some(service) = &self.thumbnail_service {
+                self.preview_generation = Some(service.request(path, candidate.seconds));
+            }
+        }
+    }
+
+    fn accept_seek_preview(&mut self) {
+        let Some(service) = &self.thumbnail_service else {
+            return;
+        };
+        let Some(result) = service.take_result() else {
+            return;
+        };
+        if !self.preview_visible || self.preview_generation != Some(result.generation) {
+            return;
+        }
+        if let Some(error) = result.error {
+            self.record_error(&format!("seek preview: {error}"));
+        }
+        let layout_error = match (self.seek_preview.as_mut(), result.frame) {
+            (Some(preview), Some(frame)) => preview.show_frame(result.seconds, frame).err(),
+            _ => None,
+        };
+        if let Some(error) = layout_error {
+            self.record_error(&error);
+        }
+    }
+
+    fn hide_seek_preview(&mut self, hwnd: HWND) {
+        unsafe { KillTimer(hwnd, TIMER_SEEK_PREVIEW) };
+        let was_active = self.preview_candidate.is_some()
+            || self.preview_generation.is_some()
+            || self.preview_visible;
+        self.preview_candidate = None;
+        self.preview_generation = None;
+        self.preview_visible = false;
+        if was_active {
+            if let Some(service) = &self.thumbnail_service {
+                service.cancel();
+            }
+        }
+        if let Some(preview) = &self.seek_preview {
+            preview.hide();
+        }
     }
 
     fn fail(&mut self, error: String) {
@@ -1639,6 +1795,12 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
+        WM_APP_THUMBNAIL_READY => {
+            if let Some(app) = app {
+                app.accept_seek_preview();
+            }
+            0
+        }
         WM_PAINT => {
             let mut paint: PAINTSTRUCT = unsafe { mem::zeroed() };
             unsafe { BeginPaint(hwnd, &mut paint) };
@@ -1652,6 +1814,7 @@ unsafe extern "system" fn window_proc(
         WM_SIZE => {
             if wparam as u32 != SIZE_MINIMIZED {
                 if let Some(app) = app {
+                    app.hide_seek_preview(hwnd);
                     app.update_scale(hwnd);
                     app.request_render(hwnd, true);
                     app.resize_to_pending_media(hwnd);
@@ -1903,6 +2066,11 @@ unsafe extern "system" fn window_proc(
                         SetTimer(hwnd, TIMER_RESUME_PROGRESS, RESUME_SAVE_INTERVAL_MS, None);
                     }
                 }
+                TIMER_SEEK_PREVIEW => {
+                    if let Some(app) = app {
+                        app.request_seek_preview();
+                    }
+                }
                 _ => {}
             }
             0
@@ -1935,6 +2103,7 @@ unsafe extern "system" fn window_proc(
                 app.save_window_bounds_if_restorable(hwnd);
                 app.pressed_control = None;
                 app.volume_drag_active = false;
+                app.hide_seek_preview(hwnd);
                 unsafe { ReleaseCapture() };
                 app.show_cursor();
             }

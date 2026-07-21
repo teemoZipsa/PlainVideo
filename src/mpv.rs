@@ -1,3 +1,4 @@
+use std::collections::{HashMap, VecDeque};
 use std::ffi::{CStr, CString, c_char, c_double, c_int, c_void};
 use std::mem::size_of;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -20,6 +21,9 @@ use windows_sys::Win32::Graphics::OpenGL::{
     wglDeleteContext, wglGetProcAddress, wglMakeCurrent,
 };
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
+use windows_sys::Win32::System::Threading::{
+    GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 const MPV_EVENT_NONE: c_int = 0;
@@ -27,6 +31,7 @@ const MPV_EVENT_SHUTDOWN: c_int = 1;
 const MPV_EVENT_END_FILE: c_int = 7;
 const MPV_EVENT_FILE_LOADED: c_int = 8;
 const MPV_EVENT_VIDEO_RECONFIG: c_int = 17;
+const MPV_EVENT_PLAYBACK_RESTART: c_int = 21;
 const MPV_END_FILE_REASON_EOF: c_int = 0;
 const MPV_END_FILE_REASON_ERROR: c_int = 4;
 const MPV_RENDER_PARAM_INVALID: c_int = 0;
@@ -34,6 +39,10 @@ const MPV_RENDER_PARAM_API_TYPE: c_int = 1;
 const MPV_RENDER_PARAM_OPENGL_INIT_PARAMS: c_int = 2;
 const MPV_RENDER_PARAM_OPENGL_FBO: c_int = 3;
 const MPV_RENDER_PARAM_FLIP_Y: c_int = 4;
+const MPV_RENDER_PARAM_SW_SIZE: c_int = 17;
+const MPV_RENDER_PARAM_SW_FORMAT: c_int = 18;
+const MPV_RENDER_PARAM_SW_STRIDE: c_int = 19;
+const MPV_RENDER_PARAM_SW_POINTER: c_int = 20;
 const MPV_RENDER_UPDATE_FRAME: u64 = 1;
 const MPV_CLIENT_API_MAJOR: u32 = 2;
 const MPV_CLIENT_API_MIN_MINOR: u32 = 5;
@@ -391,6 +400,104 @@ pub struct Player {
     render_thread: Option<JoinHandle<()>>,
     render_error: Arc<Mutex<Option<String>>>,
     event_wake: Box<EventWake>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ThumbnailFrame {
+    pub width: i32,
+    pub height: i32,
+    pub stride: usize,
+    pub pixels: Arc<[u8]>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ThumbnailResult {
+    pub generation: u64,
+    pub seconds: f64,
+    pub frame: Option<Arc<ThumbnailFrame>>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone)]
+struct ThumbnailRequest {
+    generation: u64,
+    path: PathBuf,
+    seconds: f64,
+}
+
+#[derive(Default)]
+struct ThumbnailState {
+    generation: u64,
+    request: Option<ThumbnailRequest>,
+    result: Option<ThumbnailResult>,
+    stopping: bool,
+}
+
+pub struct ThumbnailService {
+    state: Arc<(Mutex<ThumbnailState>, Condvar)>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl ThumbnailService {
+    pub fn create(libmpv_path: PathBuf, hwnd: HWND, ready_message: u32) -> Result<Self, String> {
+        let state = Arc::new((Mutex::new(ThumbnailState::default()), Condvar::new()));
+        let worker_state = Arc::clone(&state);
+        let hwnd_address = hwnd as usize;
+        let worker = thread::Builder::new()
+            .name("plainvideo-thumbnail".to_string())
+            .spawn(move || thumbnail_worker(libmpv_path, worker_state, hwnd_address, ready_message))
+            .map_err(|error| format!("PlainVideo could not start its preview worker: {error}"))?;
+        Ok(Self {
+            state,
+            worker: Some(worker),
+        })
+    }
+
+    pub fn request(&self, path: PathBuf, seconds: f64) -> u64 {
+        let (lock, changed) = &*self.state;
+        let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+        state.generation = state.generation.wrapping_add(1).max(1);
+        let generation = state.generation;
+        state.request = Some(ThumbnailRequest {
+            generation,
+            path,
+            seconds: seconds.max(0.0),
+        });
+        changed.notify_one();
+        generation
+    }
+
+    pub fn take_result(&self) -> Option<ThumbnailResult> {
+        self.state
+            .0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .result
+            .take()
+    }
+
+    pub fn cancel(&self) {
+        let (lock, changed) = &*self.state;
+        let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+        state.generation = state.generation.wrapping_add(1).max(1);
+        state.request = None;
+        state.result = None;
+        changed.notify_one();
+    }
+}
+
+impl Drop for ThumbnailService {
+    fn drop(&mut self) {
+        {
+            let (lock, changed) = &*self.state;
+            let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+            state.stopping = true;
+            changed.notify_one();
+        }
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -871,6 +978,389 @@ impl Drop for Player {
     }
 }
 
+const THUMBNAIL_WIDTH: i32 = 288;
+const THUMBNAIL_HEIGHT: i32 = 162;
+const THUMBNAIL_CACHE_LIMIT: usize = 48;
+
+struct ThumbnailDecoder {
+    api: Api,
+    handle: *mut MpvHandle,
+    render: *mut MpvRenderContext,
+    wake: Box<ThumbnailRenderWake>,
+    loaded_path: Option<PathBuf>,
+}
+
+struct ThumbnailRenderWake {
+    updated: AtomicBool,
+}
+
+unsafe extern "C" fn thumbnail_render_wake_callback(context: *mut c_void) {
+    if !context.is_null() {
+        unsafe { &*(context.cast::<ThumbnailRenderWake>()) }
+            .updated
+            .store(true, Ordering::Release);
+    }
+}
+
+impl ThumbnailDecoder {
+    fn create(libmpv_path: &Path) -> Result<Self, String> {
+        let api = Api::load(libmpv_path)?;
+        let handle = unsafe { (api.create)() };
+        if handle.is_null() {
+            return Err("libmpv could not create a preview core.".to_string());
+        }
+        let options = [
+            ("config", "no"),
+            ("load-scripts", "no"),
+            ("input-default-bindings", "no"),
+            ("input-vo-keyboard", "no"),
+            ("terminal", "no"),
+            ("idle", "yes"),
+            ("pause", "yes"),
+            ("keep-open", "yes"),
+            ("audio", "no"),
+            ("sub", "no"),
+            ("osd-level", "0"),
+            ("hwdec", "no"),
+            ("cache", "no"),
+            ("vd-lavc-threads", "2"),
+            ("vo", "libmpv"),
+        ];
+        for (name, value) in options {
+            if let Err(error) = set_option(&api, handle, name, value) {
+                unsafe { (api.terminate_destroy)(handle) };
+                return Err(error);
+            }
+        }
+        let code = unsafe { (api.initialize)(handle) };
+        if code < 0 {
+            let error = api.error(code);
+            unsafe { (api.terminate_destroy)(handle) };
+            return Err(format!("libmpv preview initialization failed: {error}"));
+        }
+
+        let api_name = CString::new("sw").expect("static software render API name");
+        let mut params = [
+            MpvRenderParam {
+                kind: MPV_RENDER_PARAM_API_TYPE,
+                data: api_name.as_ptr().cast_mut().cast(),
+            },
+            MpvRenderParam {
+                kind: MPV_RENDER_PARAM_INVALID,
+                data: ptr::null_mut(),
+            },
+        ];
+        let mut render = ptr::null_mut();
+        let code = unsafe { (api.render_context_create)(&mut render, handle, params.as_mut_ptr()) };
+        if code < 0 {
+            let error = api.error(code);
+            unsafe { (api.terminate_destroy)(handle) };
+            return Err(format!(
+                "libmpv could not create its preview renderer: {error}"
+            ));
+        }
+        let wake = Box::new(ThumbnailRenderWake {
+            updated: AtomicBool::new(false),
+        });
+        unsafe {
+            (api.render_context_set_update_callback)(
+                render,
+                Some(thumbnail_render_wake_callback),
+                (&*wake as *const ThumbnailRenderWake).cast_mut().cast(),
+            );
+        }
+        Ok(Self {
+            api,
+            handle,
+            render,
+            wake,
+            loaded_path: None,
+        })
+    }
+
+    fn frame<F>(
+        &mut self,
+        path: &Path,
+        seconds: f64,
+        cancelled: &F,
+    ) -> Result<ThumbnailFrame, String>
+    where
+        F: Fn() -> bool,
+    {
+        if self.loaded_path.as_deref() != Some(path) {
+            let path_text = utf8_path(path)?;
+            command_with(
+                self.api.command,
+                self.handle,
+                &["loadfile", &path_text, "replace"],
+            )?;
+            self.wait_for_file(path, cancelled)?;
+            self.loaded_path = Some(path.to_path_buf());
+        }
+
+        self.drain_events();
+        self.wake.updated.store(false, Ordering::Release);
+        let seconds_text = format!("{:.3}", seconds.max(0.0));
+        command_with(
+            self.api.command,
+            self.handle,
+            &["seek", &seconds_text, "absolute+exact"],
+        )?;
+
+        let deadline = std::time::Instant::now() + Duration::from_millis(1_500);
+        let mut restarted = false;
+        while std::time::Instant::now() < deadline {
+            if cancelled() {
+                return Err("Preview request was superseded.".to_string());
+            }
+            loop {
+                let event = unsafe { (self.api.wait_event)(self.handle, 0.0) };
+                if event.is_null() || unsafe { (*event).event_id } == MPV_EVENT_NONE {
+                    break;
+                }
+                if unsafe { (*event).event_id } == MPV_EVENT_PLAYBACK_RESTART {
+                    restarted = true;
+                }
+            }
+            let updates = unsafe { (self.api.render_context_update)(self.render) };
+            let frame_available = updates & MPV_RENDER_UPDATE_FRAME != 0
+                || self.wake.updated.swap(false, Ordering::AcqRel);
+            let position = property_string_with(&self.api, self.handle, "time-pos")
+                .and_then(|value| value.parse::<f64>().ok());
+            if frame_available {
+                let frame = self.render_frame()?;
+                if restarted && position.is_some_and(|position| (position - seconds).abs() <= 1.0) {
+                    return Ok(frame);
+                }
+            }
+            thread::sleep(Duration::from_millis(6));
+        }
+        Err("The preview frame took too long to decode.".to_string())
+    }
+
+    fn wait_for_file<F>(&mut self, path: &Path, cancelled: &F) -> Result<(), String>
+    where
+        F: Fn() -> bool,
+    {
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while std::time::Instant::now() < deadline {
+            if cancelled() {
+                return Err("Preview request was superseded.".to_string());
+            }
+            loop {
+                let event = unsafe { (self.api.wait_event)(self.handle, 0.0) };
+                if event.is_null() || unsafe { (*event).event_id } == MPV_EVENT_NONE {
+                    break;
+                }
+                match unsafe { (*event).event_id } {
+                    MPV_EVENT_FILE_LOADED => return Ok(()),
+                    MPV_EVENT_END_FILE => {
+                        return Err(format!("Could not open preview source {}.", path.display()));
+                    }
+                    _ => {}
+                }
+            }
+            let updates = unsafe { (self.api.render_context_update)(self.render) };
+            if updates & MPV_RENDER_UPDATE_FRAME != 0
+                || self.wake.updated.swap(false, Ordering::AcqRel)
+            {
+                let _ = self.render_frame();
+            }
+            thread::sleep(Duration::from_millis(6));
+        }
+        Err(format!(
+            "Preview source {} took too long to open.",
+            path.display()
+        ))
+    }
+
+    fn drain_events(&self) {
+        loop {
+            let event = unsafe { (self.api.wait_event)(self.handle, 0.0) };
+            if event.is_null() || unsafe { (*event).event_id } == MPV_EVENT_NONE {
+                break;
+            }
+        }
+    }
+
+    fn render_frame(&self) -> Result<ThumbnailFrame, String> {
+        let stride = (THUMBNAIL_WIDTH as usize * 4 + 63) & !63;
+        let bytes = stride * THUMBNAIL_HEIGHT as usize;
+        let mut storage = vec![0_u8; bytes + 63];
+        let address = storage.as_mut_ptr() as usize;
+        let offset = (64 - address % 64) % 64;
+        let pixels = unsafe { storage.as_mut_ptr().add(offset) };
+        let mut size = [THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT];
+        let format = CString::new("bgr0").expect("static thumbnail pixel format");
+        let mut render_stride = stride;
+        let mut params = [
+            MpvRenderParam {
+                kind: MPV_RENDER_PARAM_SW_SIZE,
+                data: size.as_mut_ptr().cast(),
+            },
+            MpvRenderParam {
+                kind: MPV_RENDER_PARAM_SW_FORMAT,
+                data: format.as_ptr().cast_mut().cast(),
+            },
+            MpvRenderParam {
+                kind: MPV_RENDER_PARAM_SW_STRIDE,
+                data: (&mut render_stride as *mut usize).cast(),
+            },
+            MpvRenderParam {
+                kind: MPV_RENDER_PARAM_SW_POINTER,
+                data: pixels.cast(),
+            },
+            MpvRenderParam {
+                kind: MPV_RENDER_PARAM_INVALID,
+                data: ptr::null_mut(),
+            },
+        ];
+        let code = unsafe { (self.api.render_context_render)(self.render, params.as_mut_ptr()) };
+        if code < 0 {
+            return Err(format!(
+                "libmpv preview rendering failed: {}",
+                self.api.error(code)
+            ));
+        }
+        let pixels: Arc<[u8]> = storage[offset..offset + bytes].to_vec().into();
+        Ok(ThumbnailFrame {
+            width: THUMBNAIL_WIDTH,
+            height: THUMBNAIL_HEIGHT,
+            stride,
+            pixels,
+        })
+    }
+}
+
+impl Drop for ThumbnailDecoder {
+    fn drop(&mut self) {
+        unsafe {
+            (self.api.render_context_set_update_callback)(self.render, None, ptr::null_mut());
+            (self.api.render_context_free)(self.render);
+            (self.api.terminate_destroy)(self.handle);
+        }
+    }
+}
+
+fn property_string_with(api: &Api, handle: *mut MpvHandle, name: &str) -> Option<String> {
+    let name = CString::new(name).ok()?;
+    let value = unsafe { (api.get_property_string)(handle, name.as_ptr()) };
+    if value.is_null() {
+        return None;
+    }
+    let result = unsafe { CStr::from_ptr(value) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { (api.free)(value.cast()) };
+    Some(result)
+}
+
+fn thumbnail_worker(
+    libmpv_path: PathBuf,
+    shared: Arc<(Mutex<ThumbnailState>, Condvar)>,
+    hwnd_address: usize,
+    ready_message: u32,
+) {
+    unsafe {
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    }
+    let mut decoder: Option<ThumbnailDecoder> = None;
+    let mut cache: HashMap<(PathBuf, i64), Arc<ThumbnailFrame>> = HashMap::new();
+    let mut order: VecDeque<(PathBuf, i64)> = VecDeque::new();
+    let mut slow_path: Option<PathBuf> = None;
+    let mut slow_strikes = 0_u8;
+    let mut disabled_path: Option<PathBuf> = None;
+    loop {
+        let request = {
+            let (lock, changed) = &*shared;
+            let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+            while state.request.is_none() && !state.stopping {
+                state = changed
+                    .wait(state)
+                    .unwrap_or_else(|error| error.into_inner());
+            }
+            if state.stopping {
+                return;
+            }
+            state.request.take().expect("preview request")
+        };
+        let bucket = (request.seconds * 2.0).round() as i64;
+        let key = (request.path.clone(), bucket);
+        let cancelled = || {
+            let state = shared.0.lock().unwrap_or_else(|error| error.into_inner());
+            state.stopping || state.generation != request.generation
+        };
+        let started = std::time::Instant::now();
+        let cache_hit = cache.contains_key(&key);
+        let (frame, error) = if disabled_path.as_deref() == Some(request.path.as_path()) {
+            (None, None)
+        } else if let Some(frame) = cache.get(&key).cloned() {
+            (Some(frame), None)
+        } else {
+            if decoder.is_none() {
+                decoder = ThumbnailDecoder::create(&libmpv_path).ok();
+            }
+            match decoder.as_mut() {
+                Some(decoder) => {
+                    match decoder.frame(&request.path, bucket as f64 / 2.0, &cancelled) {
+                        Ok(frame) => (Some(Arc::new(frame)), None),
+                        Err(error) => (None, Some(error)),
+                    }
+                }
+                None => (
+                    None,
+                    Some("The preview decoder could not be initialized.".to_string()),
+                ),
+            }
+        };
+
+        if !cache_hit && !cancelled() && disabled_path.as_deref() != Some(request.path.as_path()) {
+            let slow = frame.is_none() || started.elapsed() > Duration::from_millis(750);
+            if slow {
+                if slow_path.as_deref() == Some(request.path.as_path()) {
+                    slow_strikes = slow_strikes.saturating_add(1);
+                } else {
+                    slow_path = Some(request.path.clone());
+                    slow_strikes = 1;
+                }
+                if slow_strikes >= 2 {
+                    disabled_path = Some(request.path.clone());
+                }
+            } else {
+                slow_path = Some(request.path.clone());
+                slow_strikes = 0;
+            }
+        }
+
+        let (lock, _) = &*shared;
+        let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+        if state.stopping {
+            return;
+        }
+        match frame.clone() {
+            Some(frame) if !cache.contains_key(&key) => {
+                cache.insert(key.clone(), frame);
+                order.push_back(key);
+                while order.len() > THUMBNAIL_CACHE_LIMIT {
+                    if let Some(oldest) = order.pop_front() {
+                        cache.remove(&oldest);
+                    }
+                }
+            }
+            _ => {}
+        }
+        if request.generation == state.generation {
+            state.result = Some(ThumbnailResult {
+                generation: request.generation,
+                seconds: request.seconds,
+                frame,
+                error,
+            });
+            unsafe { PostMessageW(hwnd_address as HWND, ready_message, 0, 0) };
+        }
+    }
+}
+
 fn command_with(
     command: MpvCommand,
     handle: *mut MpvHandle,
@@ -1194,5 +1684,20 @@ mod tests {
         assert_eq!(size_of::<MpvEventEndFile>(), 32);
         assert_eq!(MPV_END_FILE_REASON_EOF, 0);
         assert_eq!(MPV_END_FILE_REASON_ERROR, 4);
+    }
+
+    #[test]
+    #[ignore = "requires an explicit local media path and pinned libmpv runtime"]
+    fn diagnostic_thumbnail_decoder_renders_a_frame() {
+        let runtime = std::env::var_os("PLAINVIDEO_THUMBNAIL_TEST_LIBMPV")
+            .expect("set PLAINVIDEO_THUMBNAIL_TEST_LIBMPV");
+        let media = std::env::var_os("PLAINVIDEO_THUMBNAIL_TEST_MEDIA")
+            .expect("set PLAINVIDEO_THUMBNAIL_TEST_MEDIA");
+        let mut decoder = ThumbnailDecoder::create(Path::new(&runtime)).expect("preview decoder");
+        let frame = decoder
+            .frame(Path::new(&media), 10.0, &|| false)
+            .expect("preview frame");
+        assert_eq!((frame.width, frame.height), (288, 162));
+        assert_eq!(frame.pixels.len(), frame.stride * frame.height as usize);
     }
 }
