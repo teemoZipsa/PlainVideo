@@ -153,6 +153,10 @@ local function tooltip_width_for(value, font_size, maximum_width, horizontal_pad
     return math.min(maximum_width, math.max(px(48), content_width + (horizontal_padding or px(18))))
 end
 
+local function compact_tooltip_width_for(value, font_size, maximum_width)
+    return tooltip_width_for(value, font_size, maximum_width, px(8), 0.8)
+end
+
 local function transient_panel_bounds(width, height, requested_width, requested_height)
     local outer_margin = px(12)
     local available_width = width - outer_margin * 2
@@ -729,7 +733,8 @@ local function draw_window_controls(width, height)
             index = 5
         end
         local tooltip_size = type_size("secondary", width, height)
-        local tooltip_width = tooltip_width_for(label, tooltip_size, width - margin * 2)
+        local tooltip_width = compact_tooltip_width_for(
+            label, tooltip_size, width - margin * 2)
         local center_x = left + (index - 1) * (size + gap) + math.floor(size / 2)
         center_x = clamp(center_x, math.floor(tooltip_width / 2) + margin, width - math.floor(tooltip_width / 2) - margin)
         local tooltip_top = top + size + px(7)
@@ -906,11 +911,8 @@ local function draw_playback_controls(width, height)
     end
     if tooltip_label and top >= px(42) then
         local tooltip_size = type_size("secondary", width, height)
-        local compact_volume = tooltip_name == "volume"
-        local tooltip_padding = compact_volume and px(8) or px(18)
-        local tooltip_width = tooltip_width_for(
-            tooltip_label, tooltip_size, width - outer_margin * 2,
-            tooltip_padding, compact_volume and 0.8 or 1.0)
+        local tooltip_width = compact_tooltip_width_for(
+            tooltip_label, tooltip_size, width - outer_margin * 2)
         tooltip_center = clamp(tooltip_center, math.floor(tooltip_width / 2) + outer_margin,
             width - math.floor(tooltip_width / 2) - outer_margin)
         table.insert(events, box_event(tooltip_center - math.floor(tooltip_width / 2), top - px(36),

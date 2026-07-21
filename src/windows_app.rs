@@ -3080,11 +3080,30 @@ mod tests {
 
         let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
         assert!(lua.contains("tooltip_label = string.format(\"%s %d%%\""));
-        assert!(lua.contains("tooltip_label, tooltip_size, width - outer_margin * 2,"));
-        assert!(lua.contains("compact_volume and px(8) or px(18)"));
-        assert!(lua.contains("compact_volume and 0.8 or 1.0"));
+        assert!(lua.contains("local function compact_tooltip_width_for"));
+        assert!(lua.contains("maximum_width, px(8), 0.8"));
+        assert!(lua.contains("tooltip_label, tooltip_size, width - outer_margin * 2)"));
         assert!(!lua.contains("math.min(px(150)"));
         assert!(!lua.contains("0–100%%"));
+    }
+
+    #[test]
+    fn playback_and_window_tooltips_all_hug_their_labels() {
+        let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
+        let window_controls = lua
+            .split_once("local function draw_window_controls")
+            .and_then(|(_, rest)| rest.split_once("local function draw_play_pause_icon"))
+            .map(|(body, _)| body)
+            .expect("window controls renderer");
+        assert!(window_controls.contains("compact_tooltip_width_for("));
+
+        let playback_controls = lua
+            .split_once("local function draw_playback_controls")
+            .and_then(|(_, rest)| rest.split_once("local function draw_status"))
+            .map(|(body, _)| body)
+            .expect("playback controls renderer");
+        assert!(playback_controls.contains("compact_tooltip_width_for("));
+        assert!(!playback_controls.contains("compact_volume"));
     }
 
     #[test]
