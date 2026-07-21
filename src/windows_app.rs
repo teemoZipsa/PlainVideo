@@ -85,7 +85,7 @@ const PLAYBACK_BAR_MARGIN: i32 = 12;
 const PLAYBACK_BUTTON_SIZE: i32 = 36;
 const PLAYBACK_BUTTON_GAP: i32 = 6;
 const PLAYBACK_VOLUME_MIN_WIDTH: i32 = 72;
-const PLAYBACK_VOLUME_MAX_WIDTH: i32 = 144;
+const PLAYBACK_VOLUME_MAX_WIDTH: i32 = 152;
 const MENU_OPEN: usize = 100;
 const MENU_PREVIOUS: usize = 101;
 const MENU_CLOSE: usize = 102;
@@ -2279,12 +2279,12 @@ fn seek_track_bounds(layout: &PlaybackLayout, dpi: u32) -> (i32, i32) {
 fn volume_track_bounds(layout: &PlaybackLayout, dpi: u32) -> (i32, i32) {
     let width = layout.volume.right - layout.volume.left;
     let trailing = if width >= scale_metric(104, dpi) {
-        scale_metric(38, dpi)
+        scale_metric(42, dpi)
     } else {
         scale_metric(6, dpi)
     };
     (
-        layout.volume.left + scale_metric(26, dpi),
+        layout.volume.left + scale_metric(30, dpi),
         layout.volume.right - trailing,
     )
 }
@@ -2970,7 +2970,9 @@ mod tests {
 
         let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
         assert!(lua.contains("tooltip_label = string.format(\"%s %d%%\""));
-        assert!(lua.contains("tooltip_width_for(tooltip_label"));
+        assert!(lua.contains("tooltip_label, tooltip_size, width - outer_margin * 2,"));
+        assert!(lua.contains("compact_volume and px(8) or px(18)"));
+        assert!(lua.contains("compact_volume and 0.8 or 1.0"));
         assert!(!lua.contains("math.min(px(150)"));
         assert!(!lua.contains("0–100%%"));
     }

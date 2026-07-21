@@ -144,13 +144,13 @@ local function type_size(tier, width, height)
     return math.floor(TYPE_SIZE[tier] * viewport_scale * accessibility_scale * safe_ui_scale + 0.5)
 end
 
-local function tooltip_width_for(value, font_size, maximum_width)
+local function tooltip_width_for(value, font_size, maximum_width, horizontal_padding, content_scale)
     local units = 0
     for character in tostring(value or ""):gmatch("[^\128-\191][\128-\191]*") do
         units = units + (#character == 1 and 0.56 or 1.0)
     end
-    local content_width = math.ceil(units * font_size)
-    return math.min(maximum_width, math.max(px(48), content_width + px(18)))
+    local content_width = math.ceil(units * font_size * (content_scale or 1.0))
+    return math.min(maximum_width, math.max(px(48), content_width + (horizontal_padding or px(18))))
 end
 
 local function ass_escape(value)
@@ -795,7 +795,7 @@ local function draw_playback_controls(width, height)
     local inner_margin = px(10)
     local bar_width = math.min(width - outer_margin * 2, px(860))
     local fixed_width = button * 2 + gap * 3 + inner_margin * 2 + px(32)
-    local volume_width = math.min(px(144), bar_width - fixed_width)
+    local volume_width = math.min(px(152), bar_width - fixed_width)
     local minimum_width = fixed_width + volume_width
     if volume_width + px(3) < px(72) or bar_width < minimum_width
         or height < bar_height + outer_margin * 2 then
@@ -846,8 +846,8 @@ local function draw_playback_controls(width, height)
     local speaker_x = volume_left + px(13)
     table.insert(events, draw_speaker_icon(speaker_x, center_y, palette))
     local show_volume_value = volume_width >= px(104)
-    local volume_track_left = volume_left + px(26)
-    local volume_track_right = volume_left + volume_width - (show_volume_value and px(38) or px(6))
+    local volume_track_left = volume_left + px(30)
+    local volume_track_right = volume_left + volume_width - (show_volume_value and px(42) or px(6))
     local volume_percent = math.floor(mp.get_property_number("volume", 100) + 0.5)
     local volume = clamp(volume_percent / 100, 0, 1)
     local volume_filled = volume_track_left + math.floor((volume_track_right - volume_track_left) * volume)
@@ -892,7 +892,11 @@ local function draw_playback_controls(width, height)
     end
     if tooltip_label and top >= px(42) then
         local tooltip_size = type_size("secondary", width, height)
-        local tooltip_width = tooltip_width_for(tooltip_label, tooltip_size, width - outer_margin * 2)
+        local compact_volume = tooltip_name == "volume"
+        local tooltip_padding = compact_volume and px(8) or px(18)
+        local tooltip_width = tooltip_width_for(
+            tooltip_label, tooltip_size, width - outer_margin * 2,
+            tooltip_padding, compact_volume and 0.8 or 1.0)
         tooltip_center = clamp(tooltip_center, math.floor(tooltip_width / 2) + outer_margin,
             width - math.floor(tooltip_width / 2) - outer_margin)
         table.insert(events, box_event(tooltip_center - math.floor(tooltip_width / 2), top - px(36),
