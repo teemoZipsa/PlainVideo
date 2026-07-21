@@ -264,6 +264,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         pending_media_resize: has_initial_media,
         media_queue,
         active_path: None,
+        last_subtitle_id: None,
         playback_error_visible: false,
         last_seek_drag: None,
         diagnostic_replacement: diagnostic_replacement(),
@@ -346,6 +347,7 @@ struct App {
     pending_media_resize: bool,
     media_queue: MediaQueue,
     active_path: Option<PathBuf>,
+    last_subtitle_id: Option<i64>,
     playback_error_visible: bool,
     last_seek_drag: Option<Instant>,
     diagnostic_replacement: Option<PathBuf>,
@@ -412,6 +414,7 @@ impl App {
         self.has_media = true;
         self.pending_media_resize = true;
         self.active_path = Some(path.to_path_buf());
+        self.last_subtitle_id = None;
         self.pending_resume = self.resume_store.position(path);
         self.update_window_title();
         if let Err(error) = self.player.load_file(path) {
@@ -1028,6 +1031,9 @@ impl App {
     }
 
     fn disable_subtitles_ui(&mut self) {
+        if let Some(id) = self.player.current_subtitle_id() {
+            self.last_subtitle_id = Some(id);
+        }
         if let Err(error) = self.player.disable_subtitles() {
             self.operation_error(error);
         } else {
@@ -1039,6 +1045,9 @@ impl App {
         if let Err(error) = self.player.add_subtitle(path) {
             self.operation_error(error);
         } else {
+            if let Some(id) = self.player.current_subtitle_id() {
+                self.last_subtitle_id = Some(id);
+            }
             let label = path
                 .file_name()
                 .and_then(OsStr::to_str)
@@ -1051,8 +1060,24 @@ impl App {
         if let Err(error) = self.player.select_subtitle(id) {
             self.operation_error(error);
         } else {
+            self.last_subtitle_id = Some(id);
             self.show_status(&format!("{}: {label}", self.locale.text().subtitles));
         }
+    }
+
+    fn toggle_subtitles(&mut self) {
+        if self.player.current_subtitle_id().is_some() {
+            self.disable_subtitles_ui();
+            return;
+        }
+        let tracks = self.player.subtitle_tracks();
+        let Some(id) = subtitle_toggle_target(&tracks, self.last_subtitle_id) else {
+            self.show_status(self.locale.text().no_subtitle_tracks);
+            return;
+        };
+        let index = tracks.iter().position(|track| track.id == id).unwrap_or(0);
+        let label = subtitle_track_label(self.locale.text(), &tracks[index], index);
+        self.select_subtitle_ui(id, &label);
     }
 
     fn cycle_subtitle(&mut self) {
@@ -1113,7 +1138,7 @@ impl App {
                     self.set_volume_from_pointer(hwnd, point);
                 }
             }
-            PlaybackControl::Subtitles => self.show_subtitle_menu(hwnd),
+            PlaybackControl::Subtitles => self.toggle_subtitles(),
         }
     }
 
@@ -1405,96 +1430,6 @@ impl App {
                     {
                         let speed = speed.to_string();
                         self.command(&["set", "speed", &speed]);
-                    }
-                }
-            }
-        }
-        self.note_pointer_activity(hwnd);
-    }
-
-    fn show_subtitle_menu(&mut self, hwnd: HWND) {
-        self.show_cursor();
-        unsafe { KillTimer(hwnd, TIMER_HIDE_CURSOR) };
-        let menu = unsafe { CreatePopupMenu() };
-        if menu.is_null() {
-            return;
-        }
-        let text = self.locale.text();
-        let tracks = self.player.subtitle_tracks();
-        let current_subtitle = self.player.current_subtitle_id();
-        let track_commands: Vec<_> = tracks
-            .iter()
-            .enumerate()
-            .map(|(index, track)| (MENU_SUBTITLE_TRACK_BASE + index, track.id))
-            .collect();
-        let subtitles_off = wide(text.subtitles_off);
-        let open_subtitle = wide(text.open_subtitle);
-        let no_subtitle_tracks = wide(text.no_subtitle_tracks);
-        unsafe {
-            AppendMenuW(
-                menu,
-                MF_STRING
-                    | if current_subtitle.is_none() {
-                        MF_CHECKED
-                    } else {
-                        0
-                    },
-                MENU_SUBTITLE_OFF,
-                subtitles_off.as_ptr(),
-            );
-            if tracks.is_empty() {
-                AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, no_subtitle_tracks.as_ptr());
-            } else {
-                for (index, track) in tracks.iter().enumerate() {
-                    let label = wide(&subtitle_track_label(text, track, index));
-                    AppendMenuW(
-                        menu,
-                        MF_STRING
-                            | if current_subtitle == Some(track.id) {
-                                MF_CHECKED
-                            } else {
-                                0
-                            },
-                        MENU_SUBTITLE_TRACK_BASE + index,
-                        label.as_ptr(),
-                    );
-                }
-            }
-            AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
-            AppendMenuW(menu, MF_STRING, MENU_SUBTITLE_OPEN, open_subtitle.as_ptr());
-            SetForegroundWindow(hwnd);
-            let mut point: POINT = mem::zeroed();
-            GetCursorPos(&mut point);
-            let selected = TrackPopupMenu(
-                menu,
-                TPM_RETURNCMD | TPM_RIGHTBUTTON,
-                point.x,
-                point.y,
-                0,
-                hwnd,
-                ptr::null(),
-            ) as usize;
-            DestroyMenu(menu);
-            match selected {
-                MENU_SUBTITLE_OFF => {
-                    self.disable_subtitles_ui();
-                }
-                MENU_SUBTITLE_OPEN => {
-                    if let Some(path) = pick_subtitle_file(hwnd, text) {
-                        self.add_subtitle_ui(&path);
-                    }
-                }
-                _ => {
-                    if let Some((_, track_id)) = track_commands
-                        .iter()
-                        .find(|(command, _)| *command == selected)
-                    {
-                        let index = tracks
-                            .iter()
-                            .position(|track| track.id == *track_id)
-                            .unwrap_or(0);
-                        let label = subtitle_track_label(text, &tracks[index], index);
-                        self.select_subtitle_ui(*track_id, &label);
                     }
                 }
             }
@@ -2564,6 +2499,12 @@ fn subtitle_track_label(text: &UiText, track: &SubtitleTrack, index: usize) -> S
     label
 }
 
+fn subtitle_toggle_target(tracks: &[SubtitleTrack], last_id: Option<i64>) -> Option<i64> {
+    last_id
+        .filter(|id| tracks.iter().any(|track| track.id == *id))
+        .or_else(|| tracks.first().map(|track| track.id))
+}
+
 fn audio_track_label(text: &UiText, track: &AudioTrack, index: usize) -> String {
     let title = track
         .title
@@ -2649,6 +2590,36 @@ mod tests {
             external_filename: Some(r"C:\video\sample.ko.srt".to_string()),
         };
         assert_eq!(subtitle_track_label(text, &external, 1), "sample.ko.srt");
+    }
+
+    #[test]
+    fn cc_toggle_restores_the_last_valid_track_and_never_opens_a_menu() {
+        let tracks = [
+            SubtitleTrack {
+                id: 2,
+                title: Some("English".to_string()),
+                language: Some("en".to_string()),
+                external_filename: None,
+            },
+            SubtitleTrack {
+                id: 5,
+                title: Some("Korean".to_string()),
+                language: Some("ko".to_string()),
+                external_filename: None,
+            },
+        ];
+        assert_eq!(subtitle_toggle_target(&tracks, Some(5)), Some(5));
+        assert_eq!(subtitle_toggle_target(&tracks, Some(99)), Some(2));
+        assert_eq!(subtitle_toggle_target(&[], Some(5)), None);
+
+        let source = include_str!("windows_app.rs");
+        let activation = source
+            .split_once("fn activate_playback_control")
+            .and_then(|(_, rest)| rest.split_once("fn show_context_menu"))
+            .map(|(body, _)| body)
+            .expect("playback control activation");
+        assert!(activation.contains("PlaybackControl::Subtitles => self.toggle_subtitles()"));
+        assert!(!activation.contains("show_subtitle_menu"));
     }
 
     #[test]

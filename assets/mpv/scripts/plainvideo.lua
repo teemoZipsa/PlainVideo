@@ -36,6 +36,8 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     mute = "음소거",
     unmute = "음소거 해제",
     subtitles = "자막",
+    subtitles_on = "자막 켜기",
+    subtitles_off = "자막 끄기",
     fullscreen = "전체화면",
     light_mode = "라이트 모드",
     dark_mode = "다크 모드",
@@ -62,6 +64,8 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     mute = "Mute",
     unmute = "Unmute",
     subtitles = "Subtitles",
+    subtitles_on = "Turn subtitles on",
+    subtitles_off = "Turn subtitles off",
     fullscreen = "Full screen",
     light_mode = "Light mode",
     dark_mode = "Dark mode",
@@ -883,7 +887,7 @@ local function draw_playback_controls(width, height)
         tooltip_label = string.format("%s %d%%", copy.volume, volume_percent)
         tooltip_center = volume_left + math.floor(volume_width / 2)
     elseif tooltip_name == "subtitles" then
-        tooltip_label = copy.subtitles
+        tooltip_label = subtitle_active and copy.subtitles_off or copy.subtitles_on
         tooltip_center = subtitle_left + math.floor(button / 2)
     end
     if tooltip_label and top >= px(42) then
