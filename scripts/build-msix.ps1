@@ -288,7 +288,13 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging\icons\png\plainvideo-150.
 New-StoreLogo -Source (Join-Path $repoRoot 'packaging\icons\png\plainvideo-1024.png') -Destination (Join-Path $layoutRoot 'Assets\StoreLogo.png')
 
 $manifest = Get-Content -LiteralPath $manifestTemplatePath -Raw
-$manifest = [regex]::Replace($manifest, 'Version="\d+\.\d+\.\d+\.\d+"', "Version=`"$msixVersion`"", 1)
+$identityVersionPattern = [regex]::new(
+    '(?s)(<Identity\b[^>]*\bVersion=")\d+\.\d+\.\d+\.\d+(")'
+)
+if ($identityVersionPattern.Matches($manifest).Count -ne 1) {
+    throw 'The MSIX manifest must contain exactly one Identity Version attribute.'
+}
+$manifest = $identityVersionPattern.Replace($manifest, "`${1}$msixVersion`${2}", 1)
 [System.IO.File]::WriteAllText((Join-Path $layoutRoot 'AppxManifest.xml'), $manifest, [System.Text.UTF8Encoding]::new($false))
 
 $makeAppx = Find-KitTool -Name 'makeappx.exe'
