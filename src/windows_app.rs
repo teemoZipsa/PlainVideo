@@ -6,11 +6,13 @@ use std::path::{Path, PathBuf};
 use std::ptr;
 use std::time::{Duration, Instant};
 
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, SYSTEMTIME, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     BeginPaint, ClientToScreen, EndPaint, PAINTSTRUCT, ScreenToClient, UpdateWindow,
 };
+use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows_sys::Win32::System::SystemInformation::GetLocalTime;
 use windows_sys::Win32::UI::Controls::Dialogs::{
     GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY, OFN_NOCHANGEDIR,
     OFN_PATHMUSTEXIST, OPENFILENAMEW,
@@ -25,7 +27,8 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     VK_RIGHT, VK_S, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
 };
 use windows_sys::Win32::UI::Shell::{
-    DragAcceptFiles, DragFinish, DragQueryFileW, HDROP, ShellExecuteW,
+    DragAcceptFiles, DragFinish, DragQueryFileW, FOLDERID_Pictures, HDROP, SHGetKnownFolderPath,
+    ShellExecuteW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CS_DBLCLKS, CS_OWNDC, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
@@ -98,6 +101,7 @@ const MENU_OPEN_LOCATION: usize = 107;
 const MENU_FULLSCREEN: usize = 108;
 const MENU_RESTART: usize = 109;
 const MENU_ABOUT: usize = 110;
+const MENU_OPEN_SCREENSHOT_FOLDER: usize = 111;
 const MENU_SUBTITLE_OFF: usize = 200;
 const MENU_SUBTITLE_OPEN: usize = 201;
 const MENU_AUDIO_OFF: usize = 300;
@@ -877,6 +881,26 @@ impl App {
             .command(&["script-message", "plainvideo-status", message]);
     }
 
+    fn save_screenshot(&mut self) {
+        if !self.has_media || self.playback_error_visible {
+            return;
+        }
+        let result = (|| {
+            let directory = screenshot_directory()?;
+            let path = next_screenshot_path(&directory, &screenshot_timestamp());
+            self.player.save_screenshot(&path)?;
+            let file_name = path.file_name().and_then(OsStr::to_str).ok_or_else(|| {
+                "PlainVideo created a screenshot with an invalid name.".to_string()
+            })?;
+            let message = self.locale.text().screenshot_saved.replace("{}", file_name);
+            self.show_status(&message);
+            Ok::<(), String>(())
+        })();
+        if let Err(error) = result {
+            self.operation_error(error);
+        }
+    }
+
     fn save_resume_progress(&mut self) {
         if !self.has_media || self.playback_error_visible {
             return;
@@ -1390,6 +1414,7 @@ impl App {
         let no_audio_tracks = wide(text.no_audio_tracks);
         let playback_speed = wide(text.playback_speed);
         let save_screenshot = wide(text.save_screenshot);
+        let open_screenshot_folder = wide(text.open_screenshot_folder);
         let open_file_location_label = wide(text.open_file_location);
         let fullscreen = wide(text.fullscreen);
         let about = wide(text.about);
@@ -1528,6 +1553,12 @@ impl App {
                 AppendMenuW(
                     menu,
                     MF_STRING,
+                    MENU_OPEN_SCREENSHOT_FOLDER,
+                    open_screenshot_folder.as_ptr(),
+                );
+                AppendMenuW(
+                    menu,
+                    MF_STRING,
                     MENU_OPEN_LOCATION,
                     open_file_location_label.as_ptr(),
                 );
@@ -1573,8 +1604,16 @@ impl App {
                     self.binding("plainvideo/toggle-pause");
                 }
                 MENU_SCREENSHOT => {
-                    self.command(&["screenshot"]);
+                    self.save_screenshot();
                 }
+                MENU_OPEN_SCREENSHOT_FOLDER => match screenshot_directory() {
+                    Ok(path) => {
+                        if let Err(error) = open_folder(hwnd, &path) {
+                            self.operation_error(error);
+                        }
+                    }
+                    Err(error) => self.operation_error(error),
+                },
                 MENU_OPEN_LOCATION => {
                     if let Some(path) = self.active_path.clone() {
                         if let Err(error) = open_file_location(hwnd, &path) {
@@ -2274,7 +2313,7 @@ fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
         0x54 => app.toggle_always_on_top(hwnd),                  // T
         0x56 => app.cycle_subtitle(),                            // V
         VK_S => {
-            app.command(&["screenshot"]);
+            app.save_screenshot();
         }
         0x51 => unsafe { PostQuitMessage(0) }, // Q
         _ => {}
@@ -2612,6 +2651,88 @@ fn open_file_location(hwnd: HWND, path: &Path) -> Result<(), String> {
     }
 }
 
+fn open_folder(hwnd: HWND, path: &Path) -> Result<(), String> {
+    let operation = wide("open");
+    let path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let result = unsafe {
+        ShellExecuteW(
+            hwnd,
+            operation.as_ptr(),
+            path.as_ptr(),
+            ptr::null(),
+            ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if result as isize > 32 {
+        Ok(())
+    } else {
+        Err(format!(
+            "PlainVideo could not open the screenshot folder (ShellExecute code {}).",
+            result as isize
+        ))
+    }
+}
+
+fn screenshot_directory() -> Result<PathBuf, String> {
+    let directory = if let Some(path) = env::var_os("PLAINVIDEO_SCREENSHOT_DIR") {
+        PathBuf::from(path)
+    } else {
+        let mut raw = ptr::null_mut();
+        let result =
+            unsafe { SHGetKnownFolderPath(&FOLDERID_Pictures, 0, ptr::null_mut(), &mut raw) };
+        if result < 0 || raw.is_null() {
+            return Err(format!(
+                "PlainVideo could not locate the Pictures folder (HRESULT 0x{:08X}).",
+                result as u32
+            ));
+        }
+        let length = unsafe {
+            let mut length = 0;
+            while *raw.add(length) != 0 {
+                length += 1;
+            }
+            length
+        };
+        let path = PathBuf::from(std::ffi::OsString::from_wide(unsafe {
+            std::slice::from_raw_parts(raw, length)
+        }));
+        unsafe { CoTaskMemFree(raw.cast()) };
+        path.join("PlainVideo")
+    };
+    std::fs::create_dir_all(&directory).map_err(|error| {
+        format!(
+            "PlainVideo could not create the screenshot folder {}: {error}",
+            directory.display()
+        )
+    })?;
+    Ok(directory)
+}
+
+fn next_screenshot_path(directory: &Path, timestamp: &str) -> PathBuf {
+    let base = format!("PlainVideo_{timestamp}");
+    let first = directory.join(format!("{base}.png"));
+    if !first.exists() {
+        return first;
+    }
+    for suffix in 2..=9_999 {
+        let candidate = directory.join(format!("{base}_{suffix}.png"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    directory.join(format!("{base}_{}.png", std::process::id()))
+}
+
+fn screenshot_timestamp() -> String {
+    let mut time: SYSTEMTIME = unsafe { mem::zeroed() };
+    unsafe { GetLocalTime(&mut time) };
+    format!(
+        "{:04}-{:02}-{:02}_{:02}-{:02}-{:02}",
+        time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond
+    )
+}
+
 fn configure_diagnostic_timers(hwnd: HWND, has_replacement: bool) -> Result<(), String> {
     if has_replacement && unsafe { SetTimer(hwnd, TIMER_DIAGNOSTIC_REPLACE, 700, None) } == 0 {
         return Err("Could not schedule the diagnostic replacement timer.".to_string());
@@ -2835,6 +2956,27 @@ mod tests {
         assert_eq!(MENU_OPEN, 100);
         assert_eq!(MENU_SUBTITLE_TRACK_BASE, 1_000);
         assert_ne!(WM_CONTEXTMENU, WM_PAINT);
+    }
+
+    #[test]
+    fn screenshot_names_are_readable_and_never_overwrite() {
+        let root = env::temp_dir().join(format!(
+            "plainvideo-screenshot-name-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).expect("temporary screenshot folder");
+        let first = next_screenshot_path(&root, "2026-07-22_14-30-05");
+        assert_eq!(
+            first.file_name().and_then(OsStr::to_str),
+            Some("PlainVideo_2026-07-22_14-30-05.png")
+        );
+        std::fs::write(&first, []).expect("collision fixture");
+        let second = next_screenshot_path(&root, "2026-07-22_14-30-05");
+        assert_eq!(
+            second.file_name().and_then(OsStr::to_str),
+            Some("PlainVideo_2026-07-22_14-30-05_2.png")
+        );
+        std::fs::remove_dir_all(&root).expect("remove temporary screenshot folder");
     }
 
     #[test]

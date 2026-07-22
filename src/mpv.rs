@@ -719,6 +719,11 @@ impl Player {
         self.command(&["loadfile", &path, "replace"])
     }
 
+    pub fn save_screenshot(&self, path: &Path) -> Result<(), String> {
+        let path = utf8_path(path)?;
+        self.command(&["screenshot-to-file", &path, "subtitles"])
+    }
+
     pub fn script_binding(&self, name: &str) -> Result<(), String> {
         self.command(&["script-binding", name])
     }

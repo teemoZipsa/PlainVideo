@@ -26,6 +26,8 @@ pub struct UiText {
     pub audio_track: &'static str,
     pub playback_speed: &'static str,
     pub save_screenshot: &'static str,
+    pub screenshot_saved: &'static str,
+    pub open_screenshot_folder: &'static str,
     pub open_file_location: &'static str,
     pub fullscreen: &'static str,
     pub about: &'static str,
@@ -62,6 +64,8 @@ const KOREAN: UiText = UiText {
     audio_track: "오디오",
     playback_speed: "재생 속도",
     save_screenshot: "스크린샷 저장\tS",
+    screenshot_saved: "스크린샷 저장됨 · {}",
+    open_screenshot_folder: "스크린샷 폴더 열기",
     open_file_location: "파일 위치 열기",
     fullscreen: "전체 화면\tF",
     about: "PlainVideo 정보…",
@@ -98,6 +102,8 @@ const ENGLISH: UiText = UiText {
     audio_track: "Audio",
     playback_speed: "Playback speed",
     save_screenshot: "Save screenshot\tS",
+    screenshot_saved: "Screenshot saved · {}",
+    open_screenshot_folder: "Open screenshot folder",
     open_file_location: "Open file location",
     fullscreen: "Full screen\tF",
     about: "About PlainVideo…",
@@ -195,6 +201,8 @@ mod tests {
             assert!(!text.audio_track.is_empty());
             assert!(!text.playback_speed.is_empty());
             assert!(!text.save_screenshot.is_empty());
+            assert!(!text.screenshot_saved.is_empty());
+            assert!(!text.open_screenshot_folder.is_empty());
             assert!(!text.open_file_location.is_empty());
             assert!(!text.fullscreen.is_empty());
             assert!(!text.about.is_empty());
