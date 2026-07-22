@@ -13,6 +13,7 @@ $runId = [DateTimeOffset]::Now.ToString('yyyyMMdd-HHmmss-fff')
 $evidenceRoot = Join-Path $runtimeRoot "validation\integrated\$runId"
 $portableRoot = Join-Path $runtimeRoot 'portable\PlainVideo'
 $windowEvidence = Join-Path $evidenceRoot 'window-behavior.json'
+$interactionEvidence = Join-Path $evidenceRoot 'input-interactions.json'
 $matrixEvidence = Join-Path $evidenceRoot 'format-matrix'
 $soakEvidence = Join-Path $evidenceRoot 'playback-soak.json'
 $summaryPath = Join-Path $evidenceRoot 'summary.json'
@@ -103,6 +104,12 @@ try {
             -Executable (Join-Path $portableRoot 'plainvideo.exe') `
             -EvidencePath $windowEvidence
     }
+    Invoke-ValidationStep 'Input interaction conflicts' {
+        & (Join-Path $PSScriptRoot 'verify-input-interactions.ps1') `
+            -Executable (Join-Path $portableRoot 'plainvideo.exe') `
+            -AppRoot $portableRoot `
+            -EvidencePath $interactionEvidence
+    }
     Invoke-ValidationStep 'Format fixture generation' {
         & (Join-Path $PSScriptRoot 'generate-format-fixtures.ps1')
     }
@@ -127,7 +134,7 @@ finally {
         schemaVersion = 1
         generatedAt = [DateTimeOffset]::Now.ToString('o')
         profile = $Profile
-        status = if ($failed.Count -eq 0 -and $steps.Count -eq 13) { 'passed' } else { 'failed' }
+        status = if ($failed.Count -eq 0 -and $steps.Count -eq 14) { 'passed' } else { 'failed' }
         source = [ordered]@{
             revision = (& git -C $repoRoot rev-parse HEAD 2>$null | Select-Object -First 1)
             dirty = @(& git -C $repoRoot status --short 2>$null).Count -gt 0
@@ -135,6 +142,7 @@ finally {
         evidence = [ordered]@{
             root = $evidenceRoot
             windowBehavior = $windowEvidence
+            inputInteractions = $interactionEvidence
             playbackRecovery = Join-Path $evidenceRoot 'playback-recovery.json'
             formatMatrix = Join-Path $matrixEvidence 'playback-matrix.json'
             playbackSoak = $soakEvidence
