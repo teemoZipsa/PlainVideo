@@ -34,6 +34,7 @@ PlainVideo's custom-drawn ASS overlay does not yet expose a custom UI Automation
 | Seek | Large seek | `Shift+Left` / `Shift+Right` | Seeks backward/forward thirty seconds. |
 | Volume | Adjust volume | `Up` / `Down` | Changes volume in two-point steps; increasing volume clears mute. |
 | Volume | Toggle mute | `M` | Toggles mute without adding a permanent button. |
+| Speed | Decrease/increase/reset | `[` / `]` / `\` | Moves between the context-menu speed steps or returns to 1.0× and reports the result in the shared top feedback lane. |
 | Queue | Previous video | `PageUp` | Opens the previous available video; otherwise has no destructive effect. |
 | Queue | Next video | `PageDown` | Opens the next available video; otherwise has no destructive effect. |
 | Tracks | Cycle audio track | `A` | Cycles available audio tracks and shows the selected track. |

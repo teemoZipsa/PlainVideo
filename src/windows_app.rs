@@ -23,8 +23,8 @@ use windows_sys::Win32::UI::HiDpi::{
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
-    VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_F, VK_F6, VK_LEFT, VK_NEXT, VK_O, VK_PRIOR, VK_RETURN,
-    VK_RIGHT, VK_S, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
+    VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_F, VK_F6, VK_LEFT, VK_NEXT, VK_O, VK_OEM_4, VK_OEM_5,
+    VK_OEM_6, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_S, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
 };
 use windows_sys::Win32::UI::Shell::{
     DragAcceptFiles, DragFinish, DragQueryFileW, FOLDERID_Pictures, HDROP, SHGetKnownFolderPath,
@@ -1263,6 +1263,29 @@ impl App {
         }
     }
 
+    fn set_playback_speed(&mut self, speed: f64) {
+        if !self.has_media || self.playback_error_visible {
+            return;
+        }
+        let speed = speed.clamp(
+            PLAYBACK_SPEEDS[0].2,
+            PLAYBACK_SPEEDS[PLAYBACK_SPEEDS.len() - 1].2,
+        );
+        let value = format!("{speed:.2}");
+        if self.command(&["set", "speed", &value]) {
+            self.show_status(&format!(
+                "{} · {}×",
+                self.locale.text().playback_speed,
+                format_playback_speed(speed)
+            ));
+        }
+    }
+
+    fn adjust_playback_speed(&mut self, direction: i32) {
+        let speed = adjacent_playback_speed(self.player.playback_speed(), direction);
+        self.set_playback_speed(speed);
+    }
+
     fn disable_subtitles_ui(&mut self) {
         if let Some(id) = self.player.current_subtitle_id() {
             self.last_subtitle_id = Some(id);
@@ -1680,8 +1703,7 @@ impl App {
                         .iter()
                         .find(|(command, _, _)| *command == selected)
                     {
-                        let speed = speed.to_string();
-                        self.command(&["set", "speed", &speed]);
+                        self.set_playback_speed(*speed);
                     }
                 }
             }
@@ -2316,6 +2338,9 @@ fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
         }
         VK_UP => app.adjust_volume(2.0),
         VK_DOWN => app.adjust_volume(-2.0),
+        VK_OEM_4 => app.adjust_playback_speed(-1),
+        VK_OEM_6 => app.adjust_playback_speed(1),
+        VK_OEM_5 => app.set_playback_speed(1.0),
         VK_PRIOR => app.previous_video(),
         VK_NEXT => {
             app.next_video();
@@ -2651,6 +2676,34 @@ fn format_playback_time(seconds: f64) -> String {
     } else {
         format!("{minutes:02}:{seconds:02}")
     }
+}
+
+fn adjacent_playback_speed(current: f64, direction: i32) -> f64 {
+    if direction > 0 {
+        PLAYBACK_SPEEDS
+            .iter()
+            .map(|(_, _, speed)| *speed)
+            .find(|speed| *speed > current + 0.001)
+            .unwrap_or(PLAYBACK_SPEEDS[PLAYBACK_SPEEDS.len() - 1].2)
+    } else {
+        PLAYBACK_SPEEDS
+            .iter()
+            .rev()
+            .map(|(_, _, speed)| *speed)
+            .find(|speed| *speed < current - 0.001)
+            .unwrap_or(PLAYBACK_SPEEDS[0].2)
+    }
+}
+
+fn format_playback_speed(speed: f64) -> String {
+    let mut value = format!("{speed:.2}");
+    while value.ends_with('0') {
+        value.pop();
+    }
+    if value.ends_with('.') {
+        value.push('0');
+    }
+    value
 }
 
 fn open_file_location(hwnd: HWND, path: &Path) -> Result<(), String> {
@@ -3003,6 +3056,18 @@ mod tests {
             Some("PlainVideo_2026-07-22_14-30-05_2.png")
         );
         std::fs::remove_dir_all(&root).expect("remove temporary screenshot folder");
+    }
+
+    #[test]
+    fn playback_speed_shortcuts_move_between_menu_steps() {
+        assert_eq!(adjacent_playback_speed(1.0, 1), 1.25);
+        assert_eq!(adjacent_playback_speed(1.1, 1), 1.25);
+        assert_eq!(adjacent_playback_speed(1.1, -1), 1.0);
+        assert_eq!(adjacent_playback_speed(0.5, -1), 0.5);
+        assert_eq!(adjacent_playback_speed(2.0, 1), 2.0);
+        assert_eq!(format_playback_speed(1.0), "1.0");
+        assert_eq!(format_playback_speed(0.75), "0.75");
+        assert_eq!(format_playback_speed(1.25), "1.25");
     }
 
     #[test]
