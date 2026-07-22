@@ -61,3 +61,13 @@ source information are public. No special test credentials are needed.
 Retain manual publication after certification unless the user changes the
 release policy. Submission, certification, publication, and device delivery
 must be recorded as separate states.
+
+## Observed submission result
+
+- Submission ID: `1152921505701471034`
+- Submitted: `2026-07-23` (Asia/Seoul)
+- Partner Center package result: `PlainVideo_0.2.0.0_x64-store.msix` validated
+- Current status: Submission complete; pre-processing in progress
+- Certification: not started at the observation time
+- Publishing: not started; manual `Publish now` hold retained
+- Existing Store version: Submission 1 / `0.1.0.0` remains publicly available
