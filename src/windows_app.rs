@@ -3512,6 +3512,12 @@ mod tests {
             .expect("media information renderer");
 
         assert!(media_info.contains("outlined_text_event(7, padding"));
+        assert!(media_info.contains("mp.get_property_number(\"file-size\""));
+        assert!(media_info.contains("format_average_bitrate(file_size, duration)"));
+        assert!(media_info.contains("track_position(\"audio\")"));
+        assert!(media_info.contains("track_position(\"sub\")"));
+        assert!(media_info.contains("copy.remaining"));
+        assert!(media_info.contains("copy.input"));
         assert!(!media_info.contains("box_event("));
         assert!(!media_info.contains("right_x"));
         assert!(!media_info.contains("left + px(500)"));

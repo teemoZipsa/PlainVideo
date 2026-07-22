@@ -52,6 +52,10 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     speed = "속도",
     queue = "재생목록",
     position = "재생 위치",
+    remaining = "남음",
+    file = "파일",
+    input = "입력",
+    average = "평균",
     none = "없음",
     software = "소프트웨어",
 } or {
@@ -80,6 +84,10 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     speed = "Speed",
     queue = "Queue",
     position = "Position",
+    remaining = "Remaining",
+    file = "File",
+    input = "Input",
+    average = "Avg",
     none = "None",
     software = "Software",
 }
@@ -278,6 +286,18 @@ local function selected_track(kind)
     return nil
 end
 
+local function track_position(kind)
+    local selected_index = 0
+    local count = 0
+    for _, track in ipairs(mp.get_property_native("track-list", {}) or {}) do
+        if track.type == kind then
+            count = count + 1
+            if track.selected then selected_index = count end
+        end
+    end
+    return selected_index, count
+end
+
 local function uppercase(value, fallback)
     value = tostring(value or "")
     if value == "" or value == "no" then
@@ -289,6 +309,46 @@ end
 local function decimal(value, places)
     local result = string.format("%." .. tostring(places) .. "f", tonumber(value) or 0)
     return result:gsub("0+$", ""):gsub("%.$", "")
+end
+
+local function format_file_size(bytes)
+    local value = math.max(0, tonumber(bytes) or 0)
+    if value <= 0 then return "" end
+    local units = { "B", "KB", "MB", "GB", "TB" }
+    local unit = 1
+    while value >= 1024 and unit < #units do
+        value = value / 1024
+        unit = unit + 1
+    end
+    local places = value < 10 and 2 or (value < 100 and 1 or 0)
+    return decimal(value, places) .. " " .. units[unit]
+end
+
+local function format_average_bitrate(bytes, duration)
+    local bits_per_second = duration > 0 and bytes > 0 and bytes * 8 / duration or 0
+    if bits_per_second >= 1000000 then
+        return decimal(bits_per_second / 1000000, 2) .. " Mbps"
+    elseif bits_per_second >= 1000 then
+        return decimal(bits_per_second / 1000, 0) .. " kbps"
+    end
+    return ""
+end
+
+local function container_label(value, filename)
+    value = tostring(value or ""):lower()
+    local extension = tostring(filename or ""):match("%.([^%.]+)$")
+    extension = extension and extension:lower() or ""
+    if extension == "webm" or value:find("webm", 1, true) then return "WEBM" end
+    if value:find("matroska", 1, true) or extension == "mkv" then return "MKV" end
+    if value:find("mp4", 1, true) or value:find("mov", 1, true)
+        or extension == "mp4" or extension == "m4v" then return "MP4" end
+    if value:find("mpegts", 1, true) or extension == "ts" or extension == "m2ts" then
+        return "MPEG-TS"
+    end
+    if value:find("avi", 1, true) or extension == "avi" then return "AVI" end
+    if value:find("flv", 1, true) or extension == "flv" then return "FLV" end
+    if extension ~= "" then return extension:upper() end
+    return uppercase(value, copy.none)
 end
 
 local function file_name(value)
@@ -318,6 +378,9 @@ local function draw_media_info(width, height)
     local filename = first_nonempty(mp.get_property("filename"), mp.get_property("media-title"), copy.none)
     local position = mp.get_property_number("time-pos", 0)
     local duration = mp.get_property_number("duration", 0)
+    local remaining = duration > 0 and math.max(0, duration - position) or 0
+    local file_size = mp.get_property_number("file-size", 0)
+    local container = container_label(mp.get_property("file-format", ""), filename)
     local video_codec = uppercase(mp.get_property("video-codec", mp.get_property("video-format", "")), copy.none)
     local video_width = mp.get_property_number("video-params/w", 0)
     local video_height = mp.get_property_number("video-params/h", 0)
@@ -328,12 +391,14 @@ local function draw_media_info(width, height)
     local color_transfer = first_nonempty(mp.get_property("video-params/gamma"), "")
     local decoder = uppercase(mp.get_property("hwdec-current", ""), copy.software)
     local audio_track = selected_track("audio")
+    local audio_index, audio_count = track_position("audio")
     local audio_codec = uppercase(mp.get_property("audio-codec-name",
         audio_track and audio_track.codec or ""), copy.none)
     local channels = mp.get_property("audio-params/hr-channels",
         mp.get_property("audio-params/channels", ""))
     local sample_rate = mp.get_property_number("audio-params/samplerate", 0)
     local subtitle_track = selected_track("sub")
+    local subtitle_index, subtitle_count = track_position("sub")
     local subtitle = copy.none
     if subtitle_track then
         subtitle = first_nonempty(subtitle_track.title, subtitle_track.lang,
@@ -355,9 +420,41 @@ local function draw_media_info(width, height)
     if fps > 0 then
         table.insert(video_parts, decimal(fps, 3) .. " fps")
     end
-    local audio_parts = { audio_codec }
+    local file_parts = { container }
+    local size_text = format_file_size(file_size)
+    if size_text ~= "" then table.insert(file_parts, size_text) end
+    local bitrate_text = format_average_bitrate(file_size, duration)
+    if bitrate_text ~= "" then
+        table.insert(file_parts, copy.average .. " " .. bitrate_text)
+    end
+
+    local audio_parts = {}
+    if audio_track then
+        if audio_count > 0 then
+            table.insert(audio_parts, string.format("%d/%d", audio_index, audio_count))
+        end
+        local audio_name = first_nonempty(audio_track.title, audio_track.lang,
+            file_name(audio_track["external-filename"]))
+        if audio_name ~= "" then table.insert(audio_parts, audio_name) end
+        if audio_track.lang and audio_track.lang ~= audio_name then
+            table.insert(audio_parts, audio_track.lang)
+        end
+        table.insert(audio_parts, audio_codec)
+    else
+        table.insert(audio_parts, copy.none)
+    end
     if channels and channels ~= "" then table.insert(audio_parts, channels) end
     if sample_rate > 0 then table.insert(audio_parts, decimal(sample_rate / 1000, 1) .. " kHz") end
+
+    local subtitle_parts = {}
+    if subtitle_track then
+        if subtitle_count > 0 then
+            table.insert(subtitle_parts, string.format("%d/%d", subtitle_index, subtitle_count))
+        end
+        table.insert(subtitle_parts, subtitle)
+    else
+        table.insert(subtitle_parts, copy.none)
+    end
 
     local video_detail_parts = { pixel_format }
     if color_primaries ~= "" then table.insert(video_detail_parts, color_primaries) end
@@ -371,14 +468,21 @@ local function draw_media_info(width, height)
         {
             color = palette.text,
             bold = false,
-            value = string.format("%s  %s / %s  (%.1f%%)", copy.position,
-                format_time(position), format_time(duration), percent),
+            value = string.format("%s  %s / %s  (%.1f%%)   ·   %s  %s", copy.position,
+                format_time(position), format_time(duration), percent,
+                copy.remaining, format_time(remaining)),
         },
         {
             color = palette.secondary,
             bold = false,
             value = string.format("%s  %d / %d   ·   %s  %s×", copy.queue,
                 media_queue_position, media_queue_count, copy.speed, decimal(speed, 2)),
+        },
+        { gap = true },
+        {
+            color = palette.secondary,
+            bold = false,
+            value = copy.file .. "  " .. table.concat(file_parts, " · "),
         },
         { gap = true },
         {
@@ -389,7 +493,7 @@ local function draw_media_info(width, height)
         {
             color = palette.secondary,
             bold = false,
-            value = "Input  " .. table.concat(video_detail_parts, " · "),
+            value = copy.input .. "  " .. table.concat(video_detail_parts, " · "),
         },
         {
             color = palette.secondary,
@@ -405,7 +509,7 @@ local function draw_media_info(width, height)
         {
             color = palette.secondary,
             bold = false,
-            value = copy.subtitle .. "  " .. subtitle,
+            value = copy.subtitle .. "  " .. table.concat(subtitle_parts, " · "),
         },
     }
 
