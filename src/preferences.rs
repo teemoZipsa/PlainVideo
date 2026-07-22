@@ -4,11 +4,25 @@ use std::path::PathBuf;
 
 use crate::windowing::WindowBounds;
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Preferences {
     pub light_theme: bool,
     pub always_on_top: bool,
+    pub volume: f64,
+    pub muted: bool,
     pub last_window_bounds: Option<WindowBounds>,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            light_theme: false,
+            always_on_top: false,
+            volume: 100.0,
+            muted: false,
+            last_window_bounds: None,
+        }
+    }
 }
 
 pub struct PreferencesStore {
@@ -49,13 +63,15 @@ impl PreferencesStore {
         fs::write(
             path,
             format!(
-                "version=2\ntheme={}\nalways_on_top={}{}\n",
+                "version=3\ntheme={}\nalways_on_top={}\nvolume={:.2}\nmuted={}{}\n",
                 if preferences.light_theme {
                     "light"
                 } else {
                     "dark"
                 },
                 preferences.always_on_top,
+                preferences.volume.clamp(0.0, 100.0),
+                preferences.muted,
                 preferences
                     .last_window_bounds
                     .map_or_else(String::new, |bounds| {
@@ -84,6 +100,14 @@ impl Preferences {
             match name.trim() {
                 "theme" => preferences.light_theme = value.trim() == "light",
                 "always_on_top" => preferences.always_on_top = value.trim() == "true",
+                "volume" => {
+                    if let Ok(volume) = value.trim().parse::<f64>() {
+                        if volume.is_finite() {
+                            preferences.volume = volume.clamp(0.0, 100.0);
+                        }
+                    }
+                }
+                "muted" => preferences.muted = value.trim() == "true",
                 "window_x" => window_x = value.trim().parse::<i32>().ok(),
                 "window_y" => window_y = value.trim().parse::<i32>().ok(),
                 "window_width" => window_width = value.trim().parse::<u32>().ok(),
@@ -118,6 +142,8 @@ mod tests {
             Preferences {
                 light_theme: true,
                 always_on_top: true,
+                volume: 100.0,
+                muted: false,
                 last_window_bounds: Some(WindowBounds {
                     x: -1200,
                     y: 40,
@@ -130,5 +156,20 @@ mod tests {
             Preferences::parse("theme=unexpected\n"),
             Preferences::default()
         );
+    }
+
+    #[test]
+    fn volume_and_mute_are_clamped_and_backward_compatible() {
+        let parsed = Preferences::parse("version=3\nvolume=37.5\nmuted=true\n");
+        assert_eq!(parsed.volume, 37.5);
+        assert!(parsed.muted);
+
+        assert_eq!(Preferences::parse("volume=240\n").volume, 100.0);
+        assert_eq!(Preferences::parse("volume=-4\n").volume, 0.0);
+        assert_eq!(Preferences::parse("volume=NaN\n").volume, 100.0);
+
+        let legacy = Preferences::parse("version=2\ntheme=light\nalways_on_top=true\n");
+        assert_eq!(legacy.volume, 100.0);
+        assert!(!legacy.muted);
     }
 }

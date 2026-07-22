@@ -75,10 +75,12 @@ const TIMER_DIAGNOSTIC_EXIT: usize = 3;
 const TIMER_HIDE_CURSOR: usize = 4;
 const TIMER_RESUME_PROGRESS: usize = 5;
 const TIMER_SEEK_PREVIEW: usize = 6;
+const TIMER_SAVE_PREFERENCES: usize = 7;
 const SURFACE_CLICK_DELAY_MS: u32 = 100;
 const RESUME_SAVE_INTERVAL_MS: u32 = 10_000;
 const CURSOR_HIDE_DELAY_MS: u32 = 1_600;
 const SEEK_PREVIEW_DELAY_MS: u32 = 120;
+const PREFERENCES_SAVE_DELAY_MS: u32 = 350;
 const WINDOW_CONTROL_SIZE: i32 = 34;
 const WINDOW_CONTROL_GAP: i32 = 6;
 const WINDOW_CONTROL_MARGIN: i32 = 10;
@@ -273,6 +275,8 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         SurfaceTheme::Dark
     };
     player.command(&["set", "background-color", surface_theme.background_color()])?;
+    player.set_volume(preferences.volume)?;
+    player.command(&["set", "mute", if preferences.muted { "yes" } else { "no" }])?;
     if preferences.always_on_top {
         set_window_always_on_top(window.hwnd, true)?;
     }
@@ -1065,8 +1069,22 @@ impl App {
         let _ = self.preferences_store.save(Preferences {
             light_theme: self.surface_theme == SurfaceTheme::Light,
             always_on_top: self.always_on_top,
+            volume: self.player.volume(),
+            muted: self.player.is_muted(),
             last_window_bounds: self.last_window_bounds,
         });
+    }
+
+    fn queue_preferences_save(&self) {
+        unsafe {
+            KillTimer(self.hwnd, TIMER_SAVE_PREFERENCES);
+            SetTimer(
+                self.hwnd,
+                TIMER_SAVE_PREFERENCES,
+                PREFERENCES_SAVE_DELAY_MS,
+                None,
+            );
+        }
     }
 
     fn save_window_bounds_if_restorable(&mut self, hwnd: HWND) {
@@ -1218,6 +1236,7 @@ impl App {
             return;
         }
         let _ = self.player.command(&["set", "mute", "no"]);
+        self.queue_preferences_save();
     }
 
     fn adjust_volume(&mut self, amount: f64) {
@@ -1232,6 +1251,7 @@ impl App {
         let _ = self
             .player
             .command(&["script-message", "plainvideo-volume-feedback"]);
+        self.queue_preferences_save();
     }
 
     fn toggle_mute(&mut self) {
@@ -1239,6 +1259,7 @@ impl App {
             let _ = self
                 .player
                 .command(&["script-message", "plainvideo-volume-feedback"]);
+            self.queue_preferences_save();
         }
     }
 
@@ -2197,6 +2218,11 @@ unsafe extern "system" fn window_proc(
                 TIMER_SEEK_PREVIEW => {
                     if let Some(app) = app {
                         app.request_seek_preview();
+                    }
+                }
+                TIMER_SAVE_PREFERENCES => {
+                    if let Some(app) = app {
+                        app.save_preferences();
                     }
                 }
                 _ => {}

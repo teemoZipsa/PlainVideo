@@ -821,6 +821,11 @@ impl Player {
         command_with(self.api.command, self.handle, &["set", "volume", &volume])
     }
 
+    pub fn is_muted(&self) -> bool {
+        self.property_string("mute")
+            .is_some_and(|value| matches!(value.as_str(), "yes" | "true"))
+    }
+
     pub fn video_dimensions(&self) -> Option<(u32, u32)> {
         let width = self
             .property_string("video-params/dw")
