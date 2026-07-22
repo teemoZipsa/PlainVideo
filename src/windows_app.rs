@@ -158,6 +158,13 @@ enum PlaybackControl {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SurfaceDoubleClick {
+    SeekBack,
+    Fullscreen,
+    SeekForward,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PressedControl {
     Window(WindowControl),
     Playback(PlaybackControl),
@@ -2166,7 +2173,23 @@ unsafe extern "system" fn window_proc(
                 .is_none()
                     && playback_control_at(hwnd, point, app.dpi).is_none()
                 {
-                    app.toggle_fullscreen(hwnd);
+                    let action = if app.has_media && !app.playback_error_visible {
+                        surface_double_click_action(
+                            client_size(hwnd).map(|size| size.0).unwrap_or(0),
+                            point.x,
+                        )
+                    } else {
+                        SurfaceDoubleClick::Fullscreen
+                    };
+                    match action {
+                        SurfaceDoubleClick::SeekBack => {
+                            app.binding("plainvideo/seek-back-double");
+                        }
+                        SurfaceDoubleClick::Fullscreen => app.toggle_fullscreen(hwnd),
+                        SurfaceDoubleClick::SeekForward => {
+                            app.binding("plainvideo/seek-forward-double");
+                        }
+                    }
                 }
             }
             0
@@ -2397,6 +2420,19 @@ fn client_size(hwnd: HWND) -> Option<(i32, i32)> {
         return None;
     }
     Some((rect.right - rect.left, rect.bottom - rect.top))
+}
+
+fn surface_double_click_action(width: i32, x: i32) -> SurfaceDoubleClick {
+    if width <= 0 {
+        return SurfaceDoubleClick::Fullscreen;
+    }
+    if x < width / 3 {
+        SurfaceDoubleClick::SeekBack
+    } else if x >= width * 2 / 3 {
+        SurfaceDoubleClick::SeekForward
+    } else {
+        SurfaceDoubleClick::Fullscreen
+    }
 }
 
 fn move_zone_contains_point(client_width: i32, point: POINT, dpi: u32) -> bool {
@@ -3233,6 +3269,38 @@ mod tests {
 
         let fast_double_click = PendingSurfaceClick::new(false);
         assert_eq!(fast_double_click.restore_after_double_click(), None);
+    }
+
+    #[test]
+    fn surface_double_click_uses_seek_edges_and_fullscreen_center() {
+        assert_eq!(
+            surface_double_click_action(1200, 0),
+            SurfaceDoubleClick::SeekBack
+        );
+        assert_eq!(
+            surface_double_click_action(1200, 399),
+            SurfaceDoubleClick::SeekBack
+        );
+        assert_eq!(
+            surface_double_click_action(1200, 400),
+            SurfaceDoubleClick::Fullscreen
+        );
+        assert_eq!(
+            surface_double_click_action(1200, 799),
+            SurfaceDoubleClick::Fullscreen
+        );
+        assert_eq!(
+            surface_double_click_action(1200, 800),
+            SurfaceDoubleClick::SeekForward
+        );
+        assert_eq!(
+            surface_double_click_action(0, 0),
+            SurfaceDoubleClick::Fullscreen
+        );
+
+        let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
+        assert!(lua.contains("\"seek-back-double\", function() seek(-10) end"));
+        assert!(lua.contains("\"seek-forward-double\", function() seek(10) end"));
     }
 
     #[test]

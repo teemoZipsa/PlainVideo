@@ -47,7 +47,7 @@ PlainVideo's custom-drawn ASS overlay does not yet expose a custom UI Automation
 | Capture | Save screenshot | `S` | Requests a video screenshot from libmpv. |
 | App | Close | `Q` or `Alt+F4` | Closes PlainVideo. |
 
-Pointer equivalents remain available: click the video to play or pause, double-click or use the top-right button for fullscreen, use the mouse wheel for volume, drag the seek bar, click the speaker icon to mute, click or drag the adjacent volume track, click `CC` to toggle the current subtitle, and right-click for subtitle selection, external subtitle loading, open, retry, previous/next, audio, and close actions.
+Pointer equivalents remain available: click the video to play or pause; double-click the left or right third to seek backward or forward ten seconds; double-click the center third or use the top-right button for fullscreen; use the mouse wheel for volume; drag the seek bar; click the speaker icon to mute; click or drag the adjacent volume track; click `CC` to toggle the current subtitle; and right-click for subtitle selection, external subtitle loading, open, retry, previous/next, audio, and close actions.
 
 ## 100-200% scaling expectations
 
