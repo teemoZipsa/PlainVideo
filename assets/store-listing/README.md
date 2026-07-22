@@ -1,9 +1,9 @@
 # Microsoft Store listing artwork
 
-This directory contains prepared Partner Center artwork candidates. It is
+This directory contains the Partner Center artwork used by PlainVideo. It is
 intentionally separate from the PNG/ICO files embedded in the app and from
-future MSIX package resources. Applicable fields must be confirmed against the
-actual app listing in Partner Center before submission.
+MSIX package resources. The listed destinations were verified against the live
+app listing in Partner Center.
 
 ## Prepared files
 
@@ -12,16 +12,15 @@ the only text is the product name `PlainVideo`.
 
 | Artwork | Prepared file | Current status |
 | --- | --- | --- |
-| 1:1 App tile icon | `upload/shared/app-tile-300x300.png` | Documented for apps and recommended by Microsoft |
-| 2:3 Poster art | `upload/<locale>/poster-1440x2160.png` | Candidate only; Microsoft's current MSIX guidance says this field applies to games, not apps |
-| 1:1 Box art | `upload/<locale>/box-art-2160x2160.png` | Candidate only; Microsoft's current MSIX guidance says this field applies to games, not apps |
-| 150 x 150 logo | `upload/shared/store-logo-150x150.png` | Reusable candidate; exact Partner Center or package mapping not yet verified |
-| 71 x 71 logo | `upload/shared/store-logo-71x71.png` | Reusable candidate; exact Partner Center or package mapping not yet verified |
+| 1:1 App tile icon | `upload/shared/app-tile-300x300.png` | Uploaded for both locales |
+| Poster art | `upload/<locale>/poster-1440x2160.png` | Uploaded for both locales |
+| 1:1 Box art | `upload/<locale>/box-art-2160x2160.png` | Uploaded for both locales |
+| 150 x 150 logo | `upload/shared/store-logo-150x150.png` | Uploaded for both locales |
+| 71 x 71 logo | `upload/shared/store-logo-71x71.png` | Uploaded for en-US; add to ko-KR in Submission 2 |
 
 `<locale>` is `en-US` or `ko-KR`. The high-resolution poster and box-art
-variants are retained as source-ready candidates, but they are not counted as
-submission-ready app fields until the real Partner Center listing exposes an
-applicable destination.
+variants are retained as source-ready assets. Partner Center currently exposes
+poster, box-art, app-tile, 150 x 150, and 71 x 71 destinations for both locales.
 
 ## Source and regeneration
 

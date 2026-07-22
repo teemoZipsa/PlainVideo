@@ -1,11 +1,11 @@
 # Microsoft Store release plan
 
-Date: 2026-07-21
-Status: Submission 1 is in certification (pre-processing, step 2 of 4); manual publication hold is active and no public Microsoft Store release exists
+Date: 2026-07-23
+Status: Submission 1 (0.1.0.0) is publicly available in Microsoft Store; version 0.2.0 is being validated for Submission 2
 
 ## Product decision
 
-PlainVideo is planned as a free Microsoft Store app and a first-class portable Windows app built from the same locked source and playback runtime.
+PlainVideo is distributed as a free Microsoft Store app and a first-class portable Windows app built from the same locked source and playback runtime.
 
 - Product: borderless, content-first local video player
 - Pricing: free
@@ -125,7 +125,7 @@ GitHub Actions remain out of scope unless explicitly approved. Store validation 
 
 ## Release gate 5: Store presence
 
-Create public pages before submission:
+Keep these public pages current for every submission:
 
 - privacy policy: local-file behavior, no telemetry/account/ads, and any future network behavior stated accurately;
 - support page: supported Windows versions, shortcuts, subtitle help, logs, issue-report route, and license links;
@@ -154,12 +154,12 @@ Submission, certification, and publication are distinct states. Update `STORE_RE
 | S2 — Package proof | Partner identity, assets, manifest, x64 developer MSIX | Complete; Store MSIX `0.1.0.0` validated by Partner Center and matching developer package passed signing/install checks |
 | S3 — Installed-app proof | WACK, host/Sandbox, activation/update/uninstall | Complete for a first release; full host validation, WACK PASS, Sandbox proof, activation, uninstall, and reinstall passed; prior-version update is not applicable |
 | S4 — Listing readiness | Privacy/support/source pages and localized captures | Complete; public pages and eight localized screenshots plus listing art were uploaded |
-| S5 — Partner Center flight | Exact package uploaded and submitted | In certification; pre-processing step 2 of 4 |
-| S6 — Public release | Certification passed and availability verified independently | Not started |
+| S5 — Partner Center submission | Exact package uploaded and submitted | Complete for 0.1.0.0; 0.2.0.0 candidate validation is in progress |
+| S6 — Public release | Certification passed and availability verified independently | Complete for 0.1.0.0; Partner Center reports the product available in Microsoft Store |
 
 ## Immediate next work
 
-1. Monitor Submission 1 until certification passes or returns an actionable report.
-2. If certification passes, review the certified package status and use the existing manual `Publish now` control.
-3. Verify the public Store page and installation independently before changing the release state to Store-live.
+1. Finish 0.2.0 full playback-soak, package, WACK, install/update, and portable validation from one clean source commit.
+2. Publish the matching source tag and portable artifact before uploading the Store package.
+3. Update both Store locales with release notes, richer descriptions, and screenshot captions, then submit Submission 2.
 4. Preserve the selected Windows 10 minimum-image limitation until a real Windows 10 test image is exercised.

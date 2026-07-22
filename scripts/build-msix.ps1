@@ -103,6 +103,10 @@ function Assert-StoreUploadAllowed {
     if ($releaseState.release.eligible -ne $true -or $runtimeManifest.releaseEligible -ne $true) {
         throw 'Store upload is blocked: the release state and runtime manifest must both explicitly mark the candidate eligible.'
     }
+    $expectedPackageVersion = "$(Get-CargoVersion).0"
+    if ($releaseState.release.packageVersion -ne $expectedPackageVersion) {
+        throw "Store upload is blocked: release-state package version $($releaseState.release.packageVersion) does not match Cargo package version $expectedPackageVersion."
+    }
 
     $sourceOfferPath = Join-Path $repoRoot 'SOURCE_OFFER.md'
     $sourceOffer = Get-Content -LiteralPath $sourceOfferPath -Raw

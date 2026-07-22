@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "observedAt": "2026-07-21T22:21:00+09:00",
-  "status": "partner-center-in-certification-pre-processing",
+  "observedAt": "2026-07-23T00:47:16+09:00",
+  "status": "submission-1-store-live-release-0.2.0-candidate",
   "repository": {
     "nameWithOwner": "teemoZipsa/PlainVideo",
     "visibility": "public",
@@ -13,7 +13,7 @@
     "workflowPolicy": "Do not add, dispatch, rerun, or broaden workflows without explicit user approval."
   },
   "product": {
-    "cargoVersion": "0.1.0",
+    "cargoVersion": "0.2.0",
     "stage": "pre-alpha",
     "storeTarget": true,
     "distributionModel": "packaged Win32 MSIX",
@@ -31,7 +31,7 @@
     "telemetry": false
   },
   "partnerCenter": {
-    "status": "submission-1-in-certification",
+    "status": "submission-1-store-live-next-update-preparing",
     "productNameReserved": true,
     "productName": "PlainVideo",
     "storeId": "9PDKQ88FKG1L",
@@ -44,9 +44,9 @@
     "pricingAndAvailability": "complete-worldwide-free",
     "properties": "complete-photo-and-video-public-privacy-policy",
     "ageRatings": "complete-iarc-3-plus",
-    "packages": "complete-validated-plainvideo-0.1.0.0-x64-store-msix",
+    "packages": "published-plainvideo-0.1.0.0-preparing-0.2.0.0",
     "storeListings": {
-      "status": "complete-bilingual-listings-and-media-uploaded",
+      "status": "published-bilingual-listings-0.2.0-copy-and-captions-prepared",
       "locales": [
         "en-US",
         "ko-KR"
@@ -73,13 +73,13 @@
         ]
       }
     },
-    "submissionOptions": "complete-hold-for-manual-publish-after-certification",
+    "submissionOptions": "submission-1-used-manual-publish-hold-next-update-will-retain-policy",
     "certificationNotes": "saved-and-reload-verified-no-credentials-required",
-    "certificationStatus": "in-certification-pre-processing-step-2-of-4",
-    "publicationStatus": "manual-publish-hold-not-public"
+    "certificationStatus": "submission-1-passed",
+    "publicationStatus": "submission-1-available-in-microsoft-store"
   },
   "localPackageEvidence": {
-    "status": "final-store-upload-candidate-and-signed-developer-proof",
+    "status": "published-0.1.0-package-evidence",
     "packageVersion": "0.1.0.0",
     "packageSha256": "12a8db7565e95b8c38b2384f2868df0b888baa358a7c70201e9758f95fb3bee7",
     "packageSizeBytes": 18406312,
@@ -119,18 +119,48 @@
       "url": "https://github.com/teemoZipsa/PlainVideo/releases/download/v0.1.0/PlainVideo-0.1.0-corresponding-source.tar.zst"
     }
   },
-  "release": {
-    "eligible": true,
-    "publisherRiskDecision": "accepted-free-worldwide-distribution-2026-07-21",
+  "publishedRelease": {
     "packageVersion": "0.1.0.0",
     "packageSha256": "12a8db7565e95b8c38b2384f2868df0b888baa358a7c70201e9758f95fb3bee7",
     "portableSha256": "92c6cbf8ab30c8a80bbcd48b757293f41e6e32c46ddbba0c0b86a47fa08c5a03",
     "githubRelease": "https://github.com/teemoZipsa/PlainVideo/releases/tag/v0.1.0",
-    "nextMilestone": "certification-completion-then-manual-publication"
+    "storeStatus": "available"
+  },
+  "releaseCandidateValidation": {
+    "version": "0.2.0",
+    "scopeBaseCommit": "3ea1f8898cc11df9a0e7c9294877e72f3b5fe107",
+    "experimentalFrameInterpolation": "excluded",
+    "quickIntegratedValidation": {
+      "status": "passed",
+      "summary": ".runtime/validation/integrated/20260723-001100-706/summary.json",
+      "stepCount": 14,
+      "rustTestCount": 44,
+      "ignoredRustTestCount": 1,
+      "formatMatrix": "10-of-10-passed",
+      "playbackSoak": "8-verified-0-failed"
+    },
+    "fullPlaybackSoak": {
+      "status": "passed",
+      "summary": ".runtime/validation/release-0.2.0-full-soak.json",
+      "runCount": 122,
+      "verified": 122,
+      "failed": 0,
+      "steadySecondsPerDecodeMode": 600,
+      "churnCyclesPerDecodeMode": 60
+    }
+  },
+  "release": {
+    "eligible": true,
+    "publisherRiskDecision": "accepted-free-worldwide-distribution-2026-07-21",
+    "packageVersion": "0.2.0.0",
+    "packageSha256": null,
+    "portableSha256": null,
+    "githubRelease": null,
+    "nextMilestone": "clean-commit-package-wack-and-submission-2"
   },
   "blockingGates": [
-    "Submission 1 is in Partner Center certification at pre-processing step 2 of 4. Certification has not passed and the Microsoft Store listing is not public.",
-    "Publishing is held for a manual Publish now action after certification, so certification completion will not automatically make the Store release public.",
+    "The 0.2.0 Store MSIX, signed developer proof, WACK report, and portable artifact have not been built from the final clean release commit yet.",
+    "Submission 2 has not been created or submitted in Partner Center yet.",
     "The selected Windows 10 minimum-image proof remains open."
   ]
 }

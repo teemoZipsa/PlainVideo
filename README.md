@@ -4,9 +4,9 @@
 
 PlainVideo extends the product philosophy of PlainView to video: open a file and start watching immediately, keep the interface out of the way, and reveal only the controls needed at that moment.
 
-The project is currently at the **embedded playback proof stage (pre-alpha)**. A local prototype renders in-process through libmpv inside a PlainVideo-owned window, but there is no distributable player yet.
+PlainVideo is available as a free Microsoft Store app and as a matching portable Windows build. The shipped Win32 MSIX and portable package use the same reviewed shared-LGPL playback-runtime profile, with public notices and corresponding source. See the [Microsoft Store release plan](docs/STORE_RELEASE_PLAN.md) for the exact release evidence and remaining platform limits.
 
-PlainVideo is now planned as a free Microsoft Store app delivered as packaged Win32 MSIX, while retaining a matching portable build. The current developer libmpv runtime is not approved for redistribution, so runtime license/build closure is the first Store release gate. See the [Microsoft Store release plan](docs/STORE_RELEASE_PLAN.md).
+[Get PlainVideo from Microsoft Store](https://apps.microsoft.com/detail/9PDKQ88FKG1L)
 
 [한국어 README](README.ko.md)
 
@@ -44,12 +44,14 @@ Display synchronization and AI frame generation are intentionally treated as dif
 - `PageUp`/`PageDown` previous-next navigation, `A` audio-track cycling, `V` subtitle cycling, and `M` mute
 - `Tab` toggles an unobscured, left-aligned media-information overlay without interrupting playback
 - Automatic resume for partially watched local files, with a transient resume notice and a context-menu restart action
+- Hover thumbnail previews on the seek bar, direct CC subtitle toggle, and remembered volume and mute state
+- `S` saves a playback screenshot to the Windows Pictures library with transient confirmation
 - `F6`/`Shift+F6` keyboard focus for transient controls, with `Enter` or `Space` activation and a visible focus state
 - Real file-drop replacement, plus a progressively disclosed right-click menu for open, retry, previous/next, audio, subtitles, and close
 - Recoverable per-file playback errors that keep the window open for retry, another file, or drag and drop instead of terminating the app
 - A reproducible local developer portable directory with per-file hashes
 
-The first local developer format matrix on 2026-07-19 passed all ten generated container, codec, audio, and subtitle combinations against one hash-locked portable directory. This remains dirty-worktree developer evidence with a runtime that is not approved for redistribution, not a blanket release-support claim; see the [format compatibility ledger](docs/FORMAT_COMPATIBILITY_LEDGER.md) for the exact rows and limits. The embedded build selected `nvdec` on the development machine; the older child-process Slice 0A build observed `d3d11va-copy`. Neither observation guarantees hardware support on another GPU.
+The 0.2.0 release-candidate validation on 2026-07-23 passed all ten generated container, codec, audio, and subtitle combinations against one staged portable directory using the reviewed release runtime. This is exact test evidence, not a blanket support claim; see the [format compatibility ledger](docs/FORMAT_COMPATIBILITY_LEDGER.md) for the rows and limits. Hardware decoding is selected per machine and a verified software path remains available.
 
 ## Run locally
 
@@ -58,7 +60,7 @@ The first local developer format matrix on 2026-07-19 passed all ten generated c
 cargo run --release -- "C:\path\to\video.mkv"
 ```
 
-With FFmpeg installed, `.\scripts\generate-smoke-media.ps1` recreates the deterministic fixtures. `.\scripts\build-portable.ps1` creates a local developer portable proof under `.runtime`; it is not approved for redistribution. `.\scripts\run-local-validation.ps1` runs the quick local quality gate as one batch. See [quality pass 1-6](docs/QUALITY_PASS_1_TO_6.md) for this scope and its remaining gates, plus the [accessibility baseline](docs/ACCESSIBILITY_BASELINE.md), [format compatibility ledger](docs/FORMAT_COMPATIBILITY_LEDGER.md), [playback stability plan](docs/PLAYBACK_STABILITY_PLAN.md), [Slice 0B libmpv proof](docs/SLICE_0B_LIBMPV_PROOF.md), and [Windows window-behavior proof](docs/WINDOW_BEHAVIOR_PROOF.md) for the exact evidence and limits.
+With FFmpeg installed, `.\scripts\generate-smoke-media.ps1` recreates the deterministic fixtures. `.\scripts\build-portable.ps1` creates a local developer proof, while `.\scripts\build-release-portable.ps1` is the clean-commit release path using the approved runtime profile. `.\scripts\run-local-validation.ps1` runs the local quality gate as one batch. See [quality pass 1-6](docs/QUALITY_PASS_1_TO_6.md) for this scope and its remaining gates, plus the [accessibility baseline](docs/ACCESSIBILITY_BASELINE.md), [format compatibility ledger](docs/FORMAT_COMPATIBILITY_LEDGER.md), [playback stability plan](docs/PLAYBACK_STABILITY_PLAN.md), [Slice 0B libmpv proof](docs/SLICE_0B_LIBMPV_PROOF.md), and [Windows window-behavior proof](docs/WINDOW_BEHAVIOR_PROOF.md) for the exact evidence and limits.
 
 ## Technical direction
 
@@ -70,10 +72,10 @@ See [Product definition](docs/PRODUCT.md) and [Architecture notes](docs/ARCHITEC
 
 ## Name
 
-`PlainVideo` makes both the product family and its purpose explicit: PlainView for images and PlainVideo for video. Trademark and store-name availability must still be checked again before a public binary release.
+`PlainVideo` makes both the product family and its purpose explicit: PlainView for images and PlainVideo for video. The name is reserved and the product is published under Store ID `9PDKQ88FKG1L`.
 
 ## License
 
-Original PlainVideo code is released under the [MIT License](LICENSE). Bundled playback engines, codecs, models, and runtimes retain their own licenses; the exact distribution profile and notices will be locked before the first binary release.
+Original PlainVideo code is released under the [MIT License](LICENSE). Bundled playback engines, codecs, and runtimes retain their own licenses; release packages include the locked runtime profile, notices, license material, and corresponding-source offer. Experimental interpolation models are not included in the 0.2.0 release.
 
-See the [privacy policy](PRIVACY.md) and [support guide](SUPPORT.md) for the planned Microsoft Store release.
+See the [privacy policy](PRIVACY.md) and [support guide](SUPPORT.md) for the Microsoft Store and portable releases.
