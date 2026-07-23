@@ -1,6 +1,6 @@
 # Microsoft Store listing draft
 
-Status: Submission 2 (0.2.0.0) passed certification and is waiting for manual publication; version 0.2.1 bilingual release notes and inherited listing media are prepared for Submission 3
+Status: Submission 2 (0.2.0.0) is publishing at step 4 of 4; version 0.2.1 bilingual release notes and inherited listing media are prepared for Submission 3
 
 Keep the two locales as separate Partner Center listing entries. Do not paste Korean and English into one field.
 

@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "observedAt": "2026-07-24T00:41:59+09:00",
-  "status": "submission-2-certified-awaiting-publication-release-0.2.1-candidate",
+  "observedAt": "2026-07-24T00:59:51+09:00",
+  "status": "submission-2-publishing-release-0.2.1-ready",
   "repository": {
     "nameWithOwner": "teemoZipsa/PlainVideo",
     "visibility": "public",
     "defaultBranch": "master",
     "baselineCommit": "d953ac592c00579daa8904eae6177e542df9ffe5",
-    "releaseCommit": null,
+    "releaseCommit": "1be0b6de297a41ddf740b8eb87bd2886ca38ad29",
     "githubActionsRepositoryPermission": "enabled",
     "localWorkflowCount": 0,
     "workflowPolicy": "Do not add, dispatch, rerun, or broaden workflows without explicit user approval."
@@ -31,7 +31,7 @@
     "telemetry": false
   },
   "partnerCenter": {
-    "status": "submission-2-certified-ready-to-publish",
+    "status": "submission-2-publishing-step-4-of-4",
     "productNameReserved": true,
     "productName": "PlainVideo",
     "storeId": "9PDKQ88FKG1L",
@@ -45,7 +45,7 @@
     "pricingAndAvailability": "complete-worldwide-free",
     "properties": "complete-photo-and-video-public-privacy-policy",
     "ageRatings": "complete-iarc-3-plus",
-    "packages": "submission-2-plainvideo-0.2.0.0-certified-awaiting-publication",
+    "packages": "submission-2-plainvideo-0.2.0.0-publishing-0.2.1.0-ready-for-upload",
     "storeListings": {
       "status": "submission-2-bilingual-listings-updated-and-submitted",
       "locales": [
@@ -81,7 +81,7 @@
     "submissionOptions": "submission-2-manual-publish-hold-retained",
     "certificationNotes": "0.2.0-notes-saved-no-credentials-required-experimental-interpolation-excluded",
     "certificationStatus": "submission-2-passed-ready-to-publish",
-    "publicationStatus": "submission-1-0.1.0.0-available-submission-2-not-published"
+    "publicationStatus": "submission-1-0.1.0.0-available-submission-2-publishing"
   },
   "localPackageEvidence": {
     "status": "published-0.1.0-package-evidence",
@@ -137,7 +137,7 @@
     "portableSha256": "f2aaea0a387357835ade081630b155591fa21757603308d1bf5260564a8afccf",
     "githubRelease": "https://github.com/teemoZipsa/PlainVideo/releases/tag/v0.2.0",
     "partnerCenterSubmissionId": "1152921505701471034",
-    "storeStatus": "certified-update-ready-to-publish",
+    "storeStatus": "publishing-step-4-of-4",
     "quickIntegratedValidation": ".runtime/validation/integrated/20260723-001100-706/summary.json",
     "fullPlaybackSoak": ".runtime/validation/release-0.2.0-full-soak.json",
     "wackReportSha256": "dce565aa522f7e0b8ec630af3ddfa9765f121de9e47e7a4da55b8ebe0efc172f"
@@ -145,7 +145,7 @@
   "releaseCandidateValidation": {
     "version": "0.2.1",
     "scopeBaseCommit": "d953ac592c00579daa8904eae6177e542df9ffe5",
-    "releaseCommit": null,
+    "releaseCommit": "1be0b6de297a41ddf740b8eb87bd2886ca38ad29",
     "experimentalFrameInterpolation": "runtime-and-model-excluded-normal-source-frame-path-retained",
     "preReleaseChecks": {
       "status": "passed",
@@ -158,27 +158,51 @@
       "smallWindowTextScale": "passed-427x240-at-200-percent"
     },
     "cleanCommitIntegratedValidation": {
-      "status": "pending"
+      "status": "passed",
+      "summary": ".runtime/validation/integrated/20260724-004851-699/summary.json",
+      "sourceCommit": "1be0b6de297a41ddf740b8eb87bd2886ca38ad29",
+      "sourceWorktree": "clean",
+      "stepCount": 14,
+      "rustTestCount": 48,
+      "ignoredRustTestCount": 1,
+      "formatMatrix": "10-of-10-passed",
+      "playbackSoak": "8-verified-0-failed"
     },
     "packageEvidence": {
-      "status": "pending-clean-commit-build",
-      "packageVersion": "0.2.1.0"
+      "status": "ready-for-partner-center-upload",
+      "storePackage": ".runtime/msix/PlainVideo_0.2.1.0_x64-store.msix",
+      "packageVersion": "0.2.1.0",
+      "packageSha256": "270f858610a8246a026154bd5053a0b9da0439fa72d6ede56cf6b5d1099172b0",
+      "packageSizeBytes": 18435113,
+      "payloadFileCount": 66,
+      "experimentalInterpolationAssetCount": 0,
+      "partnerCenterValidation": "pending-upload",
+      "developerPackageSha256": "59e3e7fd241ac8c1e68e72b21c6dcf2b3dee075f8a1d1924a58fa0dc988c3c6a",
+      "developerSignature": "valid",
+      "defender": "no-threats-found-store-dev-and-portable",
+      "wack": {
+        "overallResult": "PASS",
+        "reportSha256": "2535360761152a4785f74d6a9009b36285f96b5de73468a96739057903a443c1",
+        "reportSizeBytes": 603886,
+        "optionalBlockedExecutableReferenceCheck": "failed-with-reviewed-runtime-string-and-api-references"
+      },
+      "cleanMachine": "not-rerun-for-0.2.1-prior-0.1.0-exact-runtime-windows-11-sandbox-proof-retained"
     }
   },
   "release": {
     "eligible": true,
     "publisherRiskDecision": "accepted-free-worldwide-distribution-2026-07-21",
     "packageVersion": "0.2.1.0",
-    "packageSha256": null,
-    "portableSha256": null,
-    "githubRelease": null,
-    "githubReleaseState": "not-created",
+    "packageSha256": "270f858610a8246a026154bd5053a0b9da0439fa72d6ede56cf6b5d1099172b0",
+    "portableSha256": "fa53e4b5adb1ce52408856ab42cc6903a7ca1899d6fc7d7c64511afa7491031e",
+    "githubRelease": "https://github.com/teemoZipsa/PlainVideo/releases/tag/v0.2.1",
+    "githubReleaseState": "prerelease-portable-asset-uploaded",
     "partnerCenterSubmissionId": null,
-    "nextMilestone": "publish-certified-0.2.0-then-build-and-submit-0.2.1"
+    "nextMilestone": "wait-for-0.2.0-publication-then-upload-and-submit-0.2.1"
   },
   "blockingGates": [
-    "Submission 2 (0.2.0.0) passed certification but must be explicitly published before a new 0.2.1 submission can be created.",
-    "The 0.2.1 candidate has not completed clean-commit integrated validation, package generation, WACK, Defender scanning, or Partner Center validation.",
+    "Submission 2 (0.2.0.0) is publishing at step 4 of 4; Partner Center has not enabled a new 0.2.1 submission yet.",
+    "The exact 0.2.1 Store MSIX is locally ready but has not yet been uploaded or validated by Partner Center.",
     "The selected Windows 10 minimum-image proof remains open."
   ]
 }

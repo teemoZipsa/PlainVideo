@@ -51,7 +51,7 @@ Display synchronization and AI frame generation are intentionally treated as dif
 - Recoverable per-file playback errors that keep the window open for retry, another file, or drag and drop instead of terminating the app
 - A reproducible local developer portable directory with per-file hashes
 
-The 0.2.0 release-candidate validation on 2026-07-23 passed all ten generated container, codec, audio, and subtitle combinations against one staged portable directory using the reviewed release runtime. This remains exact evidence for that release, not a blanket support claim; see the [format compatibility ledger](docs/FORMAT_COMPATIBILITY_LEDGER.md) for the rows and limits. Hardware decoding is selected per machine and a verified software path remains available.
+The 0.2.1 clean-commit validation on 2026-07-24 passed all ten generated container, codec, audio, and subtitle combinations against one staged portable directory using the reviewed release runtime, plus eight short steady/churn playback runs. This is exact candidate evidence, not a blanket support claim; see the [format compatibility ledger](docs/FORMAT_COMPATIBILITY_LEDGER.md) for the rows and limits. Hardware decoding is selected per machine and a verified software path remains available.
 
 ## Run locally
 
