@@ -126,6 +126,10 @@ integration and playback evidence are recorded in
 [`RIFE_PLAYER_INTEGRATION.md`](RIFE_PLAYER_INTEGRATION.md); historical buffer
 measurements and the staged host boundary are recorded in
 [`RIFE_SLICE_3A_BUFFER_OPTIMIZATION.md`](RIFE_SLICE_3A_BUFFER_OPTIMIZATION.md).
+The next five performance workstreams, their validation requirements, and
+their stop conditions are defined in
+[`RIFE_PERFORMANCE_ROADMAP.md`](RIFE_PERFORMANCE_ROADMAP.md). That roadmap does
+not change the current activation or release state.
 
 ## Format claims
 

@@ -184,6 +184,11 @@ Evidence is under `.runtime/rife-spike/gpu-timestamp-evidence/` as
 both diagnostic CMake options off, does not compile the custom layer, reports
 `fusedConcatBuilt=false`, and produced zero fused calls in its smoke proof.
 
+Detailed follow-up work for the experimental fused worker, GPU-resident frame
+exchange, Deconvolution profiling, FP16 qualification, and lower-performance
+GPU modes is tracked in
+[`RIFE_PERFORMANCE_ROADMAP.md`](RIFE_PERFORMANCE_ROADMAP.md).
+
 The resulting optimization order is:
 
 1. qualify FP16 arithmetic against a locked real-video corpus before any
