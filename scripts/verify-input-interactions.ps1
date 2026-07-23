@@ -109,6 +109,8 @@ public static class PlainVideoInputProbe
     public static extern bool GetGUIThreadInfo(uint threadId, ref GUITHREADINFO info);
     [DllImport("user32.dll")]
     public static extern bool PostMessageW(IntPtr hwnd, uint message, UIntPtr wparam, IntPtr lparam);
+    [DllImport("user32.dll", EntryPoint = "PostMessageW")]
+    public static extern bool PostMessageDropW(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll")]
     public static extern IntPtr SendMessageW(IntPtr hwnd, uint message, UIntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll", EntryPoint = "SendMessageW")]
@@ -116,24 +118,20 @@ public static class PlainVideoInputProbe
     [DllImport("user32.dll")]
     public static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern IntPtr VirtualAllocEx(
-        IntPtr process, IntPtr address, UIntPtr bytes, uint allocationType, uint protection
-    );
+    public static extern IntPtr GlobalAlloc(uint flags, UIntPtr bytes);
     [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern bool WriteProcessMemory(
-        IntPtr process, IntPtr address, byte[] buffer, UIntPtr bytes, out UIntPtr bytesWritten
-    );
+    public static extern IntPtr GlobalLock(IntPtr memory);
     [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern bool VirtualFreeEx(
-        IntPtr process, IntPtr address, UIntPtr bytes, uint freeType
-    );
+    public static extern bool GlobalUnlock(IntPtr memory);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr GlobalFree(IntPtr memory);
 
     public static IntPtr MakeLParam(int x, int y)
     {
         return new IntPtr((y << 16) | (x & 0xffff));
     }
 
-    public static IntPtr CreateRemoteDropFile(IntPtr process, string path)
+    public static IntPtr CreateDropFile(string path)
     {
         const int headerSize = 20;
         byte[] pathBytes = Encoding.Unicode.GetBytes(path + "\0\0");
@@ -142,20 +140,24 @@ public static class PlainVideoInputProbe
         Buffer.BlockCopy(BitConverter.GetBytes(1), 0, payload, 16, 4);
         Buffer.BlockCopy(pathBytes, 0, payload, headerSize, pathBytes.Length);
 
-        IntPtr remote = VirtualAllocEx(
-            process, IntPtr.Zero, new UIntPtr((uint)payload.Length), 0x3000, 0x04
+        const uint GMEM_MOVEABLE = 0x0002;
+        const uint GMEM_ZEROINIT = 0x0040;
+        const uint GMEM_DDESHARE = 0x2000;
+        IntPtr memory = GlobalAlloc(
+            GMEM_MOVEABLE | GMEM_ZEROINIT | GMEM_DDESHARE,
+            new UIntPtr((uint)payload.Length)
         );
-        if (remote == IntPtr.Zero) {
-            throw new InvalidOperationException("VirtualAllocEx failed for the file-drop probe.");
+        if (memory == IntPtr.Zero) {
+            throw new InvalidOperationException("GlobalAlloc failed for the file-drop probe.");
         }
-        UIntPtr written;
-        if (!WriteProcessMemory(
-                process, remote, payload, new UIntPtr((uint)payload.Length), out written
-            ) || written.ToUInt64() != (ulong)payload.Length) {
-            VirtualFreeEx(process, remote, UIntPtr.Zero, 0x8000);
-            throw new InvalidOperationException("WriteProcessMemory failed for the file-drop probe.");
+        IntPtr pointer = GlobalLock(memory);
+        if (pointer == IntPtr.Zero) {
+            GlobalFree(memory);
+            throw new InvalidOperationException("GlobalLock failed for the file-drop probe.");
         }
-        return remote;
+        Marshal.Copy(payload, 0, pointer, payload.Length);
+        GlobalUnlock(memory);
+        return memory;
     }
 }
 '@
@@ -266,11 +268,13 @@ function Send-KeyChord {
         [Parameter(Mandatory)][byte]$VirtualKey
     )
     [PlainVideoInputProbe]::keybd_event($Modifier, 0, 0, [UIntPtr]::Zero)
-    Start-Sleep -Milliseconds 20
+    Start-Sleep -Milliseconds 50
     [PlainVideoInputProbe]::keybd_event($VirtualKey, 0, 0, [UIntPtr]::Zero)
-    Start-Sleep -Milliseconds 20
+    Start-Sleep -Milliseconds 80
     [PlainVideoInputProbe]::keybd_event($VirtualKey, 0, 0x0002, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 40
     [PlainVideoInputProbe]::keybd_event($Modifier, 0, 0x0002, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 40
 }
 
 function Get-LogText {
@@ -374,28 +378,17 @@ try {
     $playbackBeforeDrop = Get-PatternCount -Pattern 'Starting playback'
     $subAddPattern = 'Run command:\s*sub-add|name="sub-add"'
     $subAddBefore = Get-PatternCount -Pattern $subAddPattern
-    $dropHandle = [PlainVideoInputProbe]::CreateRemoteDropFile(
-        $process.Handle,
+    $dropHandle = [PlainVideoInputProbe]::CreateDropFile(
         [System.IO.Path]::GetFullPath($SubtitlePath)
     )
-    try {
-        [void][PlainVideoInputProbe]::SendMessageDropW(
-            $hwnd,
-            0x0233,
-            $dropHandle,
-            [IntPtr]::Zero
-        )
-    }
-    finally {
-        $dropMemoryFreed = [PlainVideoInputProbe]::VirtualFreeEx(
-            $process.Handle,
-            $dropHandle,
-            [UIntPtr]::Zero,
-            0x8000
-        )
-        if (-not $dropMemoryFreed) {
-            throw 'VirtualFreeEx failed after the cross-process file-drop probe.'
-        }
+    if (-not [PlainVideoInputProbe]::PostMessageDropW(
+        $hwnd,
+        0x0233,
+        $dropHandle,
+        [IntPtr]::Zero
+    )) {
+        [void][PlainVideoInputProbe]::GlobalFree($dropHandle)
+        throw 'PostMessageW failed for the cross-process file-drop probe.'
     }
     $subAddAfter = Wait-PatternCount -Pattern $subAddPattern -Minimum ($subAddBefore + 1)
     Start-Sleep -Milliseconds 180
@@ -404,6 +397,8 @@ try {
         throw 'Dropping one subtitle file replaced or restarted the active video.'
     }
 
+    [void][PlainVideoInputProbe]::SetForegroundWindow($hwnd)
+    Start-Sleep -Milliseconds 80
     $subDelayPattern = 'Set property:\s*sub-delay=|name="sub-delay"'
     $subDelayCount = Get-PatternCount -Pattern $subDelayPattern
     Send-KeyChord -Modifier 0x11 -VirtualKey 0xDB
