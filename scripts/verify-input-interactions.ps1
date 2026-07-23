@@ -3,6 +3,7 @@ param(
     [string]$Executable,
     [string]$AppRoot,
     [string]$MediaPath,
+    [string]$SubtitlePath,
     [string]$EvidencePath
 )
 
@@ -26,11 +27,14 @@ if ([string]::IsNullOrWhiteSpace($AppRoot)) {
 if ([string]::IsNullOrWhiteSpace($MediaPath)) {
     $MediaPath = Join-Path $repoRoot '.runtime\fixtures\plainvideo-smoke.mp4'
 }
+if ([string]::IsNullOrWhiteSpace($SubtitlePath)) {
+    $SubtitlePath = [System.IO.Path]::ChangeExtension($MediaPath, '.srt')
+}
 if ([string]::IsNullOrWhiteSpace($EvidencePath)) {
     $EvidencePath = Join-Path $runtimeRoot 'input-interactions-evidence.json'
 }
 
-foreach ($required in @($Executable, $MediaPath, (Join-Path $AppRoot 'assets\mpv\mpv.conf'))) {
+foreach ($required in @($Executable, $MediaPath, $SubtitlePath, (Join-Path $AppRoot 'assets\mpv\mpv.conf'))) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Required interaction-verification input is missing: $required"
     }
@@ -46,6 +50,7 @@ Remove-Item -LiteralPath $settingsPath, $resumePath, $logPath -Force -ErrorActio
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
 public static class PlainVideoInputProbe
 {
@@ -106,12 +111,51 @@ public static class PlainVideoInputProbe
     public static extern bool PostMessageW(IntPtr hwnd, uint message, UIntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll")]
     public static extern IntPtr SendMessageW(IntPtr hwnd, uint message, UIntPtr wparam, IntPtr lparam);
+    [DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    public static extern IntPtr SendMessageDropW(IntPtr hwnd, uint message, IntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll")]
     public static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int width, int height, uint flags);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr VirtualAllocEx(
+        IntPtr process, IntPtr address, UIntPtr bytes, uint allocationType, uint protection
+    );
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool WriteProcessMemory(
+        IntPtr process, IntPtr address, byte[] buffer, UIntPtr bytes, out UIntPtr bytesWritten
+    );
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool VirtualFreeEx(
+        IntPtr process, IntPtr address, UIntPtr bytes, uint freeType
+    );
 
     public static IntPtr MakeLParam(int x, int y)
     {
         return new IntPtr((y << 16) | (x & 0xffff));
+    }
+
+    public static IntPtr CreateRemoteDropFile(IntPtr process, string path)
+    {
+        const int headerSize = 20;
+        byte[] pathBytes = Encoding.Unicode.GetBytes(path + "\0\0");
+        byte[] payload = new byte[headerSize + pathBytes.Length];
+        Buffer.BlockCopy(BitConverter.GetBytes((uint)headerSize), 0, payload, 0, 4);
+        Buffer.BlockCopy(BitConverter.GetBytes(1), 0, payload, 16, 4);
+        Buffer.BlockCopy(pathBytes, 0, payload, headerSize, pathBytes.Length);
+
+        IntPtr remote = VirtualAllocEx(
+            process, IntPtr.Zero, new UIntPtr((uint)payload.Length), 0x3000, 0x04
+        );
+        if (remote == IntPtr.Zero) {
+            throw new InvalidOperationException("VirtualAllocEx failed for the file-drop probe.");
+        }
+        UIntPtr written;
+        if (!WriteProcessMemory(
+                process, remote, payload, new UIntPtr((uint)payload.Length), out written
+            ) || written.ToUInt64() != (ulong)payload.Length) {
+            VirtualFreeEx(process, remote, UIntPtr.Zero, 0x8000);
+            throw new InvalidOperationException("WriteProcessMemory failed for the file-drop probe.");
+        }
+        return remote;
     }
 }
 '@
@@ -216,6 +260,19 @@ function Send-Key {
     [PlainVideoInputProbe]::keybd_event($VirtualKey, 0, 0x0002, [UIntPtr]::Zero)
 }
 
+function Send-KeyChord {
+    param(
+        [Parameter(Mandatory)][byte]$Modifier,
+        [Parameter(Mandatory)][byte]$VirtualKey
+    )
+    [PlainVideoInputProbe]::keybd_event($Modifier, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 20
+    [PlainVideoInputProbe]::keybd_event($VirtualKey, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 20
+    [PlainVideoInputProbe]::keybd_event($VirtualKey, 0, 0x0002, [UIntPtr]::Zero)
+    [PlainVideoInputProbe]::keybd_event($Modifier, 0, 0x0002, [UIntPtr]::Zero)
+}
+
 function Get-LogText {
     if (-not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
         return ''
@@ -272,6 +329,28 @@ function Get-LastPauseState {
     return 'no'
 }
 
+function Get-LastSubtitleDelay {
+    $matches = [regex]::Matches(
+        (Get-LogText),
+        '(?:Set property:\s*sub-delay=|name="sub-delay",\s*value=")(-?\d+(?:\.\d+)?)',
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )
+    if ($matches.Count -eq 0) { return $null }
+    return [double]::Parse(
+        $matches[$matches.Count - 1].Groups[1].Value,
+        [System.Globalization.CultureInfo]::InvariantCulture
+    )
+}
+
+function Assert-SubtitleDelay {
+    param([Parameter(Mandatory)][double]$Expected)
+    $actual = Get-LastSubtitleDelay
+    if ($null -eq $actual -or [Math]::Abs($actual - $Expected) -gt 0.011) {
+        throw "Subtitle delay mismatch: expected $Expected, actual $actual."
+    }
+    return $actual
+}
+
 $start = [System.Diagnostics.ProcessStartInfo]::new()
 $start.FileName = [System.IO.Path]::GetFullPath($Executable)
 $start.WorkingDirectory = [System.IO.Path]::GetFullPath($AppRoot)
@@ -291,6 +370,53 @@ try {
     [void][PlainVideoInputProbe]::SetForegroundWindow($hwnd)
     [void](Wait-PatternCount -Pattern 'Starting playback' -Minimum 1 -TimeoutMilliseconds 8000)
     Start-Sleep -Milliseconds 250
+
+    $playbackBeforeDrop = Get-PatternCount -Pattern 'Starting playback'
+    $subAddPattern = 'Run command:\s*sub-add|name="sub-add"'
+    $subAddBefore = Get-PatternCount -Pattern $subAddPattern
+    $dropHandle = [PlainVideoInputProbe]::CreateRemoteDropFile(
+        $process.Handle,
+        [System.IO.Path]::GetFullPath($SubtitlePath)
+    )
+    try {
+        [void][PlainVideoInputProbe]::SendMessageDropW(
+            $hwnd,
+            0x0233,
+            $dropHandle,
+            [IntPtr]::Zero
+        )
+    }
+    finally {
+        $dropMemoryFreed = [PlainVideoInputProbe]::VirtualFreeEx(
+            $process.Handle,
+            $dropHandle,
+            [UIntPtr]::Zero,
+            0x8000
+        )
+        if (-not $dropMemoryFreed) {
+            throw 'VirtualFreeEx failed after the cross-process file-drop probe.'
+        }
+    }
+    $subAddAfter = Wait-PatternCount -Pattern $subAddPattern -Minimum ($subAddBefore + 1)
+    Start-Sleep -Milliseconds 180
+    $playbackAfterDrop = Get-PatternCount -Pattern 'Starting playback'
+    if ($playbackAfterDrop -ne $playbackBeforeDrop) {
+        throw 'Dropping one subtitle file replaced or restarted the active video.'
+    }
+
+    $subDelayPattern = 'Set property:\s*sub-delay=|name="sub-delay"'
+    $subDelayCount = Get-PatternCount -Pattern $subDelayPattern
+    Send-KeyChord -Modifier 0x11 -VirtualKey 0xDB
+    $subDelayCount = Wait-PatternCount -Pattern $subDelayPattern -Minimum ($subDelayCount + 1)
+    $earlierDelay = Assert-SubtitleDelay -Expected -0.1
+    Send-KeyChord -Modifier 0x11 -VirtualKey 0xDD
+    $subDelayCount = Wait-PatternCount -Pattern $subDelayPattern -Minimum ($subDelayCount + 1)
+    Send-KeyChord -Modifier 0x11 -VirtualKey 0xDD
+    $subDelayCount = Wait-PatternCount -Pattern $subDelayPattern -Minimum ($subDelayCount + 1)
+    $laterDelay = Assert-SubtitleDelay -Expected 0.1
+    Send-KeyChord -Modifier 0x11 -VirtualKey 0xDC
+    [void](Wait-PatternCount -Pattern $subDelayPattern -Minimum ($subDelayCount + 1))
+    $resetDelay = Assert-SubtitleDelay -Expected 0.0
 
     $togglePattern = 'name="plainvideo/toggle-pause"'
     $client = Get-ClientScreenRect -Hwnd $hwnd
@@ -441,6 +567,16 @@ try {
         executable = [System.IO.Path]::GetFullPath($Executable)
         appRoot = [System.IO.Path]::GetFullPath($AppRoot)
         media = [System.IO.Path]::GetFullPath($MediaPath)
+        subtitleDrop = [ordered]@{
+            subtitle = [System.IO.Path]::GetFullPath($SubtitlePath)
+            subAddCommandDelta = $subAddAfter - $subAddBefore
+            playbackRestartDelta = $playbackAfterDrop - $playbackBeforeDrop
+        }
+        subtitleTiming = [ordered]@{
+            earlierSeconds = $earlierDelay
+            laterSeconds = $laterDelay
+            resetSeconds = $resetDelay
+        }
         singleClick = [ordered]@{
             toggleCount = $afterClicks - $beforeClicks
             finalPause = Get-LastPauseState

@@ -16,7 +16,7 @@ the only text is the product name `PlainVideo`.
 | Poster art | `upload/<locale>/poster-1440x2160.png` | Uploaded for both locales |
 | 1:1 Box art | `upload/<locale>/box-art-2160x2160.png` | Uploaded for both locales |
 | 150 x 150 logo | `upload/shared/store-logo-150x150.png` | Uploaded for both locales |
-| 71 x 71 logo | `upload/shared/store-logo-71x71.png` | Uploaded for en-US; add to ko-KR in Submission 2 |
+| 71 x 71 logo | `upload/shared/store-logo-71x71.png` | Uploaded for both locales |
 
 `<locale>` is `en-US` or `ko-KR`. The high-resolution poster and box-art
 variants are retained as source-ready assets. Partner Center currently exposes

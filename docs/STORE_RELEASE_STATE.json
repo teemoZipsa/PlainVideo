@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
-  "observedAt": "2026-07-23T01:04:08+09:00",
-  "status": "submission-2-pre-processing-release-0.2.0",
+  "observedAt": "2026-07-24T00:41:59+09:00",
+  "status": "submission-2-certified-awaiting-publication-release-0.2.1-candidate",
   "repository": {
     "nameWithOwner": "teemoZipsa/PlainVideo",
     "visibility": "public",
     "defaultBranch": "master",
-    "baselineCommit": "731a612e798173664a3f053508dd79c0ba70b985",
-    "releaseCommit": "1fc3a62b1a25023cdba31dfbf03d566dff0a1c14",
+    "baselineCommit": "d953ac592c00579daa8904eae6177e542df9ffe5",
+    "releaseCommit": null,
     "githubActionsRepositoryPermission": "enabled",
     "localWorkflowCount": 0,
     "workflowPolicy": "Do not add, dispatch, rerun, or broaden workflows without explicit user approval."
   },
   "product": {
-    "cargoVersion": "0.2.0",
+    "cargoVersion": "0.2.1",
     "stage": "pre-alpha",
     "storeTarget": true,
     "distributionModel": "packaged Win32 MSIX",
@@ -31,7 +31,7 @@
     "telemetry": false
   },
   "partnerCenter": {
-    "status": "submission-2-in-certification-pre-processing",
+    "status": "submission-2-certified-ready-to-publish",
     "productNameReserved": true,
     "productName": "PlainVideo",
     "storeId": "9PDKQ88FKG1L",
@@ -45,7 +45,7 @@
     "pricingAndAvailability": "complete-worldwide-free",
     "properties": "complete-photo-and-video-public-privacy-policy",
     "ageRatings": "complete-iarc-3-plus",
-    "packages": "submission-2-plainvideo-0.2.0.0-validated-and-submitted",
+    "packages": "submission-2-plainvideo-0.2.0.0-certified-awaiting-publication",
     "storeListings": {
       "status": "submission-2-bilingual-listings-updated-and-submitted",
       "locales": [
@@ -80,7 +80,7 @@
     },
     "submissionOptions": "submission-2-manual-publish-hold-retained",
     "certificationNotes": "0.2.0-notes-saved-no-credentials-required-experimental-interpolation-excluded",
-    "certificationStatus": "submission-2-pre-processing",
+    "certificationStatus": "submission-2-passed-ready-to-publish",
     "publicationStatus": "submission-1-0.1.0.0-available-submission-2-not-published"
   },
   "localPackageEvidence": {
@@ -131,60 +131,54 @@
     "githubRelease": "https://github.com/teemoZipsa/PlainVideo/releases/tag/v0.1.0",
     "storeStatus": "available"
   },
+  "certifiedRelease": {
+    "packageVersion": "0.2.0.0",
+    "packageSha256": "63debdc0f1a50157d933bf893dae2fff622f6bdad4d56d4724149e02328597b4",
+    "portableSha256": "f2aaea0a387357835ade081630b155591fa21757603308d1bf5260564a8afccf",
+    "githubRelease": "https://github.com/teemoZipsa/PlainVideo/releases/tag/v0.2.0",
+    "partnerCenterSubmissionId": "1152921505701471034",
+    "storeStatus": "certified-update-ready-to-publish",
+    "quickIntegratedValidation": ".runtime/validation/integrated/20260723-001100-706/summary.json",
+    "fullPlaybackSoak": ".runtime/validation/release-0.2.0-full-soak.json",
+    "wackReportSha256": "dce565aa522f7e0b8ec630af3ddfa9765f121de9e47e7a4da55b8ebe0efc172f"
+  },
   "releaseCandidateValidation": {
-    "version": "0.2.0",
-    "scopeBaseCommit": "3ea1f8898cc11df9a0e7c9294877e72f3b5fe107",
-    "releaseCommit": "1fc3a62b1a25023cdba31dfbf03d566dff0a1c14",
-    "experimentalFrameInterpolation": "excluded",
-    "quickIntegratedValidation": {
+    "version": "0.2.1",
+    "scopeBaseCommit": "d953ac592c00579daa8904eae6177e542df9ffe5",
+    "releaseCommit": null,
+    "experimentalFrameInterpolation": "runtime-and-model-excluded-normal-source-frame-path-retained",
+    "preReleaseChecks": {
       "status": "passed",
-      "summary": ".runtime/validation/integrated/20260723-001100-706/summary.json",
-      "stepCount": 14,
-      "rustTestCount": 44,
+      "rustTestCount": 48,
       "ignoredRustTestCount": 1,
-      "formatMatrix": "10-of-10-passed",
-      "playbackSoak": "8-verified-0-failed"
+      "inputInteractions": ".runtime/validation/subtitle-controls-20260724-002055-406/input-interactions.json",
+      "windowBehavior": ".runtime/validation/controls-0.2.1-20260724-002112-812/window-behavior.json",
+      "subtitleDrop": "one-sub-add-zero-playback-restarts",
+      "subtitleTiming": "minus-0.1-plus-0.1-reset-zero",
+      "smallWindowTextScale": "passed-427x240-at-200-percent"
     },
-    "fullPlaybackSoak": {
-      "status": "passed",
-      "summary": ".runtime/validation/release-0.2.0-full-soak.json",
-      "runCount": 122,
-      "verified": 122,
-      "failed": 0,
-      "steadySecondsPerDecodeMode": 600,
-      "churnCyclesPerDecodeMode": 60
+    "cleanCommitIntegratedValidation": {
+      "status": "pending"
     },
     "packageEvidence": {
-      "storePackage": ".runtime/msix/PlainVideo_0.2.0.0_x64-store.msix",
-      "packageVersion": "0.2.0.0",
-      "packageSha256": "63debdc0f1a50157d933bf893dae2fff622f6bdad4d56d4724149e02328597b4",
-      "packageSizeBytes": 18428293,
-      "payloadFileCount": 66,
-      "partnerCenterValidation": "validated",
-      "developerPackageSha256": "98fab9c92f27484648a980cf7e1951eee4531429126335016d82666ffbddbd98",
-      "developerSignature": "valid",
-      "defender": "no-threats-found-store-dev-and-portable",
-      "wack": {
-        "overallResult": "PASS",
-        "reportSha256": "dce565aa522f7e0b8ec630af3ddfa9765f121de9e47e7a4da55b8ebe0efc172f",
-        "reportSizeBytes": 603814
-      },
-      "cleanMachine": "not-rerun-for-0.2.0-prior-0.1.0-exact-runtime-windows-11-sandbox-proof-retained"
+      "status": "pending-clean-commit-build",
+      "packageVersion": "0.2.1.0"
     }
   },
   "release": {
     "eligible": true,
     "publisherRiskDecision": "accepted-free-worldwide-distribution-2026-07-21",
-    "packageVersion": "0.2.0.0",
-    "packageSha256": "63debdc0f1a50157d933bf893dae2fff622f6bdad4d56d4724149e02328597b4",
-    "portableSha256": "f2aaea0a387357835ade081630b155591fa21757603308d1bf5260564a8afccf",
-    "githubRelease": "https://github.com/teemoZipsa/PlainVideo/releases/tag/v0.2.0",
-    "githubReleaseState": "prerelease-portable-asset-uploaded",
-    "partnerCenterSubmissionId": "1152921505701471034",
-    "nextMilestone": "certification-pass-then-explicit-publish-now"
+    "packageVersion": "0.2.1.0",
+    "packageSha256": null,
+    "portableSha256": null,
+    "githubRelease": null,
+    "githubReleaseState": "not-created",
+    "partnerCenterSubmissionId": null,
+    "nextMilestone": "publish-certified-0.2.0-then-build-and-submit-0.2.1"
   },
   "blockingGates": [
-    "Submission 2 must pass Microsoft certification and is not yet publicly available.",
+    "Submission 2 (0.2.0.0) passed certification but must be explicitly published before a new 0.2.1 submission can be created.",
+    "The 0.2.1 candidate has not completed clean-commit integrated validation, package generation, WACK, Defender scanning, or Partner Center validation.",
     "The selected Windows 10 minimum-image proof remains open."
   ]
 }

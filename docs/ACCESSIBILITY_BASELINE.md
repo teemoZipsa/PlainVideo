@@ -35,6 +35,7 @@ PlainVideo's custom-drawn ASS overlay does not yet expose a custom UI Automation
 | Volume | Adjust volume | `Up` / `Down` | Changes volume in two-point steps; increasing volume clears mute. |
 | Volume | Toggle mute | `M` | Toggles mute without adding a permanent button. |
 | Speed | Decrease/increase/reset | `[` / `]` / `\` | Moves between the context-menu speed steps or returns to 1.0× and reports the result in the shared top feedback lane. |
+| Subtitle timing | Earlier/later/reset | `Ctrl+[` / `Ctrl+]` / `Ctrl+\` | Moves the active subtitle in 0.1-second steps or restores the default timing, with localized transient feedback. |
 | Queue | Previous video | `PageUp` | Opens the previous available video; otherwise has no destructive effect. |
 | Queue | Next video | `PageDown` | Opens the next available video; otherwise has no destructive effect. |
 | Tracks | Cycle audio track | `A` | Cycles available audio tracks and shows the selected track. |
@@ -47,13 +48,13 @@ PlainVideo's custom-drawn ASS overlay does not yet expose a custom UI Automation
 | Capture | Save screenshot | `S` | Requests a video screenshot from libmpv. |
 | App | Close | `Q` or `Alt+F4` | Closes PlainVideo. |
 
-Pointer equivalents remain available: click the video to play or pause; double-click the left or right third to seek backward or forward ten seconds; double-click the center third or use the top-right button for fullscreen; use the mouse wheel for volume; drag the seek bar; click the speaker icon to mute; click or drag the adjacent volume track; click `CC` to toggle the current subtitle; and right-click for subtitle selection, external subtitle loading, open, retry, previous/next, audio, and close actions.
+Pointer equivalents remain available: click the video to play or pause; double-click the left or right third to seek backward or forward ten seconds; double-click the center third or use the top-right button for fullscreen; use the mouse wheel for volume; drag the seek bar; click the speaker icon to mute; click or drag the adjacent volume track; click `CC` to toggle the current subtitle; drop one subtitle file onto active playback to attach it without replacing the video; and right-click for subtitle selection, external subtitle loading and timing, open, retry, previous/next, audio, and close actions.
 
 ## 100-200% scaling expectations
 
 - The minimum client target remains 280×240 logical pixels and scales to the current monitor DPI in physical pixels.
 - The full-width window-move region remains 56 logical pixels high. Visible playback and window controls must stay client hit targets rather than drag targets.
-- Window buttons use a 34 logical-pixel tile. Playback buttons use a 36 logical-pixel tile, and the combined speaker/volume target remains at least 72×36 and expands to 152×36 logical pixels as space permits, with the current percentage shown at regular window sizes.
+- Window buttons use a 34 logical-pixel tile. Playback buttons use a 36 logical-pixel tile, and the combined speaker/volume target remains at least 72×36 and expands to 168×36 logical pixels as space permits, with the current percentage shown at regular window sizes.
 - The playback bar has a bounded maximum width. At compact sizes, secondary time labels and nonessential hints may disappear before any functional control is clipped or overlapped.
 - Primary and secondary are the only text-size tiers. Text sizing is calculated from logical viewport size, per-monitor DPI, and Windows text scale rather than treating physical pixels as logical pixels.
 - Both Korean and English layouts must remain within the client area at 100%, 125%, 150%, 175%, and 200% scale. A difference of at most two physical pixels is rounding, not a layout overflow.

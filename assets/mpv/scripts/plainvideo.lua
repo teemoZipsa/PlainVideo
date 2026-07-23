@@ -914,24 +914,52 @@ local function draw_play_pause_icon(center_x, center_y, palette)
 end
 
 local function draw_speaker_icon(center_x, center_y, palette)
+    local muted = mp.get_property_bool("mute", false)
+    local volume = clamp(mp.get_property_number("volume", 100), 0, 100)
+    local icon_color = muted and palette.secondary or palette.text
     local path = string.format(
         "m %d %d l %d %d %d %d %d %d %d %d %d %d",
-        center_x - px(10), center_y - px(4),
+        center_x - px(9), center_y - px(4),
         center_x - px(5), center_y - px(4),
-        center_x + px(2), center_y - px(10),
-        center_x + px(2), center_y + px(10),
+        center_x + px(1), center_y - px(9),
+        center_x + px(1), center_y + px(9),
         center_x - px(5), center_y + px(4),
-        center_x - px(10), center_y + px(4)
+        center_x - px(9), center_y + px(4)
     )
-    local events = { path_event(path, palette.text, "&H08&") }
-    if mp.get_property_bool("mute", false) then
+    local events = { path_event(path, icon_color, "&H08&") }
+    if muted then
         table.insert(events, path_event(string.format(
-            "m %d %d l %d %d %d %d %d %d m %d %d l %d %d %d %d %d %d",
-            center_x + px(6), center_y - px(7), center_x + px(8), center_y - px(9),
-            center_x + px(17), center_y + px(7), center_x + px(15), center_y + px(9),
-            center_x + px(15), center_y - px(9), center_x + px(17), center_y - px(7),
-            center_x + px(8), center_y + px(9), center_x + px(6), center_y + px(7)
+            "m %d %d l %d %d %d %d %d %d",
+            center_x - px(7), center_y - px(9),
+            center_x - px(5), center_y - px(10),
+            center_x + px(12), center_y + px(8),
+            center_x + px(10), center_y + px(10)
         ), palette.danger, "&H08&"))
+    elseif volume > 0 then
+        table.insert(events, path_event(string.format(
+            "m %d %d b %d %d %d %d %d %d l %d %d b %d %d %d %d %d %d",
+            center_x + px(4), center_y - px(5),
+            center_x + px(8), center_y - px(3),
+            center_x + px(8), center_y + px(3),
+            center_x + px(4), center_y + px(5),
+            center_x + px(4), center_y + px(2),
+            center_x + px(6), center_y + px(1),
+            center_x + px(6), center_y - px(1),
+            center_x + px(4), center_y - px(2)
+        ), icon_color, "&H08&"))
+        if volume >= 50 then
+            table.insert(events, path_event(string.format(
+                "m %d %d b %d %d %d %d %d %d l %d %d b %d %d %d %d %d %d",
+                center_x + px(7), center_y - px(9),
+                center_x + px(14), center_y - px(5),
+                center_x + px(14), center_y + px(5),
+                center_x + px(7), center_y + px(9),
+                center_x + px(7), center_y + px(6),
+                center_x + px(11), center_y + px(3),
+                center_x + px(11), center_y - px(3),
+                center_x + px(7), center_y - px(6)
+            ), icon_color, "&H08&"))
+        end
     end
     return table.concat(events, "\n")
 end
@@ -960,7 +988,7 @@ local function draw_playback_controls(width, height)
     local inner_margin = px(10)
     local bar_width = math.min(width - outer_margin * 2, px(860))
     local fixed_width = button * 2 + gap * 3 + inner_margin * 2 + px(32)
-    local volume_width = math.min(px(152), bar_width - fixed_width)
+    local volume_width = math.min(px(168), bar_width - fixed_width)
     local minimum_width = fixed_width + volume_width
     if volume_width + px(3) < px(72) or bar_width < minimum_width
         or height < bar_height + outer_margin * 2 then
@@ -994,7 +1022,7 @@ local function draw_playback_controls(width, height)
         box_event(left, top, right, bottom, px(16), palette.panel, palette.panel_alpha),
     }
     append_control_tile(events, "play", play_left, control_top, play_left + button, control_top + button, palette)
-    append_control_tile(events, "volume", volume_left, control_top, volume_left + volume_width, control_top + button, palette)
+    append_control_tile(events, "volume", volume_left, control_top, volume_left + button, control_top + button, palette)
     append_control_tile(events, "subtitles", subtitle_left, control_top, subtitle_left + button, control_top + button, palette)
 
     if seekable and duration > 0 then
@@ -1008,24 +1036,31 @@ local function draw_playback_controls(width, height)
     end
 
     table.insert(events, draw_play_pause_icon(play_left + math.floor(button / 2), center_y, palette))
-    local speaker_x = volume_left + px(13)
+    local speaker_x = volume_left + math.floor(button / 2)
     table.insert(events, draw_speaker_icon(speaker_x, center_y, palette))
-    local show_volume_value = volume_width >= px(104)
-    local volume_track_left = volume_left + px(30)
+    local show_volume_value = volume_width >= px(132)
+    local volume_track_left = volume_left + px(42)
     local volume_track_right = volume_left + volume_width - (show_volume_value and px(42) or px(6))
     local volume_percent = math.floor(mp.get_property_number("volume", 100) + 0.5)
     local volume = clamp(volume_percent / 100, 0, 1)
+    local muted = mp.get_property_bool("mute", false)
     local volume_filled = volume_track_left + math.floor((volume_track_right - volume_track_left) * volume)
     table.insert(events, box_event(volume_track_left, center_y - px(2), volume_track_right,
         center_y + px(1), px(2), palette.track, "&H58&"))
-    if volume_filled > volume_track_left and not mp.get_property_bool("mute", false) then
+    if volume_filled > volume_track_left and not muted then
         table.insert(events, box_event(volume_track_left, center_y - px(2), volume_filled,
             center_y + px(1), px(2), palette.accent, "&H08&"))
     end
+    local thumb_x = clamp(volume_filled, volume_track_left + px(2), volume_track_right - px(2))
+    table.insert(events, box_event(
+        thumb_x - px(3), center_y - px(3), thumb_x + px(3), center_y + px(3),
+        px(3), muted and palette.muted or palette.accent, muted and "&H50&" or "&H08&"
+    ))
     if show_volume_value then
         table.insert(events, text_event(6, volume_left + volume_width - px(7), center_y,
             math.max(px(10), type_size("secondary", width, height) - px(1)),
-            palette.secondary, "&H08&", false, string.format("%d%%", volume_percent)))
+            muted and palette.muted or palette.secondary, muted and "&H28&" or "&H08&",
+            false, string.format("%d%%", volume_percent)))
     end
     local sid = mp.get_property("sid", "no")
     local subtitle_active = sid ~= "no" and sid ~= "false" and sid ~= "auto"
@@ -1049,7 +1084,9 @@ local function draw_playback_controls(width, height)
         tooltip_label = mp.get_property_bool("pause", false) and copy.play or copy.pause
         tooltip_center = play_left + math.floor(button / 2)
     elseif tooltip_name == "volume" then
-        tooltip_label = string.format("%s %d%%", copy.volume, volume_percent)
+        tooltip_label = muted
+            and string.format("%s %d%% · %s", copy.volume, volume_percent, copy.mute)
+            or string.format("%s %d%%", copy.volume, volume_percent)
         tooltip_center = volume_left + math.floor(volume_width / 2)
     elseif tooltip_name == "subtitles" then
         tooltip_label = subtitle_active and copy.subtitles_off or copy.subtitles_on

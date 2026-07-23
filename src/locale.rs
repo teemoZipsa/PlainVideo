@@ -20,6 +20,14 @@ pub struct UiText {
     pub open_subtitle: &'static str,
     pub no_subtitle_tracks: &'static str,
     pub subtitle_track: &'static str,
+    pub subtitle_timing: &'static str,
+    pub subtitle_earlier: &'static str,
+    pub subtitle_timing_reset: &'static str,
+    pub subtitle_later: &'static str,
+    pub subtitle_timing_requires_active: &'static str,
+    pub default_value: &'static str,
+    pub seconds_earlier: &'static str,
+    pub seconds_later: &'static str,
     pub audio: &'static str,
     pub audio_off: &'static str,
     pub no_audio_tracks: &'static str,
@@ -61,6 +69,14 @@ const KOREAN: UiText = UiText {
     open_subtitle: "자막 파일 열기…",
     no_subtitle_tracks: "자막 트랙 없음",
     subtitle_track: "자막",
+    subtitle_timing: "자막 싱크",
+    subtitle_earlier: "0.1초 앞당기기\tCtrl+[",
+    subtitle_timing_reset: "싱크 초기화\tCtrl+\\",
+    subtitle_later: "0.1초 늦추기\tCtrl+]",
+    subtitle_timing_requires_active: "자막을 먼저 켜세요",
+    default_value: "기본값",
+    seconds_earlier: "초 앞당김",
+    seconds_later: "초 늦춤",
     audio: "오디오",
     audio_off: "오디오 끄기",
     no_audio_tracks: "오디오 트랙 없음",
@@ -102,6 +118,14 @@ const ENGLISH: UiText = UiText {
     open_subtitle: "Open subtitle file…",
     no_subtitle_tracks: "No subtitle tracks",
     subtitle_track: "Subtitle",
+    subtitle_timing: "Subtitle timing",
+    subtitle_earlier: "0.1 s earlier\tCtrl+[",
+    subtitle_timing_reset: "Reset timing\tCtrl+\\",
+    subtitle_later: "0.1 s later\tCtrl+]",
+    subtitle_timing_requires_active: "Turn subtitles on first",
+    default_value: "Default",
+    seconds_earlier: " s earlier",
+    seconds_later: " s later",
     audio: "Audio",
     audio_off: "Off",
     no_audio_tracks: "No audio tracks",
@@ -204,6 +228,14 @@ mod tests {
             assert!(!text.open_subtitle.is_empty());
             assert!(!text.no_subtitle_tracks.is_empty());
             assert!(!text.subtitle_track.is_empty());
+            assert!(!text.subtitle_timing.is_empty());
+            assert!(!text.subtitle_earlier.is_empty());
+            assert!(!text.subtitle_timing_reset.is_empty());
+            assert!(!text.subtitle_later.is_empty());
+            assert!(!text.subtitle_timing_requires_active.is_empty());
+            assert!(!text.default_value.is_empty());
+            assert!(!text.seconds_earlier.is_empty());
+            assert!(!text.seconds_later.is_empty());
             assert!(!text.audio.is_empty());
             assert!(!text.audio_off.is_empty());
             assert!(!text.no_audio_tracks.is_empty());

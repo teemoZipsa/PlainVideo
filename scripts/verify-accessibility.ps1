@@ -49,6 +49,7 @@ $baseline = Read-RepositoryText 'docs/ACCESSIBILITY_BASELINE.md'
 Assert-Pattern $localeSource 'previous_video:' 'previous-video localization fields' 3
 Assert-Pattern $localeSource 'next_video:' 'next-video localization fields' 3
 Assert-Pattern $localeSource 'audio_track:' 'audio-track localization fields' 3
+Assert-Pattern $localeSource 'subtitle_timing:' 'subtitle-timing localization fields' 3
 Assert-Pattern $localeSource 'playback_error_title:' 'playback-error title localization fields' 3
 Assert-Pattern $localeSource 'playback_error_hint:' 'playback-error hint localization fields' 3
 Assert-Pattern $localeSource 'for locale in \[Locale::Korean, Locale::English\]' 'both locale sets in the completeness test'
@@ -63,6 +64,9 @@ Assert-Pattern $windowSource 'VK_NEXT\s*=>' 'PageDown next-video route'
 Assert-Pattern $windowSource '0x41\s*=>\s*app\.cycle_audio' 'A audio-track route'
 Assert-Pattern $windowSource '0x4D\s*=>' 'M mute route'
 Assert-Pattern $windowSource '0x56\s*=>\s*app\.cycle_subtitle' 'V subtitle-track route'
+Assert-Pattern $windowSource 'VK_OEM_4\s+if\s+control\s*=>\s*app\.adjust_subtitle_delay' 'Ctrl+LeftBracket subtitle-earlier route'
+Assert-Pattern $windowSource 'VK_OEM_5\s+if\s+control\s*=>\s*app\.reset_subtitle_delay' 'Ctrl+Backslash subtitle-reset route'
+Assert-Pattern $windowSource 'VK_OEM_6\s+if\s+control\s*=>\s*app\.adjust_subtitle_delay' 'Ctrl+RightBracket subtitle-later route'
 Assert-Pattern $windowSource '0x52\s+if\s+app\.playback_error_visible' 'R recoverable-error retry route'
 Assert-Pattern $windowSource 'WM_MOUSEWHEEL' 'mouse-wheel volume route'
 Assert-Pattern $windowSource 'fn cycle_keyboard_focus' 'keyboard focus state machine'
@@ -71,6 +75,7 @@ Assert-Pattern $windowSource 'MENU_PREVIOUS' 'previous-video context-menu comman
 Assert-Pattern $windowSource 'MENU_NEXT' 'next-video context-menu command'
 Assert-Pattern $windowSource 'MENU_AUDIO_TRACK_BASE' 'audio-track context-menu commands'
 Assert-Pattern $windowSource 'MENU_SUBTITLE_TRACK_BASE' 'subtitle-track context-menu commands'
+Assert-Pattern $windowSource 'MENU_SUBTITLE_TIMING_RESET' 'subtitle-timing context-menu commands'
 
 # DPI-scaled minimums, move region, rounding tolerance, and compact playback
 # geometry are product layout contracts.
@@ -80,7 +85,7 @@ Assert-Pattern $windowingSource 'BASE_DRAG_ZONE_HEIGHT:\s*i32\s*=\s*56' '56 logi
 Assert-Pattern $windowingSource 'LAYOUT_ROUNDING_TOLERANCE:\s*i32\s*=\s*2' 'two-pixel rounding tolerance'
 Assert-Pattern $windowSource 'PLAYBACK_BUTTON_SIZE:\s*i32\s*=\s*36' '36 logical-pixel playback control'
 Assert-Pattern $windowSource 'PLAYBACK_VOLUME_MIN_WIDTH:\s*i32\s*=\s*72' '72 logical-pixel minimum volume control'
-Assert-Pattern $windowSource 'PLAYBACK_VOLUME_MAX_WIDTH:\s*i32\s*=\s*152' '152 logical-pixel expanded volume control'
+Assert-Pattern $windowSource 'PLAYBACK_VOLUME_MAX_WIDTH:\s*i32\s*=\s*168' '168 logical-pixel expanded volume control'
 
 # The custom overlay must retain exactly the two intended type tiers and scale
 # text from logical dimensions while drawing keyboard focus.
@@ -95,9 +100,11 @@ Assert-Pattern $luaSource 'draw_playback_error' 'localized recoverable error dra
 # unsupported assistive-technology claims explicitly pending.
 Assert-Pattern $readmeEnglish '`PageUp`/`PageDown`' 'English queue-shortcut documentation'
 Assert-Pattern $readmeEnglish '`F6`/`Shift\+F6`' 'English keyboard-focus documentation'
+Assert-Pattern $readmeEnglish '`Ctrl\+\[`/`Ctrl\+\]`/`Ctrl\+\\`' 'English subtitle-timing documentation'
 Assert-Pattern $readmeEnglish 'Recoverable per-file playback errors' 'English recoverable-error documentation'
 Assert-Pattern $readmeKorean '`PageUp`/`PageDown`' 'Korean queue-shortcut documentation'
 Assert-Pattern $readmeKorean '`F6`/`Shift\+F6`' 'Korean keyboard-focus documentation'
+Assert-Pattern $readmeKorean '`Ctrl\+\[`/`Ctrl\+\]`/`Ctrl\+\\`' 'Korean subtitle-timing documentation'
 Assert-Pattern $baseline 'Custom UI Automation tree \| \*\*Pending\*\*' 'UI Automation pending disclosure'
 Assert-Pattern $baseline 'Narrator \| \*\*Pending\*\*' 'Narrator pending disclosure'
 Assert-Pattern $baseline 'High Contrast \| \*\*Pending\*\*' 'High Contrast pending disclosure'

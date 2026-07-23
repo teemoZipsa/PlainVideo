@@ -9,8 +9,9 @@ The Microsoft Store and portable releases currently target x64 desktop devices.
 - Play or pause: click the video or press `Space`.
 - Fullscreen: double-click the center of the video or press `F`.
 - Seek: use Left/Right, double-click the left or right side, or hover over the seek bar for a thumbnail preview. Hold `Shift` with Left/Right for a larger step.
-- Volume: use Up/Down or the mouse wheel.
-- Subtitles: use the CC button for direct on/off control or the right-click menu for track selection.
+- Volume: use Up/Down or the mouse wheel; press `M` or the speaker button to mute or restore sound.
+- Subtitles: use the CC button for direct on/off control or the right-click menu for track selection. Drop one subtitle file onto an active video to attach it without replacing playback.
+- Subtitle timing: use `Ctrl+[` for 0.1 seconds earlier, `Ctrl+]` for 0.1 seconds later, and `Ctrl+\` to reset.
 - Audio tracks and playback speed: use the right-click menu or their keyboard shortcuts.
 - Media information: press `Tab` without interrupting playback.
 - Save a screenshot: press `S`; the result is saved in the Windows Pictures library.

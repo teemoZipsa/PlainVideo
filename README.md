@@ -39,9 +39,9 @@ Display synchronization and AI frame generation are intentionally treated as dif
 - A full-width invisible 56 px top move zone with a move cursor and no visible handle
 - PlainView-style top-right theme, always-on-top, minimize, fullscreen, and close controls, plus transient play, seek, volume-slider/mute, and subtitle controls
 - Physical-pixel window placement across monitors, DPI-scaled 280×240 minimum sizing, and DWM border suppression with the native shadow retained
-- Automatic discovery of same-name external SRT subtitles, plus contextual subtitle and audio-track selection and external subtitle loading
+- Automatic discovery of same-name external SRT subtitles, plus contextual subtitle and audio-track selection, subtitle-file drop attachment, external subtitle loading, and 0.1-second timing correction
 - A localized empty state with no Korean/English mixing and a `Ctrl+O` open path
-- `PageUp`/`PageDown` previous-next navigation, `A` audio-track cycling, `V` subtitle cycling, and `M` mute
+- `PageUp`/`PageDown` previous-next navigation, `A` audio-track cycling, `V` subtitle cycling, `M` mute, and `Ctrl+[`/`Ctrl+]`/`Ctrl+\` subtitle timing
 - `Tab` toggles an unobscured, left-aligned media-information overlay without interrupting playback
 - Automatic resume for partially watched local files, with a transient resume notice and a context-menu restart action
 - Hover thumbnail previews on the seek bar, direct CC subtitle toggle, and remembered volume and mute state
@@ -51,7 +51,7 @@ Display synchronization and AI frame generation are intentionally treated as dif
 - Recoverable per-file playback errors that keep the window open for retry, another file, or drag and drop instead of terminating the app
 - A reproducible local developer portable directory with per-file hashes
 
-The 0.2.0 release-candidate validation on 2026-07-23 passed all ten generated container, codec, audio, and subtitle combinations against one staged portable directory using the reviewed release runtime. This is exact test evidence, not a blanket support claim; see the [format compatibility ledger](docs/FORMAT_COMPATIBILITY_LEDGER.md) for the rows and limits. Hardware decoding is selected per machine and a verified software path remains available.
+The 0.2.0 release-candidate validation on 2026-07-23 passed all ten generated container, codec, audio, and subtitle combinations against one staged portable directory using the reviewed release runtime. This remains exact evidence for that release, not a blanket support claim; see the [format compatibility ledger](docs/FORMAT_COMPATIBILITY_LEDGER.md) for the rows and limits. Hardware decoding is selected per machine and a verified software path remains available.
 
 ## Run locally
 
@@ -76,6 +76,6 @@ See [Product definition](docs/PRODUCT.md) and [Architecture notes](docs/ARCHITEC
 
 ## License
 
-Original PlainVideo code is released under the [MIT License](LICENSE). Bundled playback engines, codecs, and runtimes retain their own licenses; release packages include the locked runtime profile, notices, license material, and corresponding-source offer. Experimental interpolation models are not included in the 0.2.0 release.
+Original PlainVideo code is released under the [MIT License](LICENSE). Bundled playback engines, codecs, and runtimes retain their own licenses; release packages include the locked runtime profile, notices, license material, and corresponding-source offer. Experimental interpolation runtimes and models are not included in the 0.2.1 release.
 
 See the [privacy policy](PRIVACY.md) and [support guide](SUPPORT.md) for the Microsoft Store and portable releases.

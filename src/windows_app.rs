@@ -91,7 +91,7 @@ const PLAYBACK_BAR_MARGIN: i32 = 12;
 const PLAYBACK_BUTTON_SIZE: i32 = 36;
 const PLAYBACK_BUTTON_GAP: i32 = 6;
 const PLAYBACK_VOLUME_MIN_WIDTH: i32 = 72;
-const PLAYBACK_VOLUME_MAX_WIDTH: i32 = 152;
+const PLAYBACK_VOLUME_MAX_WIDTH: i32 = 168;
 const MENU_OPEN: usize = 100;
 const MENU_PREVIOUS: usize = 101;
 const MENU_CLOSE: usize = 102;
@@ -107,7 +107,12 @@ const MENU_OPEN_SCREENSHOT_FOLDER: usize = 111;
 const MENU_RIFE_INTERPOLATION: usize = 112;
 const MENU_SUBTITLE_OFF: usize = 200;
 const MENU_SUBTITLE_OPEN: usize = 201;
+const MENU_SUBTITLE_EARLIER: usize = 202;
+const MENU_SUBTITLE_TIMING_RESET: usize = 203;
+const MENU_SUBTITLE_LATER: usize = 204;
 const MENU_AUDIO_OFF: usize = 300;
+const SUBTITLE_DELAY_STEP: f64 = 0.1;
+const SUBTITLE_DELAY_LIMIT: f64 = 60.0;
 const PLAYBACK_SPEEDS: [(usize, &str, f64); 6] = [
     (400, "0.5×", 0.5),
     (401, "0.75×", 0.75),
@@ -123,6 +128,13 @@ const MENU_AUDIO_TRACK_BASE: usize = 2_000;
 enum SurfaceTheme {
     Dark,
     Light,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum FileDropAction {
+    AddSubtitle(PathBuf),
+    OpenMedia(Vec<PathBuf>),
+    None,
 }
 
 impl SurfaceTheme {
@@ -498,6 +510,7 @@ impl App {
         self.last_subtitle_id = None;
         self.pending_resume = self.resume_store.position(path);
         self.update_window_title();
+        let _ = self.player.set_subtitle_delay(0.0);
         if let Err(error) = self.player.load_file(path) {
             self.show_playback_error(error);
         }
@@ -1335,6 +1348,32 @@ impl App {
         }
     }
 
+    fn set_subtitle_delay_ui(&mut self, seconds: f64) {
+        if self.player.current_subtitle_id().is_none() {
+            let message = if self.player.subtitle_tracks().is_empty() {
+                self.locale.text().no_subtitle_tracks
+            } else {
+                self.locale.text().subtitle_timing_requires_active
+            };
+            self.show_status(message);
+            return;
+        }
+        let seconds = normalize_subtitle_delay(seconds);
+        if let Err(error) = self.player.set_subtitle_delay(seconds) {
+            self.operation_error(error);
+        } else {
+            self.show_status(&subtitle_delay_status(self.locale.text(), seconds));
+        }
+    }
+
+    fn adjust_subtitle_delay(&mut self, amount: f64) {
+        self.set_subtitle_delay_ui(self.player.subtitle_delay() + amount);
+    }
+
+    fn reset_subtitle_delay(&mut self) {
+        self.set_subtitle_delay_ui(0.0);
+    }
+
     fn select_subtitle_ui(&mut self, id: i64, label: &str) {
         if let Err(error) = self.player.select_subtitle(id) {
             self.operation_error(error);
@@ -1476,6 +1515,9 @@ impl App {
         let subtitles_off = wide(text.subtitles_off);
         let open_subtitle = wide(text.open_subtitle);
         let no_subtitle_tracks = wide(text.no_subtitle_tracks);
+        let subtitle_earlier = wide(text.subtitle_earlier);
+        let subtitle_timing_reset = wide(text.subtitle_timing_reset);
+        let subtitle_later = wide(text.subtitle_later);
         let audio = wide(text.audio);
         let audio_off = wide(text.audio_off);
         let no_audio_tracks = wide(text.no_audio_tracks);
@@ -1561,6 +1603,31 @@ impl App {
                 MF_STRING,
                 MENU_SUBTITLE_OPEN,
                 open_subtitle.as_ptr(),
+            );
+            AppendMenuW(subtitle_menu, MF_SEPARATOR, 0, ptr::null());
+            let subtitle_timing_flags = MF_STRING
+                | if current_subtitle.is_some() {
+                    0
+                } else {
+                    MF_GRAYED
+                };
+            AppendMenuW(
+                subtitle_menu,
+                subtitle_timing_flags,
+                MENU_SUBTITLE_EARLIER,
+                subtitle_earlier.as_ptr(),
+            );
+            AppendMenuW(
+                subtitle_menu,
+                subtitle_timing_flags,
+                MENU_SUBTITLE_TIMING_RESET,
+                subtitle_timing_reset.as_ptr(),
+            );
+            AppendMenuW(
+                subtitle_menu,
+                subtitle_timing_flags,
+                MENU_SUBTITLE_LATER,
+                subtitle_later.as_ptr(),
             );
             if has_playable_media {
                 AppendMenuW(menu, MF_POPUP, subtitle_menu as usize, subtitles.as_ptr());
@@ -1713,6 +1780,15 @@ impl App {
                         self.add_subtitle_ui(&path);
                     }
                 }
+                MENU_SUBTITLE_EARLIER => {
+                    self.adjust_subtitle_delay(-SUBTITLE_DELAY_STEP);
+                }
+                MENU_SUBTITLE_TIMING_RESET => {
+                    self.reset_subtitle_delay();
+                }
+                MENU_SUBTITLE_LATER => {
+                    self.adjust_subtitle_delay(SUBTITLE_DELAY_STEP);
+                }
                 MENU_AUDIO_OFF => {
                     if let Err(error) = self.player.disable_audio() {
                         self.operation_error(error);
@@ -1764,24 +1840,21 @@ impl App {
             }
         }
         unsafe { DragFinish(drop) };
-        if paths.len() == 1 && is_subtitle_path(&paths[0]) && self.active_path.is_some() {
-            self.add_subtitle_ui(&paths[0]);
-            self.note_pointer_activity(hwnd);
-            return;
-        }
-
-        let media: Vec<_> = paths
-            .into_iter()
-            .filter(|path| !is_subtitle_path(path))
-            .collect();
-        if !media.is_empty() {
-            self.media_queue = if media.len() == 1 {
-                MediaQueue::around(&media[0])
-            } else {
-                MediaQueue::from_paths(media)
-            };
-            self.load_current();
-            self.note_pointer_activity(hwnd);
+        match file_drop_action(paths, self.active_path.is_some()) {
+            FileDropAction::AddSubtitle(path) => {
+                self.add_subtitle_ui(&path);
+                self.note_pointer_activity(hwnd);
+            }
+            FileDropAction::OpenMedia(media) => {
+                self.media_queue = if media.len() == 1 {
+                    MediaQueue::around(&media[0])
+                } else {
+                    MediaQueue::from_paths(media)
+                };
+                self.load_current();
+                self.note_pointer_activity(hwnd);
+            }
+            FileDropAction::None => {}
         }
     }
 }
@@ -2349,7 +2422,8 @@ unsafe extern "system" fn window_proc(
 }
 
 fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
-    if key == VK_O && unsafe { GetKeyState(VK_CONTROL as i32) } < 0 {
+    let control = unsafe { GetKeyState(VK_CONTROL as i32) } < 0;
+    if key == VK_O && control {
         app.show_cursor();
         unsafe { KillTimer(hwnd, TIMER_HIDE_CURSOR) };
         if let Some(path) = pick_media_file(hwnd, app.locale.text()) {
@@ -2392,6 +2466,9 @@ fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
         }
         VK_UP => app.adjust_volume(2.0),
         VK_DOWN => app.adjust_volume(-2.0),
+        VK_OEM_4 if control => app.adjust_subtitle_delay(-SUBTITLE_DELAY_STEP),
+        VK_OEM_5 if control => app.reset_subtitle_delay(),
+        VK_OEM_6 if control => app.adjust_subtitle_delay(SUBTITLE_DELAY_STEP),
         VK_OEM_4 => app.adjust_playback_speed(-1),
         VK_OEM_6 => app.adjust_playback_speed(1),
         VK_OEM_5 => app.set_playback_speed(1.0),
@@ -2524,13 +2601,13 @@ fn seek_track_bounds(layout: &PlaybackLayout, dpi: u32) -> (i32, i32) {
 
 fn volume_track_bounds(layout: &PlaybackLayout, dpi: u32) -> (i32, i32) {
     let width = layout.volume.right - layout.volume.left;
-    let trailing = if width >= scale_metric(104, dpi) {
+    let trailing = if width >= scale_metric(132, dpi) {
         scale_metric(42, dpi)
     } else {
         scale_metric(6, dpi)
     };
     (
-        layout.volume.left + scale_metric(30, dpi),
+        layout.volume.left + scale_metric(42, dpi),
         layout.volume.right - trailing,
     )
 }
@@ -3040,6 +3117,44 @@ fn subtitle_toggle_target(tracks: &[SubtitleTrack], last_id: Option<i64>) -> Opt
         .or_else(|| tracks.first().map(|track| track.id))
 }
 
+fn normalize_subtitle_delay(seconds: f64) -> f64 {
+    ((seconds.clamp(-SUBTITLE_DELAY_LIMIT, SUBTITLE_DELAY_LIMIT) * 10.0).round()) / 10.0
+}
+
+fn subtitle_delay_status(text: &UiText, seconds: f64) -> String {
+    let seconds = normalize_subtitle_delay(seconds);
+    if seconds.abs() < 0.05 {
+        format!("{} · {}", text.subtitle_timing, text.default_value)
+    } else if seconds < 0.0 {
+        format!(
+            "{} · {:.1}{}",
+            text.subtitle_timing,
+            seconds.abs(),
+            text.seconds_earlier
+        )
+    } else {
+        format!(
+            "{} · {:.1}{}",
+            text.subtitle_timing, seconds, text.seconds_later
+        )
+    }
+}
+
+fn file_drop_action(mut paths: Vec<PathBuf>, has_active_media: bool) -> FileDropAction {
+    if paths.len() == 1 && is_subtitle_path(&paths[0]) && has_active_media {
+        return FileDropAction::AddSubtitle(paths.remove(0));
+    }
+    let media: Vec<_> = paths
+        .into_iter()
+        .filter(|path| !is_subtitle_path(path))
+        .collect();
+    if media.is_empty() {
+        FileDropAction::None
+    } else {
+        FileDropAction::OpenMedia(media)
+    }
+}
+
 fn audio_track_label(text: &UiText, track: &AudioTrack, index: usize) -> String {
     let title = track
         .title
@@ -3198,6 +3313,68 @@ mod tests {
             external_filename: Some(r"C:\video\sample.ko.srt".to_string()),
         };
         assert_eq!(subtitle_track_label(text, &external, 1), "sample.ko.srt");
+    }
+
+    #[test]
+    fn subtitle_drop_attaches_only_when_media_is_already_active() {
+        let subtitle = PathBuf::from(r"C:\video\movie.ko.srt");
+        assert_eq!(
+            file_drop_action(vec![subtitle.clone()], true),
+            FileDropAction::AddSubtitle(subtitle.clone())
+        );
+        assert_eq!(
+            file_drop_action(vec![subtitle], false),
+            FileDropAction::None
+        );
+
+        let media = PathBuf::from(r"C:\video\movie.mp4");
+        let ignored_subtitle = PathBuf::from(r"C:\video\movie.en.vtt");
+        assert_eq!(
+            file_drop_action(vec![media.clone(), ignored_subtitle], true),
+            FileDropAction::OpenMedia(vec![media])
+        );
+    }
+
+    #[test]
+    fn subtitle_timing_is_bounded_localized_and_resettable() {
+        assert_eq!(normalize_subtitle_delay(0.26), 0.3);
+        assert_eq!(normalize_subtitle_delay(-0.26), -0.3);
+        assert_eq!(normalize_subtitle_delay(80.0), SUBTITLE_DELAY_LIMIT);
+        assert_eq!(
+            subtitle_delay_status(Locale::Korean.text(), -0.3),
+            "자막 싱크 · 0.3초 앞당김"
+        );
+        assert_eq!(
+            subtitle_delay_status(Locale::English.text(), 0.4),
+            "Subtitle timing · 0.4 s later"
+        );
+        assert_eq!(
+            subtitle_delay_status(Locale::English.text(), 0.0),
+            "Subtitle timing · Default"
+        );
+
+        let source = include_str!("windows_app.rs");
+        let load_path = source
+            .split_once("fn load_path")
+            .and_then(|(_, rest)| rest.split_once("fn previous_video"))
+            .map(|(body, _)| body)
+            .expect("media load implementation");
+        assert!(load_path.contains("set_subtitle_delay(0.0)"));
+
+        let keyboard = source
+            .split_once("fn handle_key")
+            .and_then(|(_, rest)| rest.split_once("fn client_point"))
+            .map(|(body, _)| body)
+            .expect("keyboard handler");
+        assert!(
+            keyboard
+                .contains("VK_OEM_4 if control => app.adjust_subtitle_delay(-SUBTITLE_DELAY_STEP)")
+        );
+        assert!(keyboard.contains("VK_OEM_5 if control => app.reset_subtitle_delay()"));
+        assert!(
+            keyboard
+                .contains("VK_OEM_6 if control => app.adjust_subtitle_delay(SUBTITLE_DELAY_STEP)")
+        );
     }
 
     #[test]
@@ -3471,7 +3648,10 @@ mod tests {
         assert!(track_right - track_left >= 80);
 
         let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
-        assert!(lua.contains("tooltip_label = string.format(\"%s %d%%\""));
+        assert!(lua.contains("string.format(\"%s %d%%\""));
+        assert!(lua.contains("string.format(\"%s %d%% · %s\""));
+        assert!(lua.contains("volume_width >= px(132)"));
+        assert!(lua.contains("volume_left + px(42)"));
         assert!(lua.contains("local function compact_tooltip_width_for"));
         assert!(lua.contains("maximum_width, px(8), 0.8"));
         assert!(lua.contains("tooltip_label, tooltip_size, width - outer_margin * 2)"));

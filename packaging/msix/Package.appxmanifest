@@ -9,7 +9,7 @@
   <Identity
     Name="SeonkyuIM.PlainVideo"
     Publisher="CN=8958BE04-B1E7-4AE6-84E9-592921EBB405"
-    Version="0.2.0.0"
+    Version="0.2.1.0"
     ProcessorArchitecture="x64" />
 
   <Properties>
