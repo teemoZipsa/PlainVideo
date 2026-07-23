@@ -3544,6 +3544,17 @@ mod tests {
     }
 
     #[test]
+    fn media_info_stays_enabled_until_an_explicit_toggle() {
+        let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
+
+        // One assignment initializes the state; the other is the explicit
+        // script-message "hide" action. Playback lifecycle events must not
+        // silently clear a view the user pinned with Tab.
+        assert_eq!(lua.matches("media_info_visible = false").count(), 2);
+        assert!(!lua.contains("if value then media_info_visible = false end"));
+    }
+
+    #[test]
     fn media_info_uses_an_unobscured_left_aligned_diagnostic_overlay() {
         let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
         let media_info = lua
@@ -3562,6 +3573,23 @@ mod tests {
         assert!(!media_info.contains("box_event("));
         assert!(!media_info.contains("right_x"));
         assert!(!media_info.contains("left + px(500)"));
+    }
+
+    #[test]
+    fn media_info_distinguishes_source_and_interpolated_frame_rates() {
+        let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
+        let frame_rate = lua
+            .split_once("local function frame_rate_label()")
+            .and_then(|(_, rest)| rest.split_once("local function draw_media_info"))
+            .map(|(body, _)| body)
+            .expect("frame-rate information formatter");
+
+        assert!(frame_rate.contains("mp.get_property_number(\"container-fps\", 0)"));
+        assert!(frame_rate.contains("mp.get_property_number(\"estimated-vf-fps\", 0)"));
+        assert!(frame_rate.contains("filters:find(\"plainvideo-rife\", 1, true)"));
+        assert!(frame_rate.contains("decimal(source_fps, 3)"));
+        assert!(frame_rate.contains("decimal(filtered_fps, 3)"));
+        assert!(frame_rate.contains("copy.rife_preparing"));
     }
 
     #[test]

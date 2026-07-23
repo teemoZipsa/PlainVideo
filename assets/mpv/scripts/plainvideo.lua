@@ -56,6 +56,7 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     file = "파일",
     input = "입력",
     average = "평균",
+    rife_preparing = "측정 중",
     none = "없음",
     software = "소프트웨어",
 } or {
@@ -88,6 +89,7 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     file = "File",
     input = "Input",
     average = "Avg",
+    rife_preparing = "Measuring",
     none = "None",
     software = "Software",
 }
@@ -366,6 +368,31 @@ local function first_nonempty(...)
     return ""
 end
 
+local function frame_rate_label()
+    local source_fps = mp.get_property_number("container-fps", 0)
+    local filtered_fps = mp.get_property_number("estimated-vf-fps", 0)
+    local filters = mp.get_property("vf", "")
+    local rife_enabled = filters:find("plainvideo-rife", 1, true) ~= nil
+
+    if rife_enabled then
+        if source_fps > 0 and filtered_fps > source_fps + 0.5 then
+            return string.format("%s → %s fps",
+                decimal(source_fps, 3), decimal(filtered_fps, 3)), true
+        end
+        if source_fps > 0 then
+            return string.format("%s fps · %s",
+                decimal(source_fps, 3), copy.rife_preparing), true
+        end
+        if filtered_fps > 0 then
+            return decimal(filtered_fps, 3) .. " fps", true
+        end
+        return copy.rife_preparing, true
+    end
+
+    local fps = source_fps > 0 and source_fps or filtered_fps
+    return fps > 0 and decimal(fps, 3) .. " fps" or "", false
+end
+
 local function draw_media_info(width, height)
     local palette = theme_palette()
     local padding = math.max(px(18), math.floor(width * 0.015))
@@ -384,8 +411,7 @@ local function draw_media_info(width, height)
     local video_codec = uppercase(mp.get_property("video-codec", mp.get_property("video-format", "")), copy.none)
     local video_width = mp.get_property_number("video-params/w", 0)
     local video_height = mp.get_property_number("video-params/h", 0)
-    local fps = mp.get_property_number("container-fps",
-        mp.get_property_number("estimated-vf-fps", 0))
+    local fps_text, rife_enabled = frame_rate_label()
     local pixel_format = first_nonempty(mp.get_property("video-params/pixelformat"), copy.none)
     local color_primaries = first_nonempty(mp.get_property("video-params/primaries"), "")
     local color_transfer = first_nonempty(mp.get_property("video-params/gamma"), "")
@@ -417,8 +443,8 @@ local function draw_media_info(width, height)
     if video_width > 0 and video_height > 0 then
         table.insert(video_parts, string.format("%d×%d", video_width, video_height))
     end
-    if fps > 0 then
-        table.insert(video_parts, decimal(fps, 3) .. " fps")
+    if fps_text ~= "" and not rife_enabled then
+        table.insert(video_parts, fps_text)
     end
     local file_parts = { container }
     local size_text = format_file_size(file_size)
@@ -462,70 +488,86 @@ local function draw_media_info(width, height)
         table.insert(video_detail_parts, color_transfer)
     end
 
-    -- Keep the picture unobscured and lay readable diagnostics directly over
-    -- its upper-left edge, like a traditional player/debug information view.
-    local lines = {
+    -- Use one fixed label rail and one fixed value rail. The steady rhythm
+    -- keeps dense diagnostics legible without putting a panel over the video.
+    local rows = {
         {
+            label = copy.position,
             color = palette.text,
-            bold = false,
-            value = string.format("%s  %s / %s  (%.1f%%)   ·   %s  %s", copy.position,
+            bold = true,
+            value = string.format("%s / %s  ·  %.1f%%  ·  %s %s",
                 format_time(position), format_time(duration), percent,
-                copy.remaining, format_time(remaining)),
+                format_time(remaining), copy.remaining),
         },
         {
+            label = copy.queue,
             color = palette.secondary,
             bold = false,
-            value = string.format("%s  %d / %d   ·   %s  %s×", copy.queue,
+            value = string.format("%d / %d  ·  %s %s×",
                 media_queue_position, media_queue_count, copy.speed, decimal(speed, 2)),
         },
-        { gap = true },
         {
+            label = copy.file,
             color = palette.secondary,
             bold = false,
-            value = copy.file .. "  " .. table.concat(file_parts, " · "),
+            value = table.concat(file_parts, " · "),
         },
-        { gap = true },
         {
+            label = copy.video,
             color = palette.text,
             bold = true,
-            value = copy.video .. "  " .. table.concat(video_parts, " · "),
+            value = table.concat(video_parts, " · "),
         },
         {
+            label = copy.input,
             color = palette.secondary,
             bold = false,
-            value = copy.input .. "  " .. table.concat(video_detail_parts, " · "),
+            value = table.concat(video_detail_parts, " · "),
         },
         {
+            label = copy.decoder,
             color = palette.secondary,
             bold = false,
-            value = copy.decoder .. "  " .. decoder,
+            value = decoder,
         },
-        { gap = true },
         {
+            label = copy.audio,
             color = palette.text,
             bold = true,
-            value = copy.audio .. "  " .. table.concat(audio_parts, " · "),
+            value = table.concat(audio_parts, " · "),
         },
         {
+            label = copy.subtitle,
             color = palette.secondary,
             bold = false,
-            value = copy.subtitle .. "  " .. table.concat(subtitle_parts, " · "),
+            value = table.concat(subtitle_parts, " · "),
         },
     }
+    if rife_enabled then
+        table.insert(rows, 5, {
+            label = "RIFE",
+            label_color = palette.accent,
+            color = palette.accent,
+            bold = true,
+            value = fps_text,
+        })
+    end
 
-    local title_size = type_size("primary", width, height) + px(2)
-    local body_size = type_size("secondary", width, height) + px(2)
-    local row_height = math.max(px(26), body_size + px(8))
+    local title_size = type_size("primary", width, height) + px(1)
+    local body_size = type_size("secondary", width, height) + px(1)
+    local label_size = math.max(px(11), body_size - px(1))
+    local row_height = math.max(px(24), body_size + px(6))
+    local value_x = padding + px(102)
     local events = {
         outlined_text_event(7, padding, top, title_size, palette.accent, true, filename),
     }
-    local line_y = top + math.max(px(38), title_size + px(11))
-    for _, line in ipairs(lines) do
-        if line.gap then
-            line_y = line_y + math.floor(row_height * 0.45)
-        elseif line_y + row_height <= bottom then
-            table.insert(events, outlined_text_event(7, padding, line_y, body_size,
-                line.color, line.bold, line.value))
+    local line_y = top + math.max(px(36), title_size + px(10))
+    for _, row in ipairs(rows) do
+        if line_y + row_height <= bottom then
+            table.insert(events, outlined_text_event(7, padding, line_y, label_size,
+                row.label_color or palette.muted, true, uppercase(row.label, row.label)))
+            table.insert(events, outlined_text_event(7, value_x, line_y, body_size,
+                row.color, row.bold, row.value))
             line_y = line_y + row_height
         end
     end
@@ -1100,7 +1142,6 @@ end
 
 local function set_playback_status(state, title, hint)
     if state == "error" then
-        media_info_visible = false
         playback_error_title = title ~= "" and title or nil
         playback_error_hint = hint ~= "" and hint or nil
     else
@@ -1210,12 +1251,10 @@ mp.register_script_message("plainvideo-volume-feedback", function()
     show_feedback("volume", 0.9)
 end)
 
-mp.observe_property("idle-active", "bool", function(_, value)
-    if value then media_info_visible = false end
+mp.observe_property("idle-active", "bool", function()
     draw_surface()
 end)
 mp.observe_property("path", "string", function()
-    media_info_visible = false
     draw_surface()
 end)
 mp.observe_property("osd-dimensions", "native", draw_surface)
@@ -1249,11 +1288,9 @@ mp.observe_property("hwdec-current", "string", function()
     if media_info_visible then draw_surface() end
 end)
 mp.register_event("file-loaded", function()
-    media_info_visible = false
     draw_surface()
 end)
 mp.register_event("end-file", function()
-    media_info_visible = false
     draw_surface()
 end)
 mp.register_event("shutdown", function()
