@@ -1,5 +1,14 @@
 # RIFE Slice 3A host/Vulkan buffer optimization
 
+> Update (2026-07-22): the historical result below was superseded by packed
+> GPU pre/postprocessing and an isolated custom-mpv player integration. The
+> current 24-to-48 native gate passes while the fixed 27 ms 30-to-60 margin
+> still fails. A separate development-only player probe nevertheless completes
+> actual 1080p 30-to-60 playback on the tested RTX 5070; the normal ceiling
+> remains 25.5 fps and source fallback remains unconditional.
+> See [`RIFE_PLAYER_INTEGRATION.md`](RIFE_PLAYER_INTEGRATION.md). This does not
+> change the release/provenance blockers.
+
 Date: 2026-07-19
 
 Status: duplicate host preparation removed; persistent staged Vulkan path

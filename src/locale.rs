@@ -25,6 +25,9 @@ pub struct UiText {
     pub no_audio_tracks: &'static str,
     pub audio_track: &'static str,
     pub playback_speed: &'static str,
+    pub rife_interpolation: &'static str,
+    pub rife_enabled: &'static str,
+    pub rife_disabled: &'static str,
     pub save_screenshot: &'static str,
     pub screenshot_saved: &'static str,
     pub open_screenshot_folder: &'static str,
@@ -63,6 +66,9 @@ const KOREAN: UiText = UiText {
     no_audio_tracks: "오디오 트랙 없음",
     audio_track: "오디오",
     playback_speed: "재생 속도",
+    rife_interpolation: "RIFE 프레임 보간 (실험)",
+    rife_enabled: "RIFE 보간 켬 · 24/25fps 영상에만 적용",
+    rife_disabled: "RIFE 보간 끔",
     save_screenshot: "스크린샷 저장\tS",
     screenshot_saved: "스크린샷 저장됨 · {}",
     open_screenshot_folder: "스크린샷 폴더 열기",
@@ -101,6 +107,9 @@ const ENGLISH: UiText = UiText {
     no_audio_tracks: "No audio tracks",
     audio_track: "Audio",
     playback_speed: "Playback speed",
+    rife_interpolation: "RIFE frame interpolation (experimental)",
+    rife_enabled: "RIFE interpolation on · applies only to 24/25 fps video",
+    rife_disabled: "RIFE interpolation off",
     save_screenshot: "Save screenshot\tS",
     screenshot_saved: "Screenshot saved · {}",
     open_screenshot_folder: "Open screenshot folder",
@@ -200,6 +209,9 @@ mod tests {
             assert!(!text.no_audio_tracks.is_empty());
             assert!(!text.audio_track.is_empty());
             assert!(!text.playback_speed.is_empty());
+            assert!(!text.rife_interpolation.is_empty());
+            assert!(!text.rife_enabled.is_empty());
+            assert!(!text.rife_disabled.is_empty());
             assert!(!text.save_screenshot.is_empty());
             assert!(!text.screenshot_saved.is_empty());
             assert!(!text.open_screenshot_folder.is_empty());

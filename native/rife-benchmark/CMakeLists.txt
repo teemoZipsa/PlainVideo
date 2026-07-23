@@ -15,6 +15,10 @@ endif()
 
 set(PLAINVIDEO_RIFE_SOURCE_DIR "" CACHE PATH
     "Pinned VapourSynth-RIFE-ncnn-Vulkan source directory")
+option(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS
+       "Build development-only Vulkan stage timestamp diagnostics" OFF)
+option(PLAINVIDEO_RIFE_FUSED_CONCAT_DIAGNOSTICS
+       "Build development-only fused RIFE Concat diagnostics" OFF)
 
 if(NOT EXISTS "${PLAINVIDEO_RIFE_SOURCE_DIR}/RIFE/warp.cpp"
    OR NOT EXISTS "${PLAINVIDEO_RIFE_SOURCE_DIR}/RIFE/rife_ops.h"
@@ -39,6 +43,8 @@ endif()
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(NCNN_SHARED_LIB OFF CACHE BOOL "" FORCE)
 set(NCNN_BUILD_BENCHMARK OFF CACHE BOOL "" FORCE)
+set(NCNN_BENCHMARK ${PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS}
+    CACHE BOOL "" FORCE)
 set(NCNN_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(NCNN_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(NCNN_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
@@ -97,12 +103,23 @@ add_library(plainvideo_rife SHARED
   src/plainvideo_rife.cpp
   ${RIFE_EXTERNAL_SOURCES}
 )
+if(PLAINVIDEO_RIFE_FUSED_CONCAT_DIAGNOSTICS)
+  target_sources(plainvideo_rife PRIVATE src/rife_concat7.cpp)
+endif()
 
 target_compile_features(plainvideo_rife PRIVATE cxx_std_20)
 target_compile_definitions(plainvideo_rife PRIVATE
   NOMINMAX
   PLAINVIDEO_RIFE_BUILD_DLL
 )
+if(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+  target_compile_definitions(plainvideo_rife PRIVATE
+    PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS=1)
+endif()
+if(PLAINVIDEO_RIFE_FUSED_CONCAT_DIAGNOSTICS)
+  target_compile_definitions(plainvideo_rife PRIVATE
+    PLAINVIDEO_RIFE_FUSED_CONCAT_DIAGNOSTICS=1)
+endif()
 target_include_directories(plainvideo_rife
   PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
   PRIVATE "${PLAINVIDEO_RIFE_SOURCE_DIR}/RIFE"
@@ -117,6 +134,10 @@ endif()
 add_executable(plainvideo_rife_bench src/benchmark.cpp)
 target_compile_features(plainvideo_rife_bench PRIVATE cxx_std_20)
 target_compile_definitions(plainvideo_rife_bench PRIVATE NOMINMAX)
+if(PLAINVIDEO_RIFE_FUSED_CONCAT_DIAGNOSTICS)
+  target_compile_definitions(plainvideo_rife_bench PRIVATE
+    PLAINVIDEO_RIFE_FUSED_CONCAT_DIAGNOSTICS=1)
+endif()
 target_link_libraries(plainvideo_rife_bench PRIVATE plainvideo_rife)
 
 if(MSVC)

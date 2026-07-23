@@ -11,6 +11,8 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -21,6 +23,7 @@ namespace {
 struct Options {
     std::string model_directory;
     std::string json_path;
+    std::string proof_output_path;
     std::string variant = "persistent-host";
     uint32_t width = 1920;
     uint32_t height = 1080;
@@ -29,6 +32,27 @@ struct Options {
     uint32_t iterations = 60;
     int32_t gpu_index = -1;
 };
+
+bool development_environment_flag(const char* name) noexcept {
+    char* value = nullptr;
+    size_t length = 0;
+    if (_dupenv_s(&value, &length, name) != 0
+        || value == nullptr) {
+        return false;
+    }
+    const std::unique_ptr<char, decltype(&std::free)> owned(value, &std::free);
+    return std::strcmp(value, "1") == 0;
+}
+
+bool development_fp16_arithmetic_requested() noexcept {
+    return development_environment_flag(
+        "PLAINVIDEO_RIFE_FP16_ARITHMETIC");
+}
+
+bool development_fused_concat_requested() noexcept {
+    return development_environment_flag(
+        "PLAINVIDEO_RIFE_FUSED_CONCAT");
+}
 
 uint32_t parse_unsigned(const std::string& value, const char* name) {
     size_t consumed = 0;
@@ -60,7 +84,8 @@ Options parse_options(int argc, char** argv) {
                 << "  --iterations <n>    Measured inference count (default: 60)\n"
                 << "  --gpu <index|-1>    Vulkan GPU index (default: -1)\n"
                 << "  --variant <name>    legacy, persistent-host, or persistent-vulkan (default: persistent-host)\n"
-                << "  --json <path>       Also write the JSON result to this path\n";
+                << "  --json <path>       Also write the JSON result to this path\n"
+                << "  --proof-output <path>  Write the first deterministic generated BGRA8 frame\n";
             std::exit(0);
         }
         if (index + 1 >= argc) {
@@ -71,6 +96,8 @@ Options parse_options(int argc, char** argv) {
             options.model_directory = value;
         } else if (argument == "--json") {
             options.json_path = value;
+        } else if (argument == "--proof-output") {
+            options.proof_output_path = value;
         } else if (argument == "--fps") {
             options.source_fps = parse_unsigned(value, "fps");
         } else if (argument == "--warmup") {
@@ -212,18 +239,27 @@ int main(int argc, char** argv) {
         const bool persistent_vulkan_variant = options.variant == "persistent-vulkan";
         const bool candidate_variant = persistent_host_variant
             || persistent_vulkan_variant;
+        const bool fp16_arithmetic_requested =
+            development_fp16_arithmetic_requested();
+        const bool fused_concat_requested =
+            development_fused_concat_requested();
+#if defined(PLAINVIDEO_RIFE_FUSED_CONCAT_DIAGNOSTICS)
+        constexpr bool fused_concat_diagnostics_built = true;
+#else
+        constexpr bool fused_concat_diagnostics_built = false;
+#endif
         const char* const variant_id = persistent_vulkan_variant
             ? "persistent-vulkan-staged"
             : (persistent_host_variant
                 ? "persistent-host-direct-bgra"
                 : "legacy-duplicate-host");
         const char* const buffer_policy = persistent_vulkan_variant
-            ? "mapped persistent Vulkan upload/download staging plus persistent Vulkan device buffers; direct BGRA8 staging fill and host output pack"
+            ? "mapped packed-BGRA8 Vulkan upload/download staging plus persistent Vulkan device buffers; GPU R/G/B expansion and packed BGRA8 output"
             : (persistent_host_variant
                 ? "persistent checked-core host Mats; direct BGRA8 pack/unpack; ncnn-managed per-call Vulkan staging"
                 : "persistent outer planar workspace plus checked-core host Mat allocation/copy per call");
         const char* const measurement_scope = persistent_vulkan_variant
-            ? "host BGRA8 input fill directly into mapped persistent Vulkan upload staging, device upload, model execution, synchronized device download into mapped persistent Vulkan staging, and host BGRA8 output pack; includes real host transfer boundaries and is not GPU-native or kernel-only"
+            ? "host BGRA8 input copied into mapped persistent Vulkan staging, GPU unpack/model/pack, synchronized packed BGRA8 download, and validated host row copy; includes real host transfer boundaries and is not GPU-native or kernel-only"
             : (persistent_host_variant
                 ? "host BGRA8 input through persistent checked-core host Mats, host-recorded ncnn upload/model/download round trip, and direct host BGRA8 output"
                 : "host BGRA8 input through duplicate outer planar workspace conversion, checked-core host Mat allocation/copy and ncnn upload/model/download, then outer planar-to-BGRA8 output conversion");
@@ -276,6 +312,7 @@ int main(int argc, char** argv) {
         bool generated_output_guards_intact = true;
         bool generated_output_inputs_unchanged = true;
         bool generated_output_all_statuses_generated = true;
+        std::vector<uint8_t> first_generated_output;
 
         // Keep correctness evidence outside the timed handle. This scoped
         // handle uses the identical pipeline mode with deadline checks disabled
@@ -334,6 +371,10 @@ int main(int argc, char** argv) {
                     static_cast<int32_t>(proof_result.status));
                 generated_output_digests.push_back(
                     fnv1a64(proof_output, frame_bytes));
+                if (index == 0 && !options.proof_output_path.empty()) {
+                    first_generated_output.assign(
+                        proof_output, proof_output + frame_bytes);
+                }
                 generated_output_all_statuses_generated =
                     generated_output_all_statuses_generated
                     && proof_call_result == PLAINVIDEO_RIFE_OK
@@ -374,6 +415,28 @@ int main(int argc, char** argv) {
             && generated_output_inputs_unchanged
             && generated_output_changes_across_pairs
             && generated_output_repeated_pair_deterministic;
+
+        if (!options.proof_output_path.empty()) {
+            const std::filesystem::path proof_output_path(
+                options.proof_output_path);
+            if (proof_output_path.has_parent_path()) {
+                std::filesystem::create_directories(
+                    proof_output_path.parent_path());
+            }
+            std::ofstream proof_output_file(
+                proof_output_path, std::ios::binary | std::ios::trunc);
+            if (!proof_output_file || first_generated_output.size() != frame_bytes) {
+                throw std::runtime_error(
+                    "Could not create deterministic generated-frame proof output.");
+            }
+            proof_output_file.write(
+                reinterpret_cast<const char*>(first_generated_output.data()),
+                static_cast<std::streamsize>(first_generated_output.size()));
+            if (!proof_output_file) {
+                throw std::runtime_error(
+                    "Could not finish deterministic generated-frame proof output.");
+            }
+        }
 
         PlainVideoRifeHandle* handle = nullptr;
         const auto initialization_started = std::chrono::steady_clock::now();
@@ -425,6 +488,12 @@ int main(int argc, char** argv) {
         std::vector<uint64_t> return_us;
         std::vector<uint64_t> host_input_prepare_us;
         std::vector<uint64_t> gpu_round_trip_us;
+        std::vector<uint64_t> gpu_upload_preprocess_us;
+        std::vector<uint64_t> gpu_model_us;
+        std::vector<uint64_t> gpu_postprocess_us;
+        std::vector<uint64_t> gpu_compute_total_us;
+        std::map<std::string, std::vector<uint64_t>>
+            gpu_model_hotspot_samples_us;
         std::vector<uint64_t> host_output_pack_us;
         std::vector<uint64_t> core_path_us;
         std::vector<uint64_t> fallback_copy_us;
@@ -432,11 +501,18 @@ int main(int argc, char** argv) {
         return_us.reserve(options.iterations);
         host_input_prepare_us.reserve(options.iterations);
         gpu_round_trip_us.reserve(options.iterations);
+        gpu_upload_preprocess_us.reserve(options.iterations);
+        gpu_model_us.reserve(options.iterations);
+        gpu_postprocess_us.reserve(options.iterations);
+        gpu_compute_total_us.reserve(options.iterations);
         host_output_pack_us.reserve(options.iterations);
         core_path_us.reserve(options.iterations);
         fallback_copy_us.reserve(options.iterations);
         uint32_t deadline_misses = 0;
         uint32_t checked_deadline_fallbacks = 0;
+        uint32_t fused_concat_complete_frames = 0;
+        uint64_t fused_concat_total_calls = 0;
+        uint64_t fused_concat_total_fallback_calls = 0;
         bool deadline_fallback_outputs_matched = true;
         bool timing_contract_proof = true;
         for (uint32_t index = 0; index < options.iterations; ++index) {
@@ -458,6 +534,58 @@ int main(int argc, char** argv) {
             host_output_pack_us.push_back(process_result.host_output_pack_us);
             core_path_us.push_back(process_result.core_path_us);
             fallback_copy_us.push_back(process_result.fallback_copy_us);
+
+            PlainVideoRifeGpuTimingDiagnostics gpu_timing{};
+            gpu_timing.struct_size = sizeof(gpu_timing);
+            if (plainvideo_rife_get_last_gpu_timing(handle, &gpu_timing)
+                != PLAINVIDEO_RIFE_OK) {
+                throw std::runtime_error(
+                    "Could not read the optional Vulkan timestamp diagnostics.");
+            }
+            if (gpu_timing.available != 0) {
+                const auto rounded_us = [](uint64_t nanoseconds) {
+                    return (nanoseconds + 500U) / 1000U;
+                };
+                gpu_upload_preprocess_us.push_back(
+                    rounded_us(gpu_timing.upload_preprocess_ns));
+                gpu_model_us.push_back(rounded_us(gpu_timing.model_ns));
+                gpu_postprocess_us.push_back(
+                    rounded_us(gpu_timing.postprocess_ns));
+                gpu_compute_total_us.push_back(
+                    rounded_us(gpu_timing.compute_total_ns));
+                const uint32_t hotspot_count = std::min<uint32_t>(
+                    gpu_timing.hotspot_count,
+                    PLAINVIDEO_RIFE_GPU_HOTSPOT_CAPACITY);
+                for (uint32_t hotspot_index = 0;
+                     hotspot_index < hotspot_count;
+                     ++hotspot_index) {
+                    const std::string label(
+                        gpu_timing.hotspot_labels[hotspot_index]);
+                    if (!label.empty()
+                        && gpu_timing.hotspot_duration_ns[hotspot_index] != 0) {
+                        gpu_model_hotspot_samples_us[label].push_back(
+                            rounded_us(
+                                gpu_timing.hotspot_duration_ns[hotspot_index]));
+                    }
+                }
+                const uint64_t stage_sum_ns =
+                    gpu_timing.upload_preprocess_ns
+                    + gpu_timing.model_ns
+                    + gpu_timing.postprocess_ns;
+                const uint64_t stage_sum_error_ns =
+                    stage_sum_ns > gpu_timing.compute_total_ns
+                    ? stage_sum_ns - gpu_timing.compute_total_ns
+                    : gpu_timing.compute_total_ns - stage_sum_ns;
+                timing_contract_proof = timing_contract_proof
+                    && gpu_timing.compute_total_ns != 0
+                    && stage_sum_error_ns <= 2U;
+            }
+            fused_concat_total_calls += gpu_timing.fused_concat_calls;
+            fused_concat_total_fallback_calls +=
+                gpu_timing.fused_concat_fallback_calls;
+            fused_concat_complete_frames +=
+                gpu_timing.fused_concat_calls == 4U
+                && gpu_timing.fused_concat_fallback_calls == 0U;
 
             const bool attempt_missed_deadline = process_result.attempt_us > deadline_us;
             deadline_misses += attempt_missed_deadline;
@@ -489,6 +617,25 @@ int main(int argc, char** argv) {
                     && output_matches_fallback(frame0, output);
             }
         }
+        const bool gpu_timestamp_diagnostics_available =
+            !gpu_compute_total_us.empty()
+            && gpu_compute_total_us.size() == options.iterations;
+        const bool gpu_timestamp_diagnostics_consistent =
+            gpu_compute_total_us.empty()
+            || gpu_timestamp_diagnostics_available;
+        const bool fused_concat_contract_passed =
+            !fused_concat_requested
+            || (fused_concat_diagnostics_built
+                && fused_concat_complete_frames == options.iterations
+                && fused_concat_total_calls
+                    == static_cast<uint64_t>(options.iterations) * 4U
+                && fused_concat_total_fallback_calls == 0);
+        timing_contract_proof = timing_contract_proof
+            && gpu_upload_preprocess_us.size() == gpu_compute_total_us.size()
+            && gpu_model_us.size() == gpu_compute_total_us.size()
+            && gpu_postprocess_us.size() == gpu_compute_total_us.size()
+            && gpu_timestamp_diagnostics_consistent
+            && fused_concat_contract_passed;
         const bool observed_deadline_fallback_proof = deadline_fallback_outputs_matched
             && checked_deadline_fallbacks == deadline_misses
             && timing_contract_proof;
@@ -609,10 +756,21 @@ int main(int argc, char** argv) {
             && forced_deadline_fallback_proof;
 
         const double attempt_p95_ms = percentile(attempt_us, 0.95);
+        const double attempt_p99_ms = percentile(attempt_us, 0.99);
+        const double attempt_max_ms = percentile(attempt_us, 1.0);
         const double return_p95_ms = percentile(return_us, 0.95);
         const double core_path_p95_ms = percentile(core_path_us, 0.95);
         const double gpu_round_trip_p95_ms = percentile(gpu_round_trip_us, 0.95);
+        const double gpu_compute_total_mean_ms =
+            gpu_timestamp_diagnostics_available
+            ? average_ms(gpu_compute_total_us)
+            : 0.0;
+        const double unattributed_gpu_round_trip_mean_ms =
+            gpu_timestamp_diagnostics_available
+            ? average_ms(gpu_round_trip_us) - gpu_compute_total_mean_ms
+            : 0.0;
         const double limit_ms = static_cast<double>(deadline_us) / 1000.0;
+        const double source_interval_ms = 1000.0 / options.source_fps;
         const bool guards_intact = std::all_of(
             output_storage.begin(), output_storage.begin() + guard_bytes,
             [guard_value](uint8_t value) { return value == guard_value; })
@@ -641,6 +799,25 @@ int main(int argc, char** argv) {
             && timing_contract_proof
             && generated_output_proof;
 
+        std::vector<std::pair<std::string, const std::vector<uint64_t>*>>
+            gpu_model_hotspot_summaries;
+        gpu_model_hotspot_summaries.reserve(
+            gpu_model_hotspot_samples_us.size());
+        for (const auto& [label, samples] : gpu_model_hotspot_samples_us) {
+            gpu_model_hotspot_summaries.emplace_back(label, &samples);
+        }
+        std::sort(
+            gpu_model_hotspot_summaries.begin(),
+            gpu_model_hotspot_summaries.end(),
+            [](const auto& left, const auto& right) {
+                return average_ms(*left.second) > average_ms(*right.second);
+            });
+        if (gpu_model_hotspot_summaries.size()
+            > PLAINVIDEO_RIFE_GPU_HOTSPOT_CAPACITY) {
+            gpu_model_hotspot_summaries.resize(
+                PLAINVIDEO_RIFE_GPU_HOTSPOT_CAPACITY);
+        }
+
         std::ostringstream json;
         json << std::fixed << std::setprecision(3)
              << "{\n"
@@ -649,6 +826,18 @@ int main(int argc, char** argv) {
              << "  \"model\": \"RIFE 4.25-lite\",\n"
              << "  \"runtime\": \"ncnn/Vulkan\",\n"
              << "  \"device\": \"" << escape_json(device_name) << "\",\n"
+             << "  \"precisionPolicy\": {\"fp16Packed\": true, "
+             << "\"fp16Storage\": true, \"fp16ArithmeticRequested\": "
+             << (fp16_arithmetic_requested ? "true" : "false")
+             << ", \"scope\": \"development environment override; hardware "
+             << "support remains enforced by ncnn\"},\n"
+             << "  \"diagnosticOptimizationPolicy\": {"
+             << "\"fusedConcatBuilt\": "
+             << (fused_concat_diagnostics_built ? "true" : "false")
+             << ", \"fusedConcatRequested\": "
+             << (fused_concat_requested ? "true" : "false")
+             << ", \"developmentOnly\": true, "
+             << "\"excludedFromReleaseAndPlayerDefaults\": true},\n"
              << "  \"variantId\": \"" << variant_id << "\",\n"
              << "  \"comparisonClass\": \"host-bgra8-to-host-bgra8\",\n"
              << "  \"bufferPolicy\": \"" << escape_json(buffer_policy) << "\",\n"
@@ -679,7 +868,78 @@ int main(int argc, char** argv) {
         append_timing_summary(json, core_path_us);
         json << ",\n  \"gpuRoundTripTimingMs\": ";
         append_timing_summary(json, gpu_round_trip_us);
-        json << ",\n"
+        json << ",\n  \"gpuTimestampDiagnostics\": {\"available\": "
+             << (gpu_timestamp_diagnostics_available ? "true" : "false")
+             << ", \"consistent\": "
+             << (gpu_timestamp_diagnostics_consistent ? "true" : "false")
+             << ", \"samples\": " << gpu_compute_total_us.size()
+             << ", \"measurementScope\": \"Vulkan timestamp markers around "
+             << "input upload plus packed preprocessing, RIFE model commands, "
+             << "and packed postprocessing; excludes synchronized output "
+             << "download, fence wait, and CPU work\""
+             << ", \"uploadAndPreprocessMs\": ";
+        if (gpu_timestamp_diagnostics_available) {
+            append_timing_summary(json, gpu_upload_preprocess_us);
+        } else {
+            json << "null";
+        }
+        json << ", \"modelMs\": ";
+        if (gpu_timestamp_diagnostics_available) {
+            append_timing_summary(json, gpu_model_us);
+        } else {
+            json << "null";
+        }
+        json << ", \"postprocessMs\": ";
+        if (gpu_timestamp_diagnostics_available) {
+            append_timing_summary(json, gpu_postprocess_us);
+        } else {
+            json << "null";
+        }
+        json << ", \"computeTotalMs\": ";
+        if (gpu_timestamp_diagnostics_available) {
+            append_timing_summary(json, gpu_compute_total_us);
+        } else {
+            json << "null";
+        }
+        json << ", \"unattributedGpuRoundTripMeanMs\": ";
+        if (gpu_timestamp_diagnostics_available) {
+            json << unattributed_gpu_round_trip_mean_ms;
+        } else {
+            json << "null";
+        }
+        json << ", \"modelHotspotCollectionPolicy\": "
+             << "\"Aggregated from the eight slowest ncnn layer timestamps "
+             << "in each measured frame; sample coverage is explicit\", "
+             << "\"modelHotspots\": [";
+        for (size_t index = 0;
+             index < gpu_model_hotspot_summaries.size();
+             ++index) {
+            if (index > 0) {
+                json << ',';
+            }
+            const auto& [label, samples] =
+                gpu_model_hotspot_summaries[index];
+            json << "{\"label\": \"" << escape_json(label)
+                 << "\", \"sampleCount\": " << samples->size()
+                 << ", \"sampleCoverage\": "
+                 << static_cast<double>(samples->size())
+                    / static_cast<double>(options.iterations)
+                 << ", \"timingMs\": ";
+            append_timing_summary(json, *samples);
+            json << '}';
+        }
+        json << ']';
+        json << ", \"fusedConcat\": {\"contractPassed\": "
+             << (fused_concat_contract_passed ? "true" : "false")
+             << ", \"framesWithFourFusions\": "
+             << fused_concat_complete_frames
+             << ", \"totalFusedCalls\": " << fused_concat_total_calls
+             << ", \"totalTargetFallbackCalls\": "
+             << fused_concat_total_fallback_calls << '}';
+        json << "},\n"
+             << "  \"gpuTimestampDiagnosticPolicy\": {\"developmentOnly\": true, "
+             << "\"excludedFromActivationGate\": true, "
+             << "\"normalBuildReportsAvailableFalse\": true},\n"
              << "  \"stageMeanMs\": {\"hostInputPrepare\": "
              << average_ms(host_input_prepare_us)
              << ", \"ncnnGpuRoundTrip\": " << average_ms(gpu_round_trip_us)
@@ -696,6 +956,14 @@ int main(int argc, char** argv) {
         append_samples(json, core_path_us);
         json << ", \"ncnnGpuRoundTrip\": ";
         append_samples(json, gpu_round_trip_us);
+        json << ", \"gpuUploadAndPreprocess\": ";
+        append_samples(json, gpu_upload_preprocess_us);
+        json << ", \"gpuModel\": ";
+        append_samples(json, gpu_model_us);
+        json << ", \"gpuPostprocess\": ";
+        append_samples(json, gpu_postprocess_us);
+        json << ", \"gpuComputeTotal\": ";
+        append_samples(json, gpu_compute_total_us);
         json << ", \"hostOutputPack\": ";
         append_samples(json, host_output_pack_us);
         json << ", \"fallbackCopy\": ";
@@ -709,6 +977,20 @@ int main(int argc, char** argv) {
              << ", \"deadlineMisses\": " << deadline_misses
              << ", \"maxDeadlineMisses\": " << max_deadline_misses
              << ", \"passed\": " << (performance_gate_passed ? "true" : "false") << "},\n"
+             << "  \"sourceIntervalAssessment\": {\"informationalOnly\": true"
+             << ", \"sourceFrameIntervalMs\": " << source_interval_ms
+             << ", \"attemptP95Ms\": " << attempt_p95_ms
+             << ", \"attemptP99Ms\": " << attempt_p99_ms
+             << ", \"attemptMaxMs\": " << attempt_max_ms
+             << ", \"p95HeadroomMs\": "
+             << source_interval_ms - attempt_p95_ms
+             << ", \"p99HeadroomMs\": "
+             << source_interval_ms - attempt_p99_ms
+             << ", \"maxHeadroomMs\": "
+             << source_interval_ms - attempt_max_ms
+             << ", \"allSamplesWithinSourceInterval\": "
+             << (attempt_max_ms <= source_interval_ms ? "true" : "false")
+             << ", \"note\": \"This describes isolated worker throughput only; it does not replace the fixed activation gate or prove player A/V stability.\"},\n"
              << "  \"measuredCounts\": {\"generated\": "
              << measured_stats.generated_frames
              << ", \"bypassed\": "
@@ -779,7 +1061,12 @@ int main(int argc, char** argv) {
              << "  \"timingContractProof\": {\"passed\": "
              << (timing_contract_proof ? "true" : "false")
              << ", \"deadlineMissesDerivedFromAttempt\": true, "
-             << "\"gpuRoundTripIsHostRecorded\": true},\n"
+             << "\"gpuRoundTripIsHostRecorded\": true, "
+             << "\"gpuTimestampDiagnosticsConsistent\": "
+             << (gpu_timestamp_diagnostics_consistent ? "true" : "false")
+             << ", \"fusedConcatContractPassed\": "
+             << (fused_concat_contract_passed ? "true" : "false")
+             << "},\n"
              << "  \"memoryContractProof\": {\"passed\": "
              << (memory_contract_proof ? "true" : "false")
              << ", \"inputsUnchanged\": " << (inputs_unchanged ? "true" : "false")

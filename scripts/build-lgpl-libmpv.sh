@@ -14,8 +14,10 @@ fail() {
 
 repo_root="$(cygpath -u "$PLAINVIDEO_REPO_ROOT")"
 build_root="$(cygpath -u "$PLAINVIDEO_BUILD_ROOT")"
+runtime_flavor="${PLAINVIDEO_RUNTIME_FLAVOR:-lgpl-libmpv}"
+[[ "$runtime_flavor" =~ ^[A-Za-z0-9._-]+$ ]] || fail "Unsafe runtime flavor: $runtime_flavor"
 profile="$repo_root/third_party/lgpl-libmpv-profile.json"
-output_root="$repo_root/.runtime/lgpl-libmpv"
+output_root="$repo_root/.runtime/$runtime_flavor"
 runtime_root="$output_root/runtime"
 evidence_root="$output_root/evidence"
 licenses_root="$output_root/licenses"
@@ -138,11 +140,27 @@ checkout_source 'mpv'
 ffmpeg_source="$source_root/FFmpeg"
 libass_source="$source_root/libass"
 libplacebo_source="$source_root/libplacebo"
-mpv_source="$source_root/mpv"
+mpv_source_cache="$source_root/mpv"
+mpv_source="$mpv_source_cache"
 ffmpeg_build="$build_output_root/ffmpeg"
 libass_build="$build_output_root/libass"
 libplacebo_build="$build_output_root/libplacebo"
 mpv_build="$build_output_root/mpv"
+
+if [[ "$runtime_flavor" == 'lgpl-libmpv-rife-dev' ]]; then
+    rife_filter_source="$repo_root/native/mpv-rife-filter/vf_plainvideo_rife.c"
+    rife_filter_patch="$repo_root/native/mpv-rife-filter/mpv-v0.41.0-rife-filter.patch"
+    [[ -f "$rife_filter_source" ]] || fail "Missing RIFE mpv filter source: $rife_filter_source"
+    [[ -f "$rife_filter_patch" ]] || fail "Missing RIFE mpv filter patch: $rife_filter_patch"
+    mpv_source="$build_output_root/mpv-source-rife"
+    git clone --no-hardlinks "$mpv_source_cache" "$mpv_source"
+    git -C "$mpv_source" checkout --detach "$(source_field mpv commit)"
+    cp "$rife_filter_source" "$mpv_source/video/filter/vf_plainvideo_rife.c"
+    git -C "$mpv_source" apply "$rife_filter_patch"
+    git -C "$mpv_source" diff --check
+    cp "$rife_filter_patch" "$evidence_root/mpv-rife-filter.patch"
+    cp "$rife_filter_source" "$evidence_root/vf_plainvideo_rife.c"
+fi
 
 for argument_set in ffmpegConfigure libassMeson libplaceboMeson mpvMeson; do
     profile_array "$argument_set" > "$evidence_root/$argument_set.args"

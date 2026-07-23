@@ -1,5 +1,14 @@
 # RIFE Slice 3A performance spike
 
+> Update (2026-07-22): this document preserves the first historical spike.
+> Packed Vulkan pre/postprocessing and a queued custom-mpv filter now pass the
+> local 24-to-48 playback gate. A later development-only 30-to-60 player probe
+> also passes full playback, seek recovery, and hard-cut fallback on the tested
+> RTX 5070, while the fixed 27 ms native margin and normal 25.5 fps ceiling are
+> intentionally unchanged. See
+> [`RIFE_PLAYER_INTEGRATION.md`](RIFE_PLAYER_INTEGRATION.md). The experiment is
+> still not release-approved.
+
 Date: 2026-07-19
 
 Status: native in-memory spike implemented and locally measured; **activation gate failed**

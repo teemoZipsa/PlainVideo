@@ -109,6 +109,7 @@ struct PlainVideoRifeHandle {
     std::unique_ptr<CheckedRifeV4> rife;
     std::vector<float> workspace;
     PlainVideoRifeStats stats{};
+    PlainVideoRifeGpuTimingDiagnostics last_gpu_timing{};
     uint32_t overload_bypass_remaining = 0;
     mutable std::mutex mutex;
 };
@@ -308,6 +309,8 @@ static int32_t plainvideo_rife_create_impl(
         handle->gpu_index = gpu_index;
         handle->device_name = ncnn::get_gpu_info(gpu_index).device_name();
         handle->stats.struct_size = sizeof(PlainVideoRifeStats);
+        handle->last_gpu_timing.struct_size =
+            sizeof(PlainVideoRifeGpuTimingDiagnostics);
 
         if (config->pipeline_mode == PLAINVIDEO_RIFE_PIPELINE_LEGACY_DUPLICATE_HOST) {
             const size_t pixels = static_cast<size_t>(config->width) * config->height;
@@ -376,6 +379,9 @@ static int32_t plainvideo_rife_process_impl(
     *result = {};
     result->struct_size = result_struct_size;
     result->status = PLAINVIDEO_RIFE_STATUS_BYPASSED_ERROR;
+    handle->last_gpu_timing = {};
+    handle->last_gpu_timing.struct_size =
+        sizeof(PlainVideoRifeGpuTimingDiagnostics);
 
     if ((request->flags & PLAINVIDEO_RIFE_FLAG_DISCONTINUITY) != 0) {
         write_error(error_message, error_message_capacity, "");
@@ -511,6 +517,33 @@ static int32_t plainvideo_rife_process_impl(
             | PLAINVIDEO_RIFE_TIMING_GPU_ROUND_TRIP
             | PLAINVIDEO_RIFE_TIMING_HOST_OUTPUT
             | PLAINVIDEO_RIFE_TIMING_CORE_PATH;
+        handle->last_gpu_timing.available =
+            timings.gpu_timestamps_available ? 1U : 0U;
+        handle->last_gpu_timing.upload_preprocess_ns =
+            timings.gpu_upload_preprocess_ns;
+        handle->last_gpu_timing.model_ns = timings.gpu_model_ns;
+        handle->last_gpu_timing.postprocess_ns =
+            timings.gpu_postprocess_ns;
+        handle->last_gpu_timing.compute_total_ns =
+            timings.gpu_compute_total_ns;
+        handle->last_gpu_timing.fused_concat_calls =
+            timings.gpu_fused_concat_calls;
+        handle->last_gpu_timing.fused_concat_fallback_calls =
+            timings.gpu_fused_concat_fallback_calls;
+        handle->last_gpu_timing.hotspot_count =
+            std::min<uint32_t>(
+                timings.gpu_hotspot_count,
+                PLAINVIDEO_RIFE_GPU_HOTSPOT_CAPACITY);
+        for (uint32_t index = 0;
+             index < handle->last_gpu_timing.hotspot_count;
+             ++index) {
+            write_error(
+                handle->last_gpu_timing.hotspot_labels[index],
+                PLAINVIDEO_RIFE_GPU_HOTSPOT_LABEL_CAPACITY,
+                timings.gpu_hotspot_labels[index]);
+            handle->last_gpu_timing.hotspot_duration_ns[index] =
+                timings.gpu_hotspot_duration_ns[index];
+        }
     }
 
     const auto attempt_finished = std::chrono::steady_clock::now();
@@ -578,6 +611,19 @@ static int32_t plainvideo_rife_reset_stats_impl(PlainVideoRifeHandle* handle) {
     handle->stats = {};
     handle->stats.struct_size = sizeof(PlainVideoRifeStats);
     handle->overload_bypass_remaining = 0;
+    return PLAINVIDEO_RIFE_OK;
+}
+
+static int32_t plainvideo_rife_get_last_gpu_timing_impl(
+    const PlainVideoRifeHandle* handle,
+    PlainVideoRifeGpuTimingDiagnostics* output_timing) {
+    if (handle == nullptr || output_timing == nullptr
+        || output_timing->struct_size
+            < sizeof(PlainVideoRifeGpuTimingDiagnostics)) {
+        return PLAINVIDEO_RIFE_ERROR_INVALID_ARGUMENT;
+    }
+    std::lock_guard lock(handle->mutex);
+    *output_timing = handle->last_gpu_timing;
     return PLAINVIDEO_RIFE_OK;
 }
 
@@ -665,6 +711,18 @@ int32_t PLAINVIDEO_RIFE_CALL
 plainvideo_rife_reset_stats(PlainVideoRifeHandle* handle) noexcept {
     try {
         return plainvideo_rife_reset_stats_impl(handle);
+    } catch (...) {
+        return PLAINVIDEO_RIFE_ERROR_PROCESSING_FAILED;
+    }
+}
+
+int32_t PLAINVIDEO_RIFE_CALL
+plainvideo_rife_get_last_gpu_timing(
+    const PlainVideoRifeHandle* handle,
+    PlainVideoRifeGpuTimingDiagnostics* output_timing) noexcept {
+    try {
+        return plainvideo_rife_get_last_gpu_timing_impl(
+            handle, output_timing);
     } catch (...) {
         return PLAINVIDEO_RIFE_ERROR_PROCESSING_FAILED;
     }

@@ -2,6 +2,8 @@
 param(
     [string]$ToolchainRoot = 'C:\pv-tools\msys64',
     [string]$BuildRoot = 'C:\pv-build',
+    [ValidateSet('lgpl-libmpv', 'lgpl-libmpv-rife-dev')]
+    [string]$RuntimeFlavor = 'lgpl-libmpv',
     [ValidateRange(1, 16)]
     [int]$Jobs = 8
 )
@@ -37,6 +39,7 @@ $env:CHERE_INVOKING = 'yes'
 $env:PLAINVIDEO_REPO_ROOT = $repoRoot
 $env:PLAINVIDEO_BUILD_ROOT = $buildRoot
 $env:PLAINVIDEO_JOBS = $Jobs.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+$env:PLAINVIDEO_RUNTIME_FLAVOR = $RuntimeFlavor
 $unixShellScript = (& $bash -lc "cygpath -u '$shellScript'").Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($unixShellScript)) {
     throw 'Could not translate the checked-in build script path into the MSYS2 environment.'

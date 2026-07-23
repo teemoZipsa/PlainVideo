@@ -106,19 +106,25 @@ Required safety behavior:
 
 The older `rife-ncnn-vulkan` command-line pipeline is useful evidence that portable Vulkan inference is possible, but it is not itself a real-time player integration. The spike must evaluate maintained libraries and model compatibility rather than shelling out once per frame.
 
-Slice 3A now has an isolated in-memory DLL and measurement tool. Its first RTX
-5070 result fails both activation budgets, so it is not connected to mpv or
-exposed in the UI. Exact timings, fallback evidence, source pins, and the
-unresolved model-conversion provenance gate are recorded in
+Slice 3A has an isolated in-memory DLL and measurement tool. Its first RTX 5070
+result failed both activation budgets. Exact historical timings, fallback
+evidence, source pins, and the unresolved model-conversion provenance gate are
+recorded in
 [`RIFE_SLICE_3A_BENCHMARK.md`](RIFE_SLICE_3A_BENCHMARK.md).
 
-The follow-up buffer spike removes the duplicate host planar preparation and
-adds a persistent staged Vulkan mode. The optimized path remains a real host
-BGRA8 upload/download boundary, not GPU-native input. Its final exact-build
-ABCCBA Quick result still fails both complete product budgets; the 24-fps ncnn
-round-trip alone is not sufficient activation evidence. Resource
-lifetime, VRAM sensitivity, timings, and the Windows zero-copy boundary are
-recorded in
+The follow-up buffer work removes duplicate host planar preparation, adds
+packed GPU pre/postprocessing and persistent staged Vulkan resources, and
+connects an isolated custom-mpv filter to a local experimental player. A
+two-entry worker queue passes actual 1080p 24-to-48 playback without A/V drift.
+The strict native 27 ms margin still rejects 30-to-60, but a development-only
+30 fps player probe now completes full eight-second playback on the tested RTX
+5070 at 236 generated midpoints, four overload fallbacks, and no A/V warning or
+processing error. Seek recovery and a hard-cut source fallback also pass. The
+normal filter ceiling remains 25.5 fps, the normal portable build does not
+contain this filter or model, and the option is off by default. Current
+integration and playback evidence are recorded in
+[`RIFE_PLAYER_INTEGRATION.md`](RIFE_PLAYER_INTEGRATION.md); historical buffer
+measurements and the staged host boundary are recorded in
 [`RIFE_SLICE_3A_BUFFER_OPTIMIZATION.md`](RIFE_SLICE_3A_BUFFER_OPTIMIZATION.md).
 
 ## Format claims

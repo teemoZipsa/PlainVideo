@@ -1,0 +1,30 @@
+diff --git a/filters/user_filters.c b/filters/user_filters.c
+--- a/filters/user_filters.c
++++ b/filters/user_filters.c
+@@ -86,5 +86,8 @@ const struct mp_user_filter_entry *vf_list[] = {
+     &vf_lavfi_bridge,
+     &vf_sub,
++#if HAVE_WIN32
++    &vf_plainvideo_rife,
++#endif
+ #if HAVE_ZIMG
+     &vf_fingerprint,
+ #endif
+diff --git a/filters/user_filters.h b/filters/user_filters.h
+--- a/filters/user_filters.h
++++ b/filters/user_filters.h
+@@ -37,3 +37,4 @@ extern const struct mp_user_filter_entry vf_vavpp;
+ extern const struct mp_user_filter_entry vf_d3d11vpp;
+ extern const struct mp_user_filter_entry vf_fingerprint;
+ extern const struct mp_user_filter_entry vf_gpu;
++extern const struct mp_user_filter_entry vf_plainvideo_rife;
+diff --git a/meson.build b/meson.build
+--- a/meson.build
++++ b/meson.build
+@@ -493,4 +493,5 @@ if win32
+     timer_source = files('osdep/timer-win32.c')
+     sources += files('osdep/w32_keyboard.c',
+-                     'osdep/windows_utils.c')
++                     'osdep/windows_utils.c',
++                     'video/filter/vf_plainvideo_rife.c')
+ endif

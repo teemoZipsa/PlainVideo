@@ -3,14 +3,29 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <memory>
 #include <string>
+
+constexpr std::size_t kCheckedRifeGpuHotspotCapacity = 8;
 
 struct CheckedRifeV4Timings {
     std::uint64_t host_input_prepare_us = 0;
     std::uint64_t gpu_path_us = 0;
     std::uint64_t host_output_pack_us = 0;
     std::uint64_t core_path_us = 0;
+    bool gpu_timestamps_available = false;
+    std::uint64_t gpu_upload_preprocess_ns = 0;
+    std::uint64_t gpu_model_ns = 0;
+    std::uint64_t gpu_postprocess_ns = 0;
+    std::uint64_t gpu_compute_total_ns = 0;
+    std::uint32_t gpu_fused_concat_calls = 0;
+    std::uint32_t gpu_fused_concat_fallback_calls = 0;
+    std::uint32_t gpu_hotspot_count = 0;
+    std::array<std::string, kCheckedRifeGpuHotspotCapacity>
+        gpu_hotspot_labels{};
+    std::array<std::uint64_t, kCheckedRifeGpuHotspotCapacity>
+        gpu_hotspot_duration_ns{};
 };
 
 // CheckedRifeV4 does not own the process-wide ncnn GPU instance. The caller

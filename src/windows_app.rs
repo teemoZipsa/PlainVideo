@@ -104,6 +104,7 @@ const MENU_FULLSCREEN: usize = 108;
 const MENU_RESTART: usize = 109;
 const MENU_ABOUT: usize = 110;
 const MENU_OPEN_SCREENSHOT_FOLDER: usize = 111;
+const MENU_RIFE_INTERPOLATION: usize = 112;
 const MENU_SUBTITLE_OFF: usize = 200;
 const MENU_SUBTITLE_OPEN: usize = 201;
 const MENU_AUDIO_OFF: usize = 300;
@@ -295,6 +296,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         MediaQueue::from_paths(media)
     };
     let has_initial_media = media_queue.current().is_some();
+    let rife_available = rife_runtime_available(&root);
     let mut app = Box::new(App {
         hwnd: window.hwnd,
         player,
@@ -329,6 +331,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         active_path: None,
         last_subtitle_id: None,
         playback_error_visible: false,
+        rife_available,
         last_seek_drag: None,
         seek_preview,
         thumbnail_service,
@@ -420,6 +423,7 @@ struct App {
     active_path: Option<PathBuf>,
     last_subtitle_id: Option<i64>,
     playback_error_visible: bool,
+    rife_available: bool,
     last_seek_drag: Option<Instant>,
     seek_preview: Option<SeekPreview>,
     thumbnail_service: Option<ThumbnailService>,
@@ -972,6 +976,18 @@ impl App {
         ]);
     }
 
+    fn toggle_rife_interpolation(&mut self) {
+        let enabled = !self.player.rife_enabled();
+        match self.player.set_rife_enabled(enabled) {
+            Ok(()) => self.show_status(if enabled {
+                self.locale.text().rife_enabled
+            } else {
+                self.locale.text().rife_disabled
+            }),
+            Err(error) => self.operation_error(error),
+        }
+    }
+
     fn cycle_keyboard_focus(&mut self, reverse: bool) {
         const ORDER: [PressedControl; 8] = [
             PressedControl::Playback(PlaybackControl::PlayPause),
@@ -1464,6 +1480,7 @@ impl App {
         let audio_off = wide(text.audio_off);
         let no_audio_tracks = wide(text.no_audio_tracks);
         let playback_speed = wide(text.playback_speed);
+        let rife_interpolation = wide(text.rife_interpolation);
         let save_screenshot = wide(text.save_screenshot);
         let open_screenshot_folder = wide(text.open_screenshot_folder);
         let open_file_location_label = wide(text.open_file_location);
@@ -1599,6 +1616,19 @@ impl App {
                     );
                 }
                 AppendMenuW(menu, MF_POPUP, speed_menu as usize, playback_speed.as_ptr());
+                if self.rife_available {
+                    AppendMenuW(
+                        menu,
+                        MF_STRING
+                            | if self.player.rife_enabled() {
+                                MF_CHECKED
+                            } else {
+                                0
+                            },
+                        MENU_RIFE_INTERPOLATION,
+                        rife_interpolation.as_ptr(),
+                    );
+                }
                 AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
                 AppendMenuW(menu, MF_STRING, MENU_SCREENSHOT, save_screenshot.as_ptr());
                 AppendMenuW(
@@ -1673,6 +1703,7 @@ impl App {
                     }
                 }
                 MENU_FULLSCREEN => self.toggle_fullscreen(hwnd),
+                MENU_RIFE_INTERPOLATION => self.toggle_rife_interpolation(),
                 MENU_ABOUT => show_about(hwnd, text),
                 MENU_SUBTITLE_OFF => {
                     self.disable_subtitles_ui();
@@ -2874,6 +2905,16 @@ fn diagnostic_single_file() -> bool {
 fn diagnostic_input_locked() -> bool {
     env::var_os("PLAINVIDEO_DIAGNOSTIC_LOG").is_some()
         && env::var("PLAINVIDEO_DIAGNOSTIC_IGNORE_INPUT").as_deref() == Ok("1")
+}
+
+fn rife_runtime_available(root: &Path) -> bool {
+    let model = root
+        .join("rife")
+        .join("models")
+        .join("rife-v4.25-lite_ensembleFalse");
+    root.join("rife").join("plainvideo_rife.dll").is_file()
+        && model.join("flownet.param").is_file()
+        && model.join("flownet.bin").is_file()
 }
 
 fn message_loop() -> i32 {

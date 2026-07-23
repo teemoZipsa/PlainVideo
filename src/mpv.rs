@@ -46,6 +46,22 @@ const MPV_RENDER_PARAM_SW_POINTER: c_int = 20;
 const MPV_RENDER_UPDATE_FRAME: u64 = 1;
 const MPV_CLIENT_API_MAJOR: u32 = 2;
 const MPV_CLIENT_API_MIN_MINOR: u32 = 5;
+const RIFE_FILTER_DEFAULT: &str = "@plainvideo-rife:plainvideo-rife";
+const RIFE_FILTER_30FPS_PROBE: &str = "@plainvideo-rife:plainvideo-rife=max-source-fps=30.5";
+
+fn rife_filter_spec(allow_30fps_probe: bool) -> &'static str {
+    if allow_30fps_probe {
+        RIFE_FILTER_30FPS_PROBE
+    } else {
+        RIFE_FILTER_DEFAULT
+    }
+}
+
+fn environment_flag_enabled(name: &str) -> bool {
+    std::env::var(name)
+        .ok()
+        .is_some_and(|value| matches!(value.as_str(), "1" | "yes" | "true"))
+}
 
 #[repr(C)]
 struct MpvHandle {
@@ -675,6 +691,8 @@ impl Player {
             .as_ref()
             .and_then(|_| std::env::var("PLAINVIDEO_DIAGNOSTIC_HWDEC").ok())
             .filter(|value| matches!(value.as_str(), "no" | "auto-safe"));
+        let rife_enabled = environment_flag_enabled("PLAINVIDEO_RIFE");
+        let allow_30fps_probe = environment_flag_enabled("PLAINVIDEO_RIFE_ALLOW_30FPS");
         let mut options = vec![
             ("config-dir", utf8_path(&config_dir)?),
             ("config", "yes".to_string()),
@@ -694,6 +712,9 @@ impl Player {
         if let Some(log_path) = diagnostic_log {
             options.push(("log-file", utf8_path(Path::new(&log_path))?));
             options.push(("msg-level", "all=v".to_string()));
+        }
+        if rife_enabled {
+            options.push(("vf", rife_filter_spec(allow_30fps_probe).to_string()));
         }
 
         for (name, value) in options {
@@ -856,6 +877,26 @@ impl Player {
             .unwrap_or(1.0)
     }
 
+    pub fn rife_enabled(&self) -> bool {
+        self.property_string("vf")
+            .is_some_and(|filters| filters.contains("plainvideo-rife"))
+    }
+
+    pub fn set_rife_enabled(&self, enabled: bool) -> Result<(), String> {
+        if enabled == self.rife_enabled() {
+            return Ok(());
+        }
+        if enabled {
+            self.command(&[
+                "vf",
+                "add",
+                rife_filter_spec(environment_flag_enabled("PLAINVIDEO_RIFE_ALLOW_30FPS")),
+            ])
+        } else {
+            self.command(&["vf", "remove", "@plainvideo-rife"])
+        }
+    }
+
     pub fn playback_position(&self) -> Option<f64> {
         self.property_string("time-pos")?.parse().ok()
     }
@@ -956,6 +997,7 @@ fn non_empty(value: Option<String>) -> Option<String> {
 
 impl Drop for Player {
     fn drop(&mut self) {
+        diagnostic_shutdown_marker("player drop starting");
         let render_failed = self
             .render_error
             .lock()
@@ -966,6 +1008,7 @@ impl Drop for Player {
             // render thread is still servicing update requests. This avoids
             // forcing GPU teardown from mpv_render_context_free().
             let _ = command_with(self.api.command, self.handle, &["stop"]);
+            diagnostic_shutdown_marker("mpv stop command completed");
             let callback_generation = self.render_wake.callback_generation();
             let _ = command_with(
                 self.api.command,
@@ -974,17 +1017,38 @@ impl Drop for Player {
             );
             self.render_wake
                 .wait_for_callback_after(callback_generation);
+            diagnostic_shutdown_marker("render callback wait completed");
             self.render_wake.flush();
+            diagnostic_shutdown_marker("render flush completed");
         }
         unsafe {
             (self.api.set_wakeup_callback)(self.handle, None, ptr::null_mut());
             (self.api.render_context_set_update_callback)(self.render, None, ptr::null_mut());
         }
+        diagnostic_shutdown_marker("mpv callbacks cleared");
         self.render_wake.stop();
+        diagnostic_shutdown_marker("render stop requested");
         if let Some(thread) = self.render_thread.take() {
             let _ = thread.join();
         }
+        diagnostic_shutdown_marker("render thread joined");
         unsafe { (self.api.terminate_destroy)(self.handle) };
+        diagnostic_shutdown_marker("mpv terminate destroy completed");
+    }
+}
+
+fn diagnostic_shutdown_marker(stage: &str) {
+    let Some(log_path) = std::env::var_os("PLAINVIDEO_DIAGNOSTIC_LOG") else {
+        return;
+    };
+    let sidecar = PathBuf::from(log_path).with_extension("shutdown.log");
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(sidecar)
+    {
+        use std::io::Write;
+        let _ = writeln!(file, "{stage}");
     }
 }
 
@@ -1478,6 +1542,7 @@ fn render_worker(
     hwnd_address: usize,
     error_message: u32,
 ) {
+    diagnostic_shutdown_marker("render worker starting");
     let render = render_address as *mut MpvRenderContext;
     let result = if surface.make_current() {
         render_loop(&surface, render, functions, &wake)
@@ -1495,10 +1560,15 @@ fn render_worker(
         wake.wait_until_stopped();
     }
 
+    diagnostic_shutdown_marker("render loop completed");
     if surface.make_current() {
+        diagnostic_shutdown_marker("render context free starting");
         unsafe { (functions.free)(render) };
+        diagnostic_shutdown_marker("render context free completed");
     }
+    diagnostic_shutdown_marker("render surface drop starting");
     drop(surface);
+    diagnostic_shutdown_marker("render worker completed");
 }
 
 fn render_loop(

@@ -13,11 +13,18 @@
 #include "rife_postproc.comp.hex.h"
 #include "rife_preproc.comp.hex.h"
 #include "rife_v4_timestep.comp.hex.h"
+#include "rife_postproc_bgra8.h"
+#include "rife_preproc_bgra8.h"
+#if defined(PLAINVIDEO_RIFE_FUSED_CONCAT_DIAGNOSTICS)
+#include "rife_concat7.h"
+#endif
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <cstdio>
 #include <filesystem>
 #include <limits>
@@ -37,8 +44,34 @@ constexpr int kDirectWidth = 1920;
 constexpr int kDirectHeight = 1080;
 constexpr int kChannels = 3;
 constexpr int kBgraChannels = 4;
+#if defined(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+constexpr std::uint32_t kGpuTimestampCount = 4;
+#endif
 
 std::mutex g_shader_compile_mutex;
+
+bool development_environment_flag(const char* name) noexcept {
+    char* value = nullptr;
+    size_t length = 0;
+    if (_dupenv_s(&value, &length, name) != 0
+        || value == nullptr) {
+        return false;
+    }
+    const std::unique_ptr<char, decltype(&std::free)> owned(value, &std::free);
+    return std::strcmp(value, "1") == 0;
+}
+
+bool development_fp16_arithmetic_requested() noexcept {
+    return development_environment_flag(
+        "PLAINVIDEO_RIFE_FP16_ARITHMETIC");
+}
+
+#if defined(PLAINVIDEO_RIFE_FUSED_CONCAT_DIAGNOSTICS)
+bool development_fused_concat_requested() noexcept {
+    return development_environment_flag(
+        "PLAINVIDEO_RIFE_FUSED_CONCAT");
+}
+#endif
 
 int fail(std::string& error, std::string message) {
     error = std::move(message);
@@ -49,6 +82,23 @@ std::string with_code(const char* operation, int code) {
     return std::string(operation) + " failed with ncnn status "
         + std::to_string(code) + ".";
 }
+
+#if defined(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+std::uint64_t timestamp_duration_ns(std::uint64_t start,
+                                    std::uint64_t end,
+                                    float timestamp_period_ns) {
+    if (end < start || timestamp_period_ns <= 0.0F) {
+        return 0;
+    }
+    const long double duration = static_cast<long double>(end - start)
+        * static_cast<long double>(timestamp_period_ns);
+    if (duration >= static_cast<long double>(
+            std::numeric_limits<std::uint64_t>::max())) {
+        return std::numeric_limits<std::uint64_t>::max();
+    }
+    return static_cast<std::uint64_t>(duration + 0.5L);
+}
+#endif
 
 int load_net_file(ncnn::Net& net,
                   const std::filesystem::path& path,
@@ -210,6 +260,7 @@ public:
 
     int initialize(const ncnn::Option& base_option,
                    const ncnn::Pipeline* timestep_pipeline,
+                   std::size_t flownet_layer_count,
                    std::string& error) {
         blob_allocator = device->acquire_blob_allocator();
         if (blob_allocator == nullptr) {
@@ -233,25 +284,25 @@ public:
             (kDirectHeight + kPadding - 1) / kPadding * kPadding;
         const size_t storage_element_size = option.use_fp16_storage ? 2U : 4U;
 
-        upload0_staging.create(kDirectWidth, kDirectHeight, kChannels,
-                               sizeof(float), 1, staging_allocator);
-        upload1_staging.create(kDirectWidth, kDirectHeight, kChannels,
-                               sizeof(float), 1, staging_allocator);
-        download_staging.create(kDirectWidth, kDirectHeight, kChannels,
-                                sizeof(float), 1, staging_allocator);
+        upload0_staging.create(kDirectWidth, kDirectHeight, 1,
+                               sizeof(std::uint32_t), 1, staging_allocator);
+        upload1_staging.create(kDirectWidth, kDirectHeight, 1,
+                               sizeof(std::uint32_t), 1, staging_allocator);
+        download_staging.create(kDirectWidth, kDirectHeight, 1,
+                                sizeof(std::uint32_t), 1, staging_allocator);
 
-        input0_gpu.create(kDirectWidth, kDirectHeight, kChannels,
-                          sizeof(float), 1, blob_allocator);
-        input1_gpu.create(kDirectWidth, kDirectHeight, kChannels,
-                          sizeof(float), 1, blob_allocator);
+        input0_gpu.create(kDirectWidth, kDirectHeight, 1,
+                          sizeof(std::uint32_t), 1, blob_allocator);
+        input1_gpu.create(kDirectWidth, kDirectHeight, 1,
+                          sizeof(std::uint32_t), 1, blob_allocator);
         input0_padded.create(padded_width, padded_height, kChannels,
                              storage_element_size, 1, blob_allocator);
         input1_padded.create(padded_width, padded_height, kChannels,
                              storage_element_size, 1, blob_allocator);
         timestep_gpu.create(padded_width, padded_height, 1,
                             storage_element_size, 1, blob_allocator);
-        output_gpu.create(kDirectWidth, kDirectHeight, kChannels,
-                          sizeof(float), 1, blob_allocator);
+        output_gpu.create(kDirectWidth, kDirectHeight, 1,
+                          sizeof(std::uint32_t), 1, blob_allocator);
 
         if (upload0_staging.empty() || upload1_staging.empty()
             || download_staging.empty() || input0_gpu.empty()
@@ -290,6 +341,31 @@ public:
         if (submit_result != 0) {
             return -1;
         }
+
+#if defined(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+        if (flownet_layer_count
+            > (std::numeric_limits<std::uint32_t>::max()
+               - kGpuTimestampCount) / 2U) {
+            return fail(error,
+                        "The RIFE network has too many layers for Vulkan timestamp diagnostics.");
+        }
+        timestamp_query_base =
+            static_cast<std::uint32_t>(flownet_layer_count * 2U);
+        const std::uint32_t query_count =
+            timestamp_query_base + kGpuTimestampCount;
+        if (command->create_query_pool(query_count) != 0) {
+            return fail(error,
+                        "ncnn could not create the Vulkan timestamp query pool.");
+        }
+        timestamp_results.resize(query_count);
+        timestamp_period_ns = device->info.timestamp_period();
+        if (timestamp_period_ns <= 0.0F) {
+            return fail(error,
+                        "The Vulkan device reported an invalid timestamp period.");
+        }
+#else
+        (void)flownet_layer_count;
+#endif
 
         return 0;
     }
@@ -371,8 +447,90 @@ public:
             }
             set_poisoned_message_noexcept(detail);
             set_error_noexcept(error, detail);
+#if defined(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+            timestamp_capture_pending = false;
+            timestamp_available = false;
+            hotspot_count = 0;
+#endif
             return -1;
         }
+
+#if defined(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+        timestamp_available = false;
+        hotspot_count = 0;
+        hotspot_layer_indices.fill(0);
+        hotspot_duration_ns.fill(0);
+        if (timestamp_capture_pending && command != nullptr
+            && timestamp_results.size()
+                >= timestamp_query_base + kGpuTimestampCount) {
+            std::fill(timestamp_results.begin(), timestamp_results.end(), 0);
+            const int query_result = command->get_query_pool_results(
+                0,
+                static_cast<std::uint32_t>(timestamp_results.size()),
+                timestamp_results);
+            const std::uint64_t start =
+                timestamp_results[timestamp_query_base];
+            const std::uint64_t preprocessed =
+                timestamp_results[timestamp_query_base + 1];
+            const std::uint64_t inferred =
+                timestamp_results[timestamp_query_base + 2];
+            const std::uint64_t postprocessed =
+                timestamp_results[timestamp_query_base + 3];
+            if (query_result == 0 && start != 0
+                && start <= preprocessed && preprocessed <= inferred
+                && inferred <= postprocessed) {
+                upload_preprocess_ns = timestamp_duration_ns(
+                    start, preprocessed, timestamp_period_ns);
+                model_ns = timestamp_duration_ns(
+                    preprocessed, inferred, timestamp_period_ns);
+                postprocess_ns = timestamp_duration_ns(
+                    inferred, postprocessed, timestamp_period_ns);
+                compute_total_ns = timestamp_duration_ns(
+                    start, postprocessed, timestamp_period_ns);
+                timestamp_available = compute_total_ns != 0;
+                std::vector<std::pair<std::uint64_t, std::uint32_t>>
+                    layer_timings;
+                const std::uint32_t layer_count =
+                    timestamp_query_base / 2U;
+                layer_timings.reserve(layer_count);
+                for (std::uint32_t layer_index = 0;
+                     layer_index < layer_count;
+                     ++layer_index) {
+                    const std::uint64_t layer_start =
+                        timestamp_results[layer_index * 2U];
+                    const std::uint64_t layer_end =
+                        timestamp_results[layer_index * 2U + 1U];
+                    if (layer_start == 0 || layer_end < layer_start) {
+                        continue;
+                    }
+                    const std::uint64_t duration_ns = timestamp_duration_ns(
+                        layer_start, layer_end, timestamp_period_ns);
+                    if (duration_ns != 0) {
+                        layer_timings.emplace_back(
+                            duration_ns, layer_index);
+                    }
+                }
+                std::sort(
+                    layer_timings.begin(),
+                    layer_timings.end(),
+                    [](const auto& left, const auto& right) {
+                        return left.first > right.first;
+                    });
+                hotspot_count = static_cast<std::uint32_t>(
+                    std::min(layer_timings.size(),
+                             hotspot_layer_indices.size()));
+                for (std::uint32_t index = 0;
+                     index < hotspot_count;
+                     ++index) {
+                    hotspot_duration_ns[index] =
+                        layer_timings[index].first;
+                    hotspot_layer_indices[index] =
+                        layer_timings[index].second;
+                }
+            }
+        }
+        timestamp_capture_pending = false;
+#endif
 
         int reset_result = -1;
         try {
@@ -405,8 +563,19 @@ public:
         }
         if (quarantine_on_destroy) {
             recording_active = false;
+#if defined(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+            timestamp_capture_pending = false;
+            timestamp_available = false;
+            hotspot_count = 0;
+#endif
             return;
         }
+
+#if defined(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+        timestamp_capture_pending = false;
+        timestamp_available = false;
+        hotspot_count = 0;
+#endif
 
         int reset_result = -1;
         try {
@@ -466,6 +635,22 @@ public:
     bool recording_active = false;
     bool quarantine_on_destroy = false;
     std::string poison_reason;
+#if defined(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+    std::uint32_t timestamp_query_base = 0;
+    float timestamp_period_ns = 0.0F;
+    std::vector<std::uint64_t> timestamp_results;
+    bool timestamp_capture_pending = false;
+    bool timestamp_available = false;
+    std::uint64_t upload_preprocess_ns = 0;
+    std::uint64_t model_ns = 0;
+    std::uint64_t postprocess_ns = 0;
+    std::uint64_t compute_total_ns = 0;
+    std::uint32_t hotspot_count = 0;
+    std::array<std::uint32_t, kCheckedRifeGpuHotspotCapacity>
+        hotspot_layer_indices{};
+    std::array<std::uint64_t, kCheckedRifeGpuHotspotCapacity>
+        hotspot_duration_ns{};
+#endif
 };
 
 PersistentRecordingGuard::PersistentRecordingGuard(
@@ -524,11 +709,14 @@ struct CheckedRifeV4::Impl {
     int threads = 1;
     ncnn::Net flownet;
     std::unique_ptr<ncnn::Pipeline> preprocessor;
+    std::unique_ptr<ncnn::Pipeline> packed_bgra8_preprocessor;
     std::unique_ptr<ncnn::Pipeline> postprocessor;
+    std::unique_ptr<ncnn::Pipeline> packed_bgra8_postprocessor;
     std::unique_ptr<ncnn::Pipeline> timestep;
     ncnn::Mat host_input0;
     ncnn::Mat host_input1;
     ncnn::Mat host_output;
+    ncnn::Mat host_output_bgra8;
     bool persistent_vulkan_requested = false;
     bool quarantine_all_resources = false;
     std::unique_ptr<PersistentVulkanResources> persistent_vulkan;
@@ -587,8 +775,10 @@ int CheckedRifeV4::load(const std::wstring& model_directory,
                               sizeof(float), 1);
     impl_->host_output.create(kDirectWidth, kDirectHeight, kChannels,
                               sizeof(float), 1);
+    impl_->host_output_bgra8.create(kDirectWidth, kDirectHeight, 1,
+                                    sizeof(std::uint32_t), 1);
     if (impl_->host_input0.empty() || impl_->host_input1.empty()
-        || impl_->host_output.empty()) {
+        || impl_->host_output.empty() || impl_->host_output_bgra8.empty()) {
         return fail(error, "ncnn could not allocate the persistent 1080p host frames.");
     }
 
@@ -597,11 +787,30 @@ int CheckedRifeV4::load(const std::wstring& model_directory,
     option.use_vulkan_compute = true;
     option.use_fp16_packed = true;
     option.use_fp16_storage = true;
-    option.use_fp16_arithmetic = false;
+    // The pinned upstream RIFE runtime deliberately leaves FP16 arithmetic
+    // disabled. Keep that exact behavior unless a local development probe
+    // explicitly requests it, and still require hardware support.
+    option.use_fp16_arithmetic = development_fp16_arithmetic_requested()
+        && impl_->device->info.support_fp16_arithmetic();
     option.use_int8_storage = false;
 
     impl_->flownet.opt = option;
     impl_->flownet.set_vulkan_device(impl_->device);
+#if defined(PLAINVIDEO_RIFE_FUSED_CONCAT_DIAGNOSTICS)
+    if (development_fused_concat_requested()) {
+        const int concat_register_result =
+            impl_->flownet.register_custom_layer(
+                "Concat",
+                plainvideo_rife_concat7_layer_creator);
+        if (concat_register_result != 0) {
+            return fail(
+                error,
+                with_code(
+                    "Fused diagnostic Concat registration",
+                    concat_register_result));
+        }
+    }
+#endif
     const int register_result = impl_->flownet.register_custom_layer(
         "rife.Warp", Warp_layer_creator);
     if (register_result != 0) {
@@ -619,7 +828,9 @@ int CheckedRifeV4::load(const std::wstring& model_directory,
     const std::vector<ncnn::vk_specialization_type> no_specializations;
 
     std::unique_ptr<ncnn::Pipeline> preprocessor;
+    std::unique_ptr<ncnn::Pipeline> packed_bgra8_preprocessor;
     std::unique_ptr<ncnn::Pipeline> postprocessor;
+    std::unique_ptr<ncnn::Pipeline> packed_bgra8_postprocessor;
     std::unique_ptr<ncnn::Pipeline> timestep;
     if (create_pipeline(impl_->device,
                         rife_preproc_comp_data,
@@ -629,9 +840,20 @@ int CheckedRifeV4::load(const std::wstring& model_directory,
                         8,
                         3,
                         frame_specializations,
-                        preprocessor,
-                        "RIFE preprocessing pipeline",
-                        error) != 0
+                           preprocessor,
+                           "RIFE preprocessing pipeline",
+                           error) != 0
+        || create_pipeline(impl_->device,
+                           plainvideo_rife_preproc_bgra8_comp_data,
+                           sizeof(plainvideo_rife_preproc_bgra8_comp_data) - 1,
+                           option,
+                           8,
+                           8,
+                           3,
+                           no_specializations,
+                           packed_bgra8_preprocessor,
+                           "RIFE packed BGRA8 preprocessing pipeline",
+                           error) != 0
         || create_pipeline(impl_->device,
                            rife_postproc_comp_data,
                            sizeof(rife_postproc_comp_data),
@@ -642,6 +864,17 @@ int CheckedRifeV4::load(const std::wstring& model_directory,
                            frame_specializations,
                            postprocessor,
                            "RIFE postprocessing pipeline",
+                           error) != 0
+        || create_pipeline(impl_->device,
+                           plainvideo_rife_postproc_bgra8_comp_data,
+                           sizeof(plainvideo_rife_postproc_bgra8_comp_data) - 1,
+                           option,
+                           8,
+                           8,
+                           1,
+                           no_specializations,
+                           packed_bgra8_postprocessor,
+                           "RIFE packed BGRA8 postprocessing pipeline",
                            error) != 0
         || create_pipeline(impl_->device,
                            rife_v4_timestep_comp_data,
@@ -658,7 +891,11 @@ int CheckedRifeV4::load(const std::wstring& model_directory,
     }
 
     impl_->preprocessor = std::move(preprocessor);
+    impl_->packed_bgra8_preprocessor =
+        std::move(packed_bgra8_preprocessor);
     impl_->postprocessor = std::move(postprocessor);
+    impl_->packed_bgra8_postprocessor =
+        std::move(packed_bgra8_postprocessor);
     impl_->timestep = std::move(timestep);
 
     if (impl_->persistent_vulkan_requested) {
@@ -667,7 +904,10 @@ int CheckedRifeV4::load(const std::wstring& model_directory,
         int initialize_result = -1;
         try {
             initialize_result = persistent_vulkan->initialize(
-                option, impl_->timestep.get(), error);
+                option,
+                impl_->timestep.get(),
+                impl_->flownet.layers().size(),
+                error);
         } catch (...) {
             if (persistent_vulkan->requires_quarantine()) {
                 impl_->quarantine_all_resources = true;
@@ -874,6 +1114,17 @@ int CheckedRifeV4::Impl::run_gpu_persistent_vulkan(
     const ncnn::Option& option = resources->option;
     PersistentRecordingGuard recording_guard(*resources);
 
+#if defined(PLAINVIDEO_RIFE_FUSED_CONCAT_DIAGNOSTICS)
+    plainvideo_rife_concat7_reset_thread_stats();
+#endif
+
+#if defined(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+    resources->timestamp_available = false;
+    resources->timestamp_capture_pending = true;
+    resources->hotspot_count = 0;
+    command.record_write_timestamp(resources->timestamp_query_base);
+#endif
+
     command.record_clone(resources->upload0_staging,
                          resources->input0_gpu,
                          option);
@@ -896,7 +1147,8 @@ int CheckedRifeV4::Impl::run_gpu_persistent_vulkan(
         constants[3].i = resources->input0_padded.w;
         constants[4].i = resources->input0_padded.h;
         constants[5].i = static_cast<int>(resources->input0_padded.cstep);
-        command.record_pipeline(preprocessor.get(), bindings, constants,
+        command.record_pipeline(packed_bgra8_preprocessor.get(), bindings,
+                                constants,
                                 resources->input0_padded);
     }
     {
@@ -910,9 +1162,14 @@ int CheckedRifeV4::Impl::run_gpu_persistent_vulkan(
         constants[3].i = resources->input1_padded.w;
         constants[4].i = resources->input1_padded.h;
         constants[5].i = static_cast<int>(resources->input1_padded.cstep);
-        command.record_pipeline(preprocessor.get(), bindings, constants,
+        command.record_pipeline(packed_bgra8_preprocessor.get(), bindings,
+                                constants,
                                 resources->input1_padded);
     }
+
+#if defined(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+    command.record_write_timestamp(resources->timestamp_query_base + 1);
+#endif
 
     ncnn::VkMat output_padded;
     {
@@ -951,6 +1208,10 @@ int CheckedRifeV4::Impl::run_gpu_persistent_vulkan(
         }
     }
 
+#if defined(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+    command.record_write_timestamp(resources->timestamp_query_base + 2);
+#endif
+
     {
         std::vector<ncnn::VkMat> bindings(2);
         bindings[0] = output_padded;
@@ -962,9 +1223,14 @@ int CheckedRifeV4::Impl::run_gpu_persistent_vulkan(
         constants[3].i = resources->output_gpu.w;
         constants[4].i = resources->output_gpu.h;
         constants[5].i = static_cast<int>(resources->output_gpu.cstep);
-        command.record_pipeline(postprocessor.get(), bindings, constants,
-                                resources->output_gpu);
+        command.record_pipeline(packed_bgra8_postprocessor.get(), bindings,
+                                constants, resources->output_gpu);
     }
+
+
+#if defined(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+    command.record_write_timestamp(resources->timestamp_query_base + 3);
+#endif
 
     ncnn::Option staging_option = option;
     staging_option.blob_vkallocator = resources->staging_allocator;
@@ -993,10 +1259,10 @@ int CheckedRifeV4::Impl::run_gpu_persistent_vulkan(
         return -1;
     }
     if (output.w != kDirectWidth || output.h != kDirectHeight
-        || output.c != kChannels || output.elemsize != sizeof(float)
+        || output.c != 1 || output.elemsize != sizeof(std::uint32_t)
         || output.elempack != 1) {
         return fail(error,
-                    "Persistent RIFE returned an incompatible host output frame.");
+                    "Persistent RIFE returned an incompatible packed BGRA8 host frame.");
     }
 
     return 0;
@@ -1018,7 +1284,10 @@ int CheckedRifeV4::process(const float* src0_r,
                            std::string& error) const {
     error.clear();
     if (!impl_->loaded || impl_->device == nullptr
-        || impl_->preprocessor == nullptr || impl_->postprocessor == nullptr
+        || impl_->preprocessor == nullptr
+        || impl_->packed_bgra8_preprocessor == nullptr
+        || impl_->postprocessor == nullptr
+        || impl_->packed_bgra8_postprocessor == nullptr
         || impl_->timestep == nullptr) {
         return fail(error, "The checked RIFE core is not loaded.");
     }
@@ -1229,8 +1498,8 @@ int CheckedRifeV4::process_bgra8_persistent_vulkan(
         return fail(error,
                     "The persistent staged Vulkan path was not enabled at load time.");
     }
-    if (impl_->host_output.empty()) {
-        return fail(error, "The persistent 1080p host output frame is unavailable.");
+    if (impl_->host_output_bgra8.empty()) {
+        return fail(error, "The persistent packed 1080p host output frame is unavailable.");
     }
 
     std::scoped_lock lock(impl_->process_mutex);
@@ -1253,26 +1522,16 @@ int CheckedRifeV4::process_bgra8_persistent_vulkan(
         return fail(error, resources.poison_reason);
     }
 
-    float* input0_r = input0_mapped.channel(0);
-    float* input0_g = input0_mapped.channel(1);
-    float* input0_b = input0_mapped.channel(2);
-    float* input1_r = input1_mapped.channel(0);
-    float* input1_g = input1_mapped.channel(1);
-    float* input1_b = input1_mapped.channel(2);
+    auto* input0 = reinterpret_cast<std::uint8_t*>(input0_mapped.data);
+    auto* input1 = reinterpret_cast<std::uint8_t*>(input1_mapped.data);
+    constexpr size_t packed_row_bytes =
+        static_cast<size_t>(kDirectWidth) * kBgraChannels;
     for (int y = 0; y < kDirectHeight; ++y) {
         const std::uint8_t* row0 = src0_bgra + src0_stride_bytes * y;
         const std::uint8_t* row1 = src1_bgra + src1_stride_bytes * y;
-        const size_t row_offset = static_cast<size_t>(kDirectWidth) * y;
-        for (int x = 0; x < kDirectWidth; ++x) {
-            const size_t bgra_offset = static_cast<size_t>(x) * kBgraChannels;
-            const size_t target = row_offset + x;
-            input0_b[target] = static_cast<float>(row0[bgra_offset]);
-            input0_g[target] = static_cast<float>(row0[bgra_offset + 1]);
-            input0_r[target] = static_cast<float>(row0[bgra_offset + 2]);
-            input1_b[target] = static_cast<float>(row1[bgra_offset]);
-            input1_g[target] = static_cast<float>(row1[bgra_offset + 1]);
-            input1_r[target] = static_cast<float>(row1[bgra_offset + 2]);
-        }
+        const size_t target = packed_row_bytes * static_cast<size_t>(y);
+        std::memcpy(input0 + target, row0, packed_row_bytes);
+        std::memcpy(input1 + target, row1, packed_row_bytes);
     }
 
     const int flush0 = resources.staging_allocator->flush(
@@ -1297,39 +1556,78 @@ int CheckedRifeV4::process_bgra8_persistent_vulkan(
 
     const auto gpu_start = input_end;
     const int gpu_result = impl_->run_gpu_persistent_vulkan(
-        impl_->host_output, error);
+        impl_->host_output_bgra8, error);
     const auto gpu_end = std::chrono::steady_clock::now();
     // This is host wall time for command recording, upload, inference,
     // download, fence wait, host copy, and command reset; it is not kernel time.
     timings.gpu_path_us = elapsed_microseconds(gpu_start, gpu_end);
+#if defined(PLAINVIDEO_RIFE_GPU_TIMESTAMP_DIAGNOSTICS)
+    timings.gpu_timestamps_available = resources.timestamp_available;
+    timings.gpu_upload_preprocess_ns = resources.upload_preprocess_ns;
+    timings.gpu_model_ns = resources.model_ns;
+    timings.gpu_postprocess_ns = resources.postprocess_ns;
+    timings.gpu_compute_total_ns = resources.compute_total_ns;
+    const auto& layers = impl_->flownet.layers();
+    timings.gpu_hotspot_count = static_cast<std::uint32_t>(
+        std::min<std::size_t>(
+            resources.hotspot_count,
+            kCheckedRifeGpuHotspotCapacity));
+    for (std::uint32_t index = 0;
+         index < timings.gpu_hotspot_count;
+         ++index) {
+        const std::uint32_t layer_index =
+            resources.hotspot_layer_indices[index];
+        if (layer_index >= layers.size() || layers[layer_index] == nullptr) {
+            timings.gpu_hotspot_labels[index] =
+                "layer-" + std::to_string(layer_index);
+        } else {
+            timings.gpu_hotspot_labels[index] =
+                layers[layer_index]->type + ":" + layers[layer_index]->name;
+        }
+        timings.gpu_hotspot_duration_ns[index] =
+            resources.hotspot_duration_ns[index];
+    }
+#endif
+#if defined(PLAINVIDEO_RIFE_FUSED_CONCAT_DIAGNOSTICS)
+    timings.gpu_fused_concat_calls =
+        plainvideo_rife_concat7_thread_fused_calls();
+    timings.gpu_fused_concat_fallback_calls =
+        plainvideo_rife_concat7_thread_fallback_calls();
+#endif
     if (gpu_result != 0) {
         timings.core_path_us = elapsed_microseconds(core_start, gpu_end);
         return -1;
     }
 
     const auto output_start = gpu_end;
-    const float* output_r = impl_->host_output.channel(0);
-    const float* output_g = impl_->host_output.channel(1);
-    const float* output_b = impl_->host_output.channel(2);
-    for (int y = 0; y < kDirectHeight; ++y) {
-        std::uint8_t* row = dst_bgra + dst_stride_bytes * y;
-        const size_t row_offset = static_cast<size_t>(kDirectWidth) * y;
-        for (int x = 0; x < kDirectWidth; ++x) {
-            const size_t source = row_offset + x;
-            if (!std::isfinite(output_r[source])
-                || !std::isfinite(output_g[source])
-                || !std::isfinite(output_b[source])) {
-                const auto failure_time = std::chrono::steady_clock::now();
-                timings.host_output_pack_us =
-                    elapsed_microseconds(output_start, failure_time);
-                timings.core_path_us = elapsed_microseconds(core_start, failure_time);
-                return fail(error, "RIFE produced a non-finite host output sample.");
-            }
-            const size_t bgra_offset = static_cast<size_t>(x) * kBgraChannels;
-            row[bgra_offset] = pack_channel(output_b[source]);
-            row[bgra_offset + 1] = pack_channel(output_g[source]);
-            row[bgra_offset + 2] = pack_channel(output_r[source]);
-            row[bgra_offset + 3] = 255;
+    const auto* output = reinterpret_cast<const std::uint32_t*>(
+        impl_->host_output_bgra8.data);
+    constexpr size_t row_bytes =
+        static_cast<size_t>(kDirectWidth) * kBgraChannels;
+    constexpr size_t pixel_count =
+        static_cast<size_t>(kDirectWidth) * kDirectHeight;
+    const auto invalid_output = std::find_if(
+        output,
+        output + pixel_count,
+        [](std::uint32_t pixel) {
+            return (pixel & 0xff000000U) != 0xff000000U;
+        });
+    if (invalid_output != output + pixel_count) {
+        const auto failure_time = std::chrono::steady_clock::now();
+        timings.host_output_pack_us =
+            elapsed_microseconds(output_start, failure_time);
+        timings.core_path_us = elapsed_microseconds(core_start, failure_time);
+        return fail(error, "RIFE produced a non-finite GPU output sample.");
+    }
+
+    if (dst_stride_bytes == static_cast<std::ptrdiff_t>(row_bytes)) {
+        std::memcpy(dst_bgra, output, row_bytes * kDirectHeight);
+    } else {
+        const auto* output_bytes = reinterpret_cast<const std::uint8_t*>(output);
+        for (int y = 0; y < kDirectHeight; ++y) {
+            std::memcpy(dst_bgra + dst_stride_bytes * y,
+                        output_bytes + row_bytes * y,
+                        row_bytes);
         }
     }
     const auto output_end = std::chrono::steady_clock::now();

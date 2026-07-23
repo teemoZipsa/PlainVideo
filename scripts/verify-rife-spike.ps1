@@ -224,8 +224,8 @@ $variantOrder = @(
         role = 'persistentVulkan'
         commandValue = 'persistent-vulkan'
         expectedId = 'persistent-vulkan-staged'
-        expectedBufferPolicy = 'mapped persistent Vulkan upload/download staging plus persistent Vulkan device buffers; direct BGRA8 staging fill and host output pack'
-        expectedMeasurementScope = 'host BGRA8 input fill directly into mapped persistent Vulkan upload staging, device upload, model execution, synchronized device download into mapped persistent Vulkan staging, and host BGRA8 output pack; includes real host transfer boundaries and is not GPU-native or kernel-only'
+        expectedBufferPolicy = 'mapped packed-BGRA8 Vulkan upload/download staging plus persistent Vulkan device buffers; GPU R/G/B expansion and packed BGRA8 output'
+        expectedMeasurementScope = 'host BGRA8 input copied into mapped persistent Vulkan staging, GPU unpack/model/pack, synchronized packed BGRA8 download, and validated host row copy; includes real host transfer boundaries and is not GPU-native or kernel-only'
     }
     [pscustomobject][ordered]@{
         sequence = 4
@@ -233,8 +233,8 @@ $variantOrder = @(
         role = 'persistentVulkan'
         commandValue = 'persistent-vulkan'
         expectedId = 'persistent-vulkan-staged'
-        expectedBufferPolicy = 'mapped persistent Vulkan upload/download staging plus persistent Vulkan device buffers; direct BGRA8 staging fill and host output pack'
-        expectedMeasurementScope = 'host BGRA8 input fill directly into mapped persistent Vulkan upload staging, device upload, model execution, synchronized device download into mapped persistent Vulkan staging, and host BGRA8 output pack; includes real host transfer boundaries and is not GPU-native or kernel-only'
+        expectedBufferPolicy = 'mapped packed-BGRA8 Vulkan upload/download staging plus persistent Vulkan device buffers; GPU R/G/B expansion and packed BGRA8 output'
+        expectedMeasurementScope = 'host BGRA8 input copied into mapped persistent Vulkan staging, GPU unpack/model/pack, synchronized packed BGRA8 download, and validated host row copy; includes real host transfer boundaries and is not GPU-native or kernel-only'
     }
     [pscustomobject][ordered]@{
         sequence = 5

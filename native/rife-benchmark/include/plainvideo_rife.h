@@ -27,6 +27,8 @@ extern "C" {
 #endif
 
 #define PLAINVIDEO_RIFE_ABI_VERSION 2u
+#define PLAINVIDEO_RIFE_GPU_HOTSPOT_CAPACITY 8u
+#define PLAINVIDEO_RIFE_GPU_HOTSPOT_LABEL_CAPACITY 96u
 
 typedef struct PlainVideoRifeHandle PlainVideoRifeHandle;
 
@@ -123,6 +125,24 @@ typedef struct PlainVideoRifeStats {
     uint64_t missed_frames;
 } PlainVideoRifeStats;
 
+// Development-only Vulkan query results from the most recent generated-output
+// attempt. Normal builds expose the getter but report available=0 so this does
+// not change playback behavior or the ABI of PlainVideoRifeResult.
+typedef struct PlainVideoRifeGpuTimingDiagnostics {
+    uint32_t struct_size;
+    uint32_t available;
+    uint64_t upload_preprocess_ns;
+    uint64_t model_ns;
+    uint64_t postprocess_ns;
+    uint64_t compute_total_ns;
+    uint32_t fused_concat_calls;
+    uint32_t fused_concat_fallback_calls;
+    uint32_t hotspot_count;
+    char hotspot_labels[PLAINVIDEO_RIFE_GPU_HOTSPOT_CAPACITY]
+                       [PLAINVIDEO_RIFE_GPU_HOTSPOT_LABEL_CAPACITY];
+    uint64_t hotspot_duration_ns[PLAINVIDEO_RIFE_GPU_HOTSPOT_CAPACITY];
+} PlainVideoRifeGpuTimingDiagnostics;
+
 PLAINVIDEO_RIFE_API uint32_t PLAINVIDEO_RIFE_CALL
 plainvideo_rife_abi_version(void) PLAINVIDEO_RIFE_NOEXCEPT;
 
@@ -153,6 +173,11 @@ plainvideo_rife_process(PlainVideoRifeHandle* handle,
 PLAINVIDEO_RIFE_API int32_t PLAINVIDEO_RIFE_CALL
 plainvideo_rife_get_stats(const PlainVideoRifeHandle* handle,
                           PlainVideoRifeStats* output_stats) PLAINVIDEO_RIFE_NOEXCEPT;
+
+PLAINVIDEO_RIFE_API int32_t PLAINVIDEO_RIFE_CALL
+plainvideo_rife_get_last_gpu_timing(
+    const PlainVideoRifeHandle* handle,
+    PlainVideoRifeGpuTimingDiagnostics* output_timing) PLAINVIDEO_RIFE_NOEXCEPT;
 
 PLAINVIDEO_RIFE_API int32_t PLAINVIDEO_RIFE_CALL
 plainvideo_rife_reset_stats(PlainVideoRifeHandle* handle) PLAINVIDEO_RIFE_NOEXCEPT;
