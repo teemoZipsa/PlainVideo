@@ -23,8 +23,8 @@ use windows_sys::Win32::UI::HiDpi::{
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
-    VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_F, VK_F6, VK_LEFT, VK_NEXT, VK_O, VK_OEM_4, VK_OEM_5,
-    VK_OEM_6, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_S, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
+    VK_CONTROL, VK_DOWN, VK_ESCAPE, VK_F, VK_F6, VK_LEFT, VK_MENU, VK_NEXT, VK_O, VK_OEM_4,
+    VK_OEM_5, VK_OEM_6, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_S, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
 };
 use windows_sys::Win32::UI::Shell::{
     DragAcceptFiles, DragFinish, DragQueryFileW, FOLDERID_Pictures, HDROP, SHGetKnownFolderPath,
@@ -47,8 +47,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WM_DWMCOMPOSITIONCHANGED, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO,
     WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
     WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCLBUTTONDOWN, WM_NCPAINT, WM_PAINT, WM_QUIT,
-    WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES,
-    WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSEXW,
+    WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
+    WS_THICKFRAME,
 };
 
 use crate::locale::{Locale, UiText};
@@ -111,8 +112,13 @@ const MENU_SUBTITLE_EARLIER: usize = 202;
 const MENU_SUBTITLE_TIMING_RESET: usize = 203;
 const MENU_SUBTITLE_LATER: usize = 204;
 const MENU_AUDIO_OFF: usize = 300;
+const MENU_AUDIO_EARLIER: usize = 301;
+const MENU_AUDIO_TIMING_RESET: usize = 302;
+const MENU_AUDIO_LATER: usize = 303;
 const SUBTITLE_DELAY_STEP: f64 = 0.1;
 const SUBTITLE_DELAY_LIMIT: f64 = 60.0;
+const AUDIO_DELAY_STEP: f64 = 0.1;
+const AUDIO_DELAY_LIMIT: f64 = 60.0;
 const PLAYBACK_SPEEDS: [(usize, &str, f64); 6] = [
     (400, "0.5×", 0.5),
     (401, "0.75×", 0.75),
@@ -511,6 +517,7 @@ impl App {
         self.pending_resume = self.resume_store.position(path);
         self.update_window_title();
         let _ = self.player.set_subtitle_delay(0.0);
+        let _ = self.player.set_audio_delay(0.0);
         if let Err(error) = self.player.load_file(path) {
             self.show_playback_error(error);
         }
@@ -1374,6 +1381,32 @@ impl App {
         self.set_subtitle_delay_ui(0.0);
     }
 
+    fn set_audio_delay_ui(&mut self, seconds: f64) {
+        if self.player.current_audio_id().is_none() {
+            let message = if self.player.audio_tracks().is_empty() {
+                self.locale.text().no_audio_tracks
+            } else {
+                self.locale.text().audio_timing_requires_active
+            };
+            self.show_status(message);
+            return;
+        }
+        let seconds = normalize_audio_delay(seconds);
+        if let Err(error) = self.player.set_audio_delay(seconds) {
+            self.operation_error(error);
+        } else {
+            self.show_status(&audio_delay_status(self.locale.text(), seconds));
+        }
+    }
+
+    fn adjust_audio_delay(&mut self, amount: f64) {
+        self.set_audio_delay_ui(self.player.audio_delay() + amount);
+    }
+
+    fn reset_audio_delay(&mut self) {
+        self.set_audio_delay_ui(0.0);
+    }
+
     fn select_subtitle_ui(&mut self, id: i64, label: &str) {
         if let Err(error) = self.player.select_subtitle(id) {
             self.operation_error(error);
@@ -1521,6 +1554,9 @@ impl App {
         let audio = wide(text.audio);
         let audio_off = wide(text.audio_off);
         let no_audio_tracks = wide(text.no_audio_tracks);
+        let audio_earlier = wide(text.audio_earlier);
+        let audio_timing_reset = wide(text.audio_timing_reset);
+        let audio_later = wide(text.audio_later);
         let playback_speed = wide(text.playback_speed);
         let rife_interpolation = wide(text.rife_interpolation);
         let save_screenshot = wide(text.save_screenshot);
@@ -1666,6 +1702,31 @@ impl App {
                     );
                 }
             }
+            AppendMenuW(audio_menu, MF_SEPARATOR, 0, ptr::null());
+            let audio_timing_flags = MF_STRING
+                | if current_audio.is_some() {
+                    0
+                } else {
+                    MF_GRAYED
+                };
+            AppendMenuW(
+                audio_menu,
+                audio_timing_flags,
+                MENU_AUDIO_EARLIER,
+                audio_earlier.as_ptr(),
+            );
+            AppendMenuW(
+                audio_menu,
+                audio_timing_flags,
+                MENU_AUDIO_TIMING_RESET,
+                audio_timing_reset.as_ptr(),
+            );
+            AppendMenuW(
+                audio_menu,
+                audio_timing_flags,
+                MENU_AUDIO_LATER,
+                audio_later.as_ptr(),
+            );
             if has_playable_media {
                 AppendMenuW(menu, MF_POPUP, audio_menu as usize, audio.as_ptr());
                 for (command, label, speed) in PLAYBACK_SPEEDS {
@@ -1793,6 +1854,15 @@ impl App {
                     if let Err(error) = self.player.disable_audio() {
                         self.operation_error(error);
                     }
+                }
+                MENU_AUDIO_EARLIER => {
+                    self.adjust_audio_delay(-AUDIO_DELAY_STEP);
+                }
+                MENU_AUDIO_TIMING_RESET => {
+                    self.reset_audio_delay();
+                }
+                MENU_AUDIO_LATER => {
+                    self.adjust_audio_delay(AUDIO_DELAY_STEP);
                 }
                 MENU_CLOSE => PostQuitMessage(0),
                 _ => {
@@ -1968,7 +2038,7 @@ unsafe extern "system" fn window_proc(
     match message {
         WM_NCHITTEST if diagnostic_input_locked => HTCLIENT as LRESULT,
         WM_LBUTTONDOWN | WM_LBUTTONUP | WM_LBUTTONDBLCLK | WM_CONTEXTMENU | WM_DROPFILES
-        | WM_KEYDOWN | WM_MOUSEMOVE | WM_MOUSEWHEEL | WM_MOUSELEAVE | WM_CLOSE
+        | WM_KEYDOWN | WM_SYSKEYDOWN | WM_MOUSEMOVE | WM_MOUSEWHEEL | WM_MOUSELEAVE | WM_CLOSE
             if diagnostic_input_locked =>
         {
             0
@@ -2328,6 +2398,18 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
+        WM_SYSKEYDOWN => {
+            let key = wparam as u16;
+            let alt = unsafe { GetKeyState(VK_MENU as i32) } < 0;
+            if alt && matches!(key, VK_OEM_4 | VK_OEM_5 | VK_OEM_6) {
+                if let Some(app) = app {
+                    handle_key(app, hwnd, key);
+                }
+                0
+            } else {
+                unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+            }
+        }
         WM_TIMER => {
             unsafe { KillTimer(hwnd, wparam) };
             match wparam {
@@ -2423,6 +2505,7 @@ unsafe extern "system" fn window_proc(
 
 fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
     let control = unsafe { GetKeyState(VK_CONTROL as i32) } < 0;
+    let alt = unsafe { GetKeyState(VK_MENU as i32) } < 0;
     if key == VK_O && control {
         app.show_cursor();
         unsafe { KillTimer(hwnd, TIMER_HIDE_CURSOR) };
@@ -2466,6 +2549,9 @@ fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
         }
         VK_UP => app.adjust_volume(2.0),
         VK_DOWN => app.adjust_volume(-2.0),
+        VK_OEM_4 if alt => app.adjust_audio_delay(-AUDIO_DELAY_STEP),
+        VK_OEM_5 if alt => app.reset_audio_delay(),
+        VK_OEM_6 if alt => app.adjust_audio_delay(AUDIO_DELAY_STEP),
         VK_OEM_4 if control => app.adjust_subtitle_delay(-SUBTITLE_DELAY_STEP),
         VK_OEM_5 if control => app.reset_subtitle_delay(),
         VK_OEM_6 if control => app.adjust_subtitle_delay(SUBTITLE_DELAY_STEP),
@@ -3121,6 +3207,10 @@ fn normalize_subtitle_delay(seconds: f64) -> f64 {
     ((seconds.clamp(-SUBTITLE_DELAY_LIMIT, SUBTITLE_DELAY_LIMIT) * 10.0).round()) / 10.0
 }
 
+fn normalize_audio_delay(seconds: f64) -> f64 {
+    ((seconds.clamp(-AUDIO_DELAY_LIMIT, AUDIO_DELAY_LIMIT) * 10.0).round()) / 10.0
+}
+
 fn subtitle_delay_status(text: &UiText, seconds: f64) -> String {
     let seconds = normalize_subtitle_delay(seconds);
     if seconds.abs() < 0.05 {
@@ -3136,6 +3226,25 @@ fn subtitle_delay_status(text: &UiText, seconds: f64) -> String {
         format!(
             "{} · {:.1}{}",
             text.subtitle_timing, seconds, text.seconds_later
+        )
+    }
+}
+
+fn audio_delay_status(text: &UiText, seconds: f64) -> String {
+    let seconds = normalize_audio_delay(seconds);
+    if seconds.abs() < 0.05 {
+        format!("{} · {}", text.audio_timing, text.default_value)
+    } else if seconds < 0.0 {
+        format!(
+            "{} · {:.1}{}",
+            text.audio_timing,
+            seconds.abs(),
+            text.seconds_earlier
+        )
+    } else {
+        format!(
+            "{} · {:.1}{}",
+            text.audio_timing, seconds, text.seconds_later
         )
     }
 }
@@ -3375,6 +3484,50 @@ mod tests {
             keyboard
                 .contains("VK_OEM_6 if control => app.adjust_subtitle_delay(SUBTITLE_DELAY_STEP)")
         );
+    }
+
+    #[test]
+    fn audio_timing_is_bounded_localized_and_resettable() {
+        assert_eq!(normalize_audio_delay(0.26), 0.3);
+        assert_eq!(normalize_audio_delay(-0.26), -0.3);
+        assert_eq!(normalize_audio_delay(80.0), AUDIO_DELAY_LIMIT);
+        assert_eq!(
+            audio_delay_status(Locale::Korean.text(), -0.3),
+            "오디오 싱크 · 0.3초 앞당김"
+        );
+        assert_eq!(
+            audio_delay_status(Locale::English.text(), 0.4),
+            "Audio timing · 0.4 s later"
+        );
+        assert_eq!(
+            audio_delay_status(Locale::English.text(), 0.0),
+            "Audio timing · Default"
+        );
+
+        let source = include_str!("windows_app.rs");
+        let load_path = source
+            .split_once("fn load_path")
+            .and_then(|(_, rest)| rest.split_once("fn previous_video"))
+            .map(|(body, _)| body)
+            .expect("media load implementation");
+        assert!(load_path.contains("set_audio_delay(0.0)"));
+
+        let keyboard = source
+            .split_once("fn handle_key")
+            .and_then(|(_, rest)| rest.split_once("fn client_point"))
+            .map(|(body, _)| body)
+            .expect("keyboard handler");
+        assert!(keyboard.contains("VK_OEM_4 if alt => app.adjust_audio_delay(-AUDIO_DELAY_STEP)"));
+        assert!(keyboard.contains("VK_OEM_5 if alt => app.reset_audio_delay()"));
+        assert!(keyboard.contains("VK_OEM_6 if alt => app.adjust_audio_delay(AUDIO_DELAY_STEP)"));
+
+        let system_key = source
+            .split_once("WM_SYSKEYDOWN =>")
+            .and_then(|(_, rest)| rest.split_once("WM_TIMER =>"))
+            .map(|(body, _)| body)
+            .expect("Alt-key handler");
+        assert!(system_key.contains("matches!(key, VK_OEM_4 | VK_OEM_5 | VK_OEM_6)"));
+        assert!(system_key.contains("DefWindowProcW(hwnd, message, wparam, lparam)"));
     }
 
     #[test]
@@ -3648,8 +3801,8 @@ mod tests {
         assert!(track_right - track_left >= 80);
 
         let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
-        assert!(lua.contains("string.format(\"%s %d%%\""));
         assert!(lua.contains("string.format(\"%s %d%% · %s\""));
+        assert!(lua.contains("string.format(\"%s · %s\", copy.muted_state, copy.unmute)"));
         assert!(lua.contains("volume_width >= px(132)"));
         assert!(lua.contains("volume_left + px(42)"));
         assert!(lua.contains("local function compact_tooltip_width_for"));
@@ -3685,6 +3838,11 @@ mod tests {
         assert!(lua.contains("feedback_kind == \"seek\" then"));
         assert!(lua.contains("feedback_kind == \"volume\" then"));
         assert!(!lua.contains("feedback_kind == \"volume\" and not window_controls_visible"));
+        assert!(lua.contains("muted and copy.muted_state or copy.volume"));
+        assert!(
+            lua.contains("muted and copy.muted_state or string.format(\"%d%%\", volume_percent)")
+        );
+        assert!(lua.contains("and string.format(\"%s · %s\", copy.muted_state, copy.unmute)"));
 
         let status = lua
             .split_once("local function show_status_message(message)")

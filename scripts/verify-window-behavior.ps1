@@ -382,6 +382,14 @@ try {
     [void][PlainVideoWindowProbe]::SendMessageW($hwnd, 0x0200, [UIntPtr]::Zero, $mousePoint)
     Start-Sleep -Milliseconds 150
     Save-WindowCapture -Hwnd $hwnd -Path $mainCapture
+
+    $mutedCapture = Join-Path $evidenceDirectory 'window-controls-muted.png'
+    [void][PlainVideoWindowProbe]::SendMessageW($hwnd, 0x0100, [UIntPtr]0x4d, [IntPtr]::Zero)
+    [void][PlainVideoWindowProbe]::SendMessageW($hwnd, 0x0101, [UIntPtr]0x4d, [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 180
+    Save-WindowCapture -Hwnd $hwnd -Path $mutedCapture
+    [void][PlainVideoWindowProbe]::SendMessageW($hwnd, 0x0100, [UIntPtr]0x4d, [IntPtr]::Zero)
+    [void][PlainVideoWindowProbe]::SendMessageW($hwnd, 0x0101, [UIntPtr]0x4d, [IntPtr]::Zero)
 }
 finally {
     Stop-PlainVideo -Run $run
@@ -470,7 +478,7 @@ $evidence = [ordered]@{
         thickFrame = (($style -band 0x00040000) -ne 0)
         layeredWindow = (($exStyle -band 0x00080000) -ne 0)
     }
-    captures = @($mainCapture, $smallCapture)
+    captures = @($mainCapture, $mutedCapture, $smallCapture)
 }
 $evidence | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $EvidencePath -Encoding UTF8
 $evidence | ConvertTo-Json -Depth 8

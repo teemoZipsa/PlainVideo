@@ -39,12 +39,12 @@ Display synchronization and AI frame generation are intentionally treated as dif
 - A full-width invisible 56 px top move zone with a move cursor and no visible handle
 - PlainView-style top-right theme, always-on-top, minimize, fullscreen, and close controls, plus transient play, seek, volume-slider/mute, and subtitle controls
 - Physical-pixel window placement across monitors, DPI-scaled 280×240 minimum sizing, and DWM border suppression with the native shadow retained
-- Automatic discovery of same-name external SRT subtitles, plus contextual subtitle and audio-track selection, subtitle-file drop attachment, external subtitle loading, and 0.1-second timing correction
+- Automatic discovery of same-name external SRT subtitles, plus contextual subtitle and audio-track selection, subtitle-file drop attachment, external subtitle loading, and 0.1-second subtitle/audio timing correction
 - A localized empty state with no Korean/English mixing and a `Ctrl+O` open path
-- `PageUp`/`PageDown` previous-next navigation, `A` audio-track cycling, `V` subtitle cycling, `M` mute, and `Ctrl+[`/`Ctrl+]`/`Ctrl+\` subtitle timing
+- `PageUp`/`PageDown` previous-next navigation, `A` audio-track cycling, `V` subtitle cycling, `M` mute, `Ctrl+[`/`Ctrl+]`/`Ctrl+\` subtitle timing, and `Alt+[`/`Alt+]`/`Alt+\` audio timing
 - `Tab` toggles an unobscured, left-aligned media-information overlay without interrupting playback
 - Automatic resume for partially watched local files, with a transient resume notice and a context-menu restart action
-- Hover thumbnail previews on the seek bar, direct CC subtitle toggle, and remembered volume and mute state
+- Hover thumbnail previews on the seek bar, direct CC subtitle toggle, remembered volume and mute state, and unambiguous muted feedback
 - `S` saves a playback screenshot to the Windows Pictures library with transient confirmation
 - `F6`/`Shift+F6` keyboard focus for transient controls, with `Enter` or `Space` activation and a visible focus state
 - Real file-drop replacement, plus a progressively disclosed right-click menu for open, retry, previous/next, audio, subtitles, and close
@@ -76,6 +76,6 @@ See [Product definition](docs/PRODUCT.md) and [Architecture notes](docs/ARCHITEC
 
 ## License
 
-Original PlainVideo code is released under the [MIT License](LICENSE). Bundled playback engines, codecs, and runtimes retain their own licenses; release packages include the locked runtime profile, notices, license material, and corresponding-source offer. Experimental interpolation runtimes and models are not included in the 0.2.1 release.
+Original PlainVideo code is released under the [MIT License](LICENSE). Bundled playback engines, codecs, and runtimes retain their own licenses; release packages include the locked runtime profile, notices, license material, and corresponding-source offer. Experimental interpolation runtimes and models are not included in the 0.2.2 release.
 
 See the [privacy policy](PRIVACY.md) and [support guide](SUPPORT.md) for the Microsoft Store and portable releases.

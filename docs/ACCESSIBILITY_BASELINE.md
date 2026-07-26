@@ -1,12 +1,20 @@
 # Accessibility Baseline
 
-Last updated: 2026-07-19
+Last updated: 2026-07-26
 
 This document records PlainVideo's keyboard, scaling, and accessibility baseline. It is not a screen-reader conformance claim. The current developer build has source checks, automated layout tests, and a focused-control capture at 200% text scale, but still needs manual assistive-technology verification before any item can be promoted to release accessibility evidence.
 
 ## Latest local evidence
 
 The 2026-07-19 local quality pass recorded 23 passing Rust tests, including playback-layout bounds at 96, 120, 144, 192, and 240 DPI with the two-physical-pixel rounding tolerance. `.runtime/validation/integrated/20260719-021643-917/window-behavior.json` records a 427×240 physical-pixel small-media window at 96 DPI with `PLAINVIDEO_TEXT_SCALE=2.0`; its paired `small-video-text-200-percent.png` shows the keyboard-focused transient controls within the client area.
+
+The 2026-07-26 0.2.2 source-candidate run expanded the suite to 49 passing
+tests with one explicit local-runtime test ignored. Its 14-step Quick
+integration passed keyboard/accessibility invariants, actual Windows window and
+input probes, all 10 format rows, and all 8 playback-soak sessions. The input
+evidence records both subtitle and audio timing moving from `-0.1` to `+0.1`
+and back to `0`. This was dirty-working-tree developer evidence, not a
+clean-commit release-package result.
 
 That run also moved the window between two physical monitors, but both reported 96 DPI. It therefore does **not** close the requested real mixed-DPI transition check. The capture is a visual layout record, not OCR, UI Automation, Narrator, High Contrast, or contrast-ratio evidence.
 
@@ -36,6 +44,7 @@ PlainVideo's custom-drawn ASS overlay does not yet expose a custom UI Automation
 | Volume | Toggle mute | `M` | Toggles mute without adding a permanent button. |
 | Speed | Decrease/increase/reset | `[` / `]` / `\` | Moves between the context-menu speed steps or returns to 1.0× and reports the result in the shared top feedback lane. |
 | Subtitle timing | Earlier/later/reset | `Ctrl+[` / `Ctrl+]` / `Ctrl+\` | Moves the active subtitle in 0.1-second steps or restores the default timing, with localized transient feedback. |
+| Audio timing | Earlier/later/reset | `Alt+[` / `Alt+]` / `Alt+\` | Moves active audio in 0.1-second steps or restores the default timing, with localized transient feedback. |
 | Queue | Previous video | `PageUp` | Opens the previous available video; otherwise has no destructive effect. |
 | Queue | Next video | `PageDown` | Opens the next available video; otherwise has no destructive effect. |
 | Tracks | Cycle audio track | `A` | Cycles available audio tracks and shows the selected track. |

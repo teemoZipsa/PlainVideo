@@ -49,6 +49,7 @@ $baseline = Read-RepositoryText 'docs/ACCESSIBILITY_BASELINE.md'
 Assert-Pattern $localeSource 'previous_video:' 'previous-video localization fields' 3
 Assert-Pattern $localeSource 'next_video:' 'next-video localization fields' 3
 Assert-Pattern $localeSource 'audio_track:' 'audio-track localization fields' 3
+Assert-Pattern $localeSource 'audio_timing:' 'audio-timing localization fields' 3
 Assert-Pattern $localeSource 'subtitle_timing:' 'subtitle-timing localization fields' 3
 Assert-Pattern $localeSource 'playback_error_title:' 'playback-error title localization fields' 3
 Assert-Pattern $localeSource 'playback_error_hint:' 'playback-error hint localization fields' 3
@@ -67,6 +68,10 @@ Assert-Pattern $windowSource '0x56\s*=>\s*app\.cycle_subtitle' 'V subtitle-track
 Assert-Pattern $windowSource 'VK_OEM_4\s+if\s+control\s*=>\s*app\.adjust_subtitle_delay' 'Ctrl+LeftBracket subtitle-earlier route'
 Assert-Pattern $windowSource 'VK_OEM_5\s+if\s+control\s*=>\s*app\.reset_subtitle_delay' 'Ctrl+Backslash subtitle-reset route'
 Assert-Pattern $windowSource 'VK_OEM_6\s+if\s+control\s*=>\s*app\.adjust_subtitle_delay' 'Ctrl+RightBracket subtitle-later route'
+Assert-Pattern $windowSource 'VK_OEM_4\s+if\s+alt\s*=>\s*app\.adjust_audio_delay' 'Alt+LeftBracket audio-earlier route'
+Assert-Pattern $windowSource 'VK_OEM_5\s+if\s+alt\s*=>\s*app\.reset_audio_delay' 'Alt+Backslash audio-reset route'
+Assert-Pattern $windowSource 'VK_OEM_6\s+if\s+alt\s*=>\s*app\.adjust_audio_delay' 'Alt+RightBracket audio-later route'
+Assert-Pattern $windowSource 'WM_SYSKEYDOWN\s*=>' 'Alt shortcut system-key route'
 Assert-Pattern $windowSource '0x52\s+if\s+app\.playback_error_visible' 'R recoverable-error retry route'
 Assert-Pattern $windowSource 'WM_MOUSEWHEEL' 'mouse-wheel volume route'
 Assert-Pattern $windowSource 'fn cycle_keyboard_focus' 'keyboard focus state machine'
@@ -76,6 +81,7 @@ Assert-Pattern $windowSource 'MENU_NEXT' 'next-video context-menu command'
 Assert-Pattern $windowSource 'MENU_AUDIO_TRACK_BASE' 'audio-track context-menu commands'
 Assert-Pattern $windowSource 'MENU_SUBTITLE_TRACK_BASE' 'subtitle-track context-menu commands'
 Assert-Pattern $windowSource 'MENU_SUBTITLE_TIMING_RESET' 'subtitle-timing context-menu commands'
+Assert-Pattern $windowSource 'MENU_AUDIO_TIMING_RESET' 'audio-timing context-menu commands'
 
 # DPI-scaled minimums, move region, rounding tolerance, and compact playback
 # geometry are product layout contracts.
@@ -101,10 +107,12 @@ Assert-Pattern $luaSource 'draw_playback_error' 'localized recoverable error dra
 Assert-Pattern $readmeEnglish '`PageUp`/`PageDown`' 'English queue-shortcut documentation'
 Assert-Pattern $readmeEnglish '`F6`/`Shift\+F6`' 'English keyboard-focus documentation'
 Assert-Pattern $readmeEnglish '`Ctrl\+\[`/`Ctrl\+\]`/`Ctrl\+\\`' 'English subtitle-timing documentation'
+Assert-Pattern $readmeEnglish '`Alt\+\[`/`Alt\+\]`/`Alt\+\\`' 'English audio-timing documentation'
 Assert-Pattern $readmeEnglish 'Recoverable per-file playback errors' 'English recoverable-error documentation'
 Assert-Pattern $readmeKorean '`PageUp`/`PageDown`' 'Korean queue-shortcut documentation'
 Assert-Pattern $readmeKorean '`F6`/`Shift\+F6`' 'Korean keyboard-focus documentation'
 Assert-Pattern $readmeKorean '`Ctrl\+\[`/`Ctrl\+\]`/`Ctrl\+\\`' 'Korean subtitle-timing documentation'
+Assert-Pattern $readmeKorean '`Alt\+\[`/`Alt\+\]`/`Alt\+\\`' 'Korean audio-timing documentation'
 Assert-Pattern $baseline 'Custom UI Automation tree \| \*\*Pending\*\*' 'UI Automation pending disclosure'
 Assert-Pattern $baseline 'Narrator \| \*\*Pending\*\*' 'Narrator pending disclosure'
 Assert-Pattern $baseline 'High Contrast \| \*\*Pending\*\*' 'High Contrast pending disclosure'

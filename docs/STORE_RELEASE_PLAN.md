@@ -1,7 +1,7 @@
 # Microsoft Store release plan
 
-Date: 2026-07-24
-Status: Submission 1 (0.1.0.0) is publicly available; Submission 2 (0.2.0.0) is publishing at step 4 of 4; the exact 0.2.1 Store package and portable artifact are ready
+Date: 2026-07-26
+Status: Submission 2 (0.2.0.0) is in Microsoft Store; 0.2.2 is the next source candidate for Submission 3
 
 ## Product decision
 
@@ -151,15 +151,16 @@ Submission, certification, and publication are distinct states. Update `STORE_RE
 |---|---|---|
 | S0 — Store plan | Distribution choice, gates, bilingual listing draft, state file | Complete |
 | S1 — Runtime closure | Shared-libmpv candidate built, host-tested, and clean-Windows-11-Sandbox-tested | Complete; corresponding source is public and publisher accepted residual worldwide codec-patent risk; selected Windows 10 minimum-image proof remains a documented limitation |
-| S2 — Package proof | Partner identity, assets, manifest, x64 developer MSIX | Complete for `0.2.1.0`; clean-commit package, valid developer signature, Defender scans, WACK overall PASS, and zero interpolation runtime/model assets verified |
+| S2 — Package proof | Partner identity, assets, manifest, x64 developer MSIX | Complete through `0.2.1.0`; clean-commit package, valid developer signature, Defender scans, WACK overall PASS, and zero interpolation runtime/model assets were verified. Repeat for `0.2.2.0` before upload |
 | S3 — Installed-app proof | WACK, host/Sandbox, activation/update/uninstall | Complete for a first release; full host validation, WACK PASS, Sandbox proof, activation, uninstall, and reinstall passed; prior-version update is not applicable |
-| S4 — Listing readiness | Privacy/support/source pages and localized captures | Submission 2 complete; bilingual 0.2.1 release notes and retained rights-cleared media are prepared for Submission 3 |
-| S5 — Partner Center submission | Exact package uploaded and submitted | Submission 2 (`1152921505701471034`) is publishing; 0.2.1 upload is waiting for the next submission slot |
-| S6 — Public release | Certification passed and availability verified independently | Complete for 0.1.0.0; 0.2.0.0 is in Partner Center publishing and is not yet independently verified Store-live |
+| S4 — Listing readiness | Privacy/support/source pages and localized captures | Submission 2 complete; bilingual 0.2.2 release notes and retained rights-cleared media are prepared for Submission 3 |
+| S5 — Partner Center submission | Exact package uploaded and submitted | Submission 2 (`1152921505701471034`) is in Microsoft Store; Partner Center now offers a new update slot |
+| S6 — Public release | Certification passed and availability verified independently | Complete through 0.2.0.0; 0.2.2 has not been submitted, certified, or published |
 
 ## Immediate next work
 
-1. Wait for Submission 2 publishing to complete, then verify Store propagation separately.
-2. Upload the exact `0.2.1.0` Store MSIX, validate it in Partner Center, update both locale release notes, and submit Submission 3 with a manual publication hold.
-3. Preserve the `v0.2.1` tag and portable asset hashes as the source/package correspondence record.
-4. Preserve the selected Windows 10 minimum-image limitation until a real Windows 10 test image is exercised.
+1. Commit and repeat the integrated release gates for the 0.2.2 source candidate.
+2. Build and verify the exact `0.2.2.0` Store MSIX and matching portable artifact.
+3. Upload that exact package, update both locale release notes, and submit Submission 3 with a manual publication hold.
+4. Preserve the `v0.2.2` tag and portable asset hashes as the source/package correspondence record.
+5. Preserve the selected Windows 10 minimum-image limitation until a real Windows 10 test image is exercised.

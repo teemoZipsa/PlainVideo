@@ -94,6 +94,14 @@ public static class PlainVideoInputProbe
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    public static extern bool AttachThreadInput(uint attachThread, uint attachToThread, bool attach);
+    [DllImport("user32.dll")]
+    public static extern bool BringWindowToTop(IntPtr hwnd);
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetFocus(IntPtr hwnd);
+    [DllImport("user32.dll")]
     public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")]
     public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
@@ -125,6 +133,8 @@ public static class PlainVideoInputProbe
     public static extern bool GlobalUnlock(IntPtr memory);
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern IntPtr GlobalFree(IntPtr memory);
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
 
     public static IntPtr MakeLParam(int x, int y)
     {
@@ -178,6 +188,71 @@ function Wait-MainWindow {
         Start-Sleep -Milliseconds 50
     } while ([DateTime]::UtcNow -lt $deadline)
     throw 'Timed out waiting for the PlainVideo interaction window.'
+}
+
+function Focus-Window {
+    param([Parameter(Mandatory)][IntPtr]$Hwnd)
+    $deadline = [DateTime]::UtcNow.AddSeconds(2)
+    do {
+        $foreground = [PlainVideoInputProbe]::GetForegroundWindow()
+        $foregroundProcessId = [uint32]0
+        $targetProcessId = [uint32]0
+        $foregroundThread = if ($foreground -ne [IntPtr]::Zero) {
+            [PlainVideoInputProbe]::GetWindowThreadProcessId($foreground, [ref]$foregroundProcessId)
+        }
+        else {
+            [uint32]0
+        }
+        $targetThread = [PlainVideoInputProbe]::GetWindowThreadProcessId(
+            $Hwnd,
+            [ref]$targetProcessId
+        )
+        $currentThread = [PlainVideoInputProbe]::GetCurrentThreadId()
+        $attachedForeground = $false
+        $attachedTarget = $false
+        try {
+            if ($foregroundThread -ne 0 -and $foregroundThread -ne $currentThread) {
+                $attachedForeground = [PlainVideoInputProbe]::AttachThreadInput(
+                    $currentThread,
+                    $foregroundThread,
+                    $true
+                )
+            }
+            if ($targetThread -ne 0 -and $targetThread -ne $currentThread) {
+                $attachedTarget = [PlainVideoInputProbe]::AttachThreadInput(
+                    $currentThread,
+                    $targetThread,
+                    $true
+                )
+            }
+            [void][PlainVideoInputProbe]::BringWindowToTop($Hwnd)
+            [void][PlainVideoInputProbe]::SetForegroundWindow($Hwnd)
+            [void][PlainVideoInputProbe]::SetFocus($Hwnd)
+        }
+        finally {
+            if ($attachedTarget) {
+                [void][PlainVideoInputProbe]::AttachThreadInput(
+                    $currentThread,
+                    $targetThread,
+                    $false
+                )
+            }
+            if ($attachedForeground) {
+                [void][PlainVideoInputProbe]::AttachThreadInput(
+                    $currentThread,
+                    $foregroundThread,
+                    $false
+                )
+            }
+        }
+        Start-Sleep -Milliseconds 80
+        if ([PlainVideoInputProbe]::GetForegroundWindow() -eq $Hwnd) {
+            return
+        }
+    } while ([DateTime]::UtcNow -lt $deadline)
+    $actual = [PlainVideoInputProbe]::GetForegroundWindow()
+    throw ('PlainVideo did not become the foreground window before keyboard verification. ' +
+        ('Expected 0x{0:x}, actual 0x{1:x}.' -f $Hwnd.ToInt64(), $actual.ToInt64()))
 }
 
 function Get-ClientScreenRect {
@@ -355,6 +430,28 @@ function Assert-SubtitleDelay {
     return $actual
 }
 
+function Get-LastAudioDelay {
+    $matches = [regex]::Matches(
+        (Get-LogText),
+        '(?:Set property:\s*audio-delay=|name="audio-delay",\s*value=")(-?\d+(?:\.\d+)?)',
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )
+    if ($matches.Count -eq 0) { return $null }
+    return [double]::Parse(
+        $matches[$matches.Count - 1].Groups[1].Value,
+        [System.Globalization.CultureInfo]::InvariantCulture
+    )
+}
+
+function Assert-AudioDelay {
+    param([Parameter(Mandatory)][double]$Expected)
+    $actual = Get-LastAudioDelay
+    if ($null -eq $actual -or [Math]::Abs($actual - $Expected) -gt 0.011) {
+        throw "Audio delay mismatch: expected $Expected, actual $actual."
+    }
+    return $actual
+}
+
 $start = [System.Diagnostics.ProcessStartInfo]::new()
 $start.FileName = [System.IO.Path]::GetFullPath($Executable)
 $start.WorkingDirectory = [System.IO.Path]::GetFullPath($AppRoot)
@@ -371,7 +468,7 @@ $hwnd = [IntPtr]::Zero
 $evidence = $null
 try {
     $hwnd = Wait-MainWindow -Process $process
-    [void][PlainVideoInputProbe]::SetForegroundWindow($hwnd)
+    Focus-Window -Hwnd $hwnd
     [void](Wait-PatternCount -Pattern 'Starting playback' -Minimum 1 -TimeoutMilliseconds 8000)
     Start-Sleep -Milliseconds 250
 
@@ -397,8 +494,7 @@ try {
         throw 'Dropping one subtitle file replaced or restarted the active video.'
     }
 
-    [void][PlainVideoInputProbe]::SetForegroundWindow($hwnd)
-    Start-Sleep -Milliseconds 80
+    Focus-Window -Hwnd $hwnd
     $subDelayPattern = 'Set property:\s*sub-delay=|name="sub-delay"'
     $subDelayCount = Get-PatternCount -Pattern $subDelayPattern
     Send-KeyChord -Modifier 0x11 -VirtualKey 0xDB
@@ -412,6 +508,20 @@ try {
     Send-KeyChord -Modifier 0x11 -VirtualKey 0xDC
     [void](Wait-PatternCount -Pattern $subDelayPattern -Minimum ($subDelayCount + 1))
     $resetDelay = Assert-SubtitleDelay -Expected 0.0
+
+    $audioDelayPattern = 'Set property:\s*audio-delay=|name="audio-delay"'
+    $audioDelayCount = Get-PatternCount -Pattern $audioDelayPattern
+    Send-KeyChord -Modifier 0x12 -VirtualKey 0xDB
+    $audioDelayCount = Wait-PatternCount -Pattern $audioDelayPattern -Minimum ($audioDelayCount + 1)
+    $earlierAudioDelay = Assert-AudioDelay -Expected -0.1
+    Send-KeyChord -Modifier 0x12 -VirtualKey 0xDD
+    $audioDelayCount = Wait-PatternCount -Pattern $audioDelayPattern -Minimum ($audioDelayCount + 1)
+    Send-KeyChord -Modifier 0x12 -VirtualKey 0xDD
+    $audioDelayCount = Wait-PatternCount -Pattern $audioDelayPattern -Minimum ($audioDelayCount + 1)
+    $laterAudioDelay = Assert-AudioDelay -Expected 0.1
+    Send-KeyChord -Modifier 0x12 -VirtualKey 0xDC
+    [void](Wait-PatternCount -Pattern $audioDelayPattern -Minimum ($audioDelayCount + 1))
+    $resetAudioDelay = Assert-AudioDelay -Expected 0.0
 
     $togglePattern = 'name="plainvideo/toggle-pause"'
     $client = Get-ClientScreenRect -Hwnd $hwnd
@@ -571,6 +681,11 @@ try {
             earlierSeconds = $earlierDelay
             laterSeconds = $laterDelay
             resetSeconds = $resetDelay
+        }
+        audioTiming = [ordered]@{
+            earlierSeconds = $earlierAudioDelay
+            laterSeconds = $laterAudioDelay
+            resetSeconds = $resetAudioDelay
         }
         singleClick = [ordered]@{
             toggleCount = $afterClicks - $beforeClicks

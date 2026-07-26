@@ -845,6 +845,21 @@ impl Player {
         command_with(self.api.command, self.handle, &["set", "aid", "no"])
     }
 
+    pub fn audio_delay(&self) -> f64 {
+        self.property_string("audio-delay")
+            .and_then(|value| value.parse::<f64>().ok())
+            .unwrap_or(0.0)
+    }
+
+    pub fn set_audio_delay(&self, seconds: f64) -> Result<(), String> {
+        let seconds = format!("{seconds:.2}");
+        command_with(
+            self.api.command,
+            self.handle,
+            &["set", "audio-delay", &seconds],
+        )
+    }
+
     pub fn volume(&self) -> f64 {
         self.property_string("volume")
             .and_then(|value| value.parse::<f64>().ok())

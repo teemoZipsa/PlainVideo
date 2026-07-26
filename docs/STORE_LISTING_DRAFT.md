@@ -1,6 +1,6 @@
 # Microsoft Store listing draft
 
-Status: Submission 2 (0.2.0.0) is publishing at step 4 of 4; version 0.2.1 bilingual release notes and inherited listing media are prepared for Submission 3
+Status: Submission 2 (0.2.0.0) is in Microsoft Store; version 0.2.2 bilingual release notes and inherited listing media are prepared for Submission 3
 
 Keep the two locales as separate Partner Center listing entries. Do not paste Korean and English into one field.
 
@@ -28,9 +28,9 @@ Press `Tab` for compact media details without interrupting playback, or press `S
 
 PlainVideo lists only formats and hardware paths verified against its exact packaged playback runtime.
 
-### What's new in version 0.2.1
+### What's new in version 0.2.2
 
-The volume and mute control is cleaner and easier to read in both sound states. Drop one subtitle file onto a playing video to attach it without replacing playback, then correct subtitle timing in 0.1-second steps or reset it from the context menu and keyboard.
+Volume and mute now read as clearly different states. Correct audio timing in 0.1-second steps from the Audio menu or with `Alt+[` and `Alt+]`, and restore default timing with `Alt+\`. Audio timing resets when a different media file loads.
 
 ### Features
 
@@ -80,9 +80,9 @@ PlainVideo는 로컬 재생을 위한 앱입니다. 광고, 계정, 추천 피�
 
 실제 패키지에 포함된 재생 런타임으로 검증한 형식과 하드웨어 경로만 지원 범위로 표시합니다.
 
-### 버전 0.2.1의 새로운 기능
+### 버전 0.2.2의 새로운 기능
 
-소리와 음소거 상태 모두에서 볼륨 조작부가 더 간결하고 읽기 쉬워졌습니다. 재생 중인 영상에 자막 파일 하나를 놓으면 영상을 바꾸지 않고 자막만 추가하며, 우클릭 메뉴와 키보드로 자막 싱크를 0.1초씩 조절하거나 초기화할 수 있습니다.
+볼륨과 음소거가 서로 다른 상태로 더 분명하게 보입니다. 오디오 메뉴 또는 `Alt+[`와 `Alt+]`로 오디오 싱크를 0.1초씩 맞추고 `Alt+\`로 기본값을 복원할 수 있습니다. 다른 영상 파일을 열면 오디오 싱크는 초기화됩니다.
 
 ### 주요 기능
 

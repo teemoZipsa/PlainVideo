@@ -32,6 +32,11 @@ pub struct UiText {
     pub audio_off: &'static str,
     pub no_audio_tracks: &'static str,
     pub audio_track: &'static str,
+    pub audio_timing: &'static str,
+    pub audio_earlier: &'static str,
+    pub audio_timing_reset: &'static str,
+    pub audio_later: &'static str,
+    pub audio_timing_requires_active: &'static str,
     pub playback_speed: &'static str,
     pub rife_interpolation: &'static str,
     pub rife_enabled: &'static str,
@@ -81,6 +86,11 @@ const KOREAN: UiText = UiText {
     audio_off: "오디오 끄기",
     no_audio_tracks: "오디오 트랙 없음",
     audio_track: "오디오",
+    audio_timing: "오디오 싱크",
+    audio_earlier: "0.1초 앞당기기\tAlt+[",
+    audio_timing_reset: "싱크 초기화\tAlt+\\",
+    audio_later: "0.1초 늦추기\tAlt+]",
+    audio_timing_requires_active: "오디오를 먼저 켜세요",
     playback_speed: "재생 속도",
     rife_interpolation: "RIFE 프레임 보간 (실험)",
     rife_enabled: "RIFE 보간 켬 · 24/25fps 영상에만 적용",
@@ -130,6 +140,11 @@ const ENGLISH: UiText = UiText {
     audio_off: "Off",
     no_audio_tracks: "No audio tracks",
     audio_track: "Audio",
+    audio_timing: "Audio timing",
+    audio_earlier: "0.1 s earlier\tAlt+[",
+    audio_timing_reset: "Reset timing\tAlt+\\",
+    audio_later: "0.1 s later\tAlt+]",
+    audio_timing_requires_active: "Turn audio on first",
     playback_speed: "Playback speed",
     rife_interpolation: "RIFE frame interpolation (experimental)",
     rife_enabled: "RIFE interpolation on · applies only to 24/25 fps video",
@@ -240,6 +255,11 @@ mod tests {
             assert!(!text.audio_off.is_empty());
             assert!(!text.no_audio_tracks.is_empty());
             assert!(!text.audio_track.is_empty());
+            assert!(!text.audio_timing.is_empty());
+            assert!(!text.audio_earlier.is_empty());
+            assert!(!text.audio_timing_reset.is_empty());
+            assert!(!text.audio_later.is_empty());
+            assert!(!text.audio_timing_requires_active.is_empty());
             assert!(!text.playback_speed.is_empty());
             assert!(!text.rife_interpolation.is_empty());
             assert!(!text.rife_enabled.is_empty());

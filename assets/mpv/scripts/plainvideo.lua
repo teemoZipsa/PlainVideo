@@ -34,6 +34,7 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     play = "재생",
     pause = "일시정지",
     mute = "음소거",
+    muted_state = "음소거",
     unmute = "음소거 해제",
     subtitles = "자막",
     subtitles_on = "자막 켜기",
@@ -67,6 +68,7 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     play = "Play",
     pause = "Pause",
     mute = "Mute",
+    muted_state = "Muted",
     unmute = "Unmute",
     subtitles = "Subtitles",
     subtitles_on = "Turn subtitles on",
@@ -691,6 +693,7 @@ end
 local function draw_volume(width, height)
     local palette = theme_palette()
     local volume = math.floor(mp.get_property_number("volume", 0) + 0.5)
+    local muted = mp.get_property_bool("mute", false)
     local left, top, right, bottom = transient_panel_bounds(
         width, height, px(240), px(56))
     if not left then
@@ -705,12 +708,16 @@ local function draw_volume(width, height)
     local events = {
         box_event(left, top, right, bottom, px(16), palette.panel, palette.panel_alpha),
         text_event(4, track_left, top + px(20), type_size("secondary", width, height),
-            palette.text, "&H08&", true, copy.volume),
-        text_event(6, track_right, top + px(20), type_size("secondary", width, height),
-            palette.secondary, "&H10&", false, string.format("%d%%", volume)),
+            muted and palette.danger or palette.text, "&H08&", true,
+            muted and copy.muted_state or copy.volume),
         box_event(track_left, track_top, track_right, track_bottom, px(2), palette.track, "&H58&"),
     }
-    if filled > track_left then
+    if not muted then
+        table.insert(events, text_event(6, track_right, top + px(20),
+            type_size("secondary", width, height), palette.secondary, "&H10&", false,
+            string.format("%d%%", volume)))
+    end
+    if filled > track_left and not muted then
         table.insert(events, box_event(track_left, track_top, filled, track_bottom,
             px(2), palette.text, "&H08&"))
     end
@@ -1059,8 +1066,8 @@ local function draw_playback_controls(width, height)
     if show_volume_value then
         table.insert(events, text_event(6, volume_left + volume_width - px(7), center_y,
             math.max(px(10), type_size("secondary", width, height) - px(1)),
-            muted and palette.muted or palette.secondary, muted and "&H28&" or "&H08&",
-            false, string.format("%d%%", volume_percent)))
+            muted and palette.danger or palette.secondary, "&H08&",
+            false, muted and copy.muted_state or string.format("%d%%", volume_percent)))
     end
     local sid = mp.get_property("sid", "no")
     local subtitle_active = sid ~= "no" and sid ~= "false" and sid ~= "auto"
@@ -1085,8 +1092,8 @@ local function draw_playback_controls(width, height)
         tooltip_center = play_left + math.floor(button / 2)
     elseif tooltip_name == "volume" then
         tooltip_label = muted
-            and string.format("%s %d%% · %s", copy.volume, volume_percent, copy.mute)
-            or string.format("%s %d%%", copy.volume, volume_percent)
+            and string.format("%s · %s", copy.muted_state, copy.unmute)
+            or string.format("%s %d%% · %s", copy.volume, volume_percent, copy.mute)
         tooltip_center = volume_left + math.floor(volume_width / 2)
     elseif tooltip_name == "subtitles" then
         tooltip_label = subtitle_active and copy.subtitles_off or copy.subtitles_on
