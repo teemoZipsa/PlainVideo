@@ -1,7 +1,8 @@
-# PlainVideo 0.2.3 draft release notes
+# PlainVideo 0.2.3 release notes
 
-Status: next-update source and developer-package candidate; not submitted,
-certified, published, or Store-live
+Status: clean-candidate playback qualification passed; Store package assembly,
+Partner Center submission, certification, publication, and Store delivery are
+separate later states
 
 ## 한국어
 
@@ -26,6 +27,7 @@ certified, published, or Store-live
 - The panel is operable with `Tab`/`Shift+Tab`, arrow keys, and
   `Enter`/`Space`.
 
-The 24-to-48 runtime and package manifests remain release-ineligible until the
-clean-candidate playback, fallback, teardown, license-payload, portable, and
-MSIX gates pass.
+The clean candidate passed the 24-to-48 native timing gate and focused playback
+checks for generation, seek, scene-cut, overload, teardown, and unsupported
+30 fps source fallback. Portable/MSIX payload verification and Store submission
+remain separate release steps.

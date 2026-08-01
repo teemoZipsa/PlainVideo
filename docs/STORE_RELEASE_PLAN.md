@@ -154,19 +154,18 @@ Submission, certification, and publication are distinct states. Update `STORE_RE
 | S2 — Package proof | Partner identity, assets, manifest, x64 developer MSIX | Complete for `0.2.2.0`; clean-commit package, valid developer signature, Defender scans, WACK overall PASS, and zero interpolation runtime/model assets verified |
 | S3 — Installed-app proof | WACK, host/Sandbox, activation/update/uninstall | Complete for a first release; full host validation, WACK PASS, Sandbox proof, activation, uninstall, and reinstall passed; prior-version update is not applicable |
 | S4 — Listing readiness | Privacy/support/source pages and localized captures | Complete for Submission 3; bilingual 0.2.2 release notes were saved and existing rights-cleared media was retained |
-| S5 — Partner Center submission | Exact package uploaded and submitted | Submission 3 (`1152921505701493629`) accepted the validated `0.2.2.0` package and is in certification step 2 of 4, `Pre-processing` |
-| S6 — Public release | Certification passed and availability verified independently | Complete through 0.2.0.0 only; 0.2.2 is not certified or published and remains on manual publication hold |
-| N1 — 24→48 next-update candidate | Saved user opt-in, source fallback, pinned runtime/model/notices, portable/MSIX staging | In progress; product UI, exact staging, one 24→48 playback probe, and developer MSIX assembly pass locally, while clean-candidate soak and both release-eligible manifests remain pending |
+| S5 — Partner Center submission | Exact package uploaded and submitted | Submission 3 (`1152921505701493629`) completed and its `0.2.2.0` package is now shown by Partner Center as the current Store package |
+| S6 — Public release | Certification passed and availability verified independently | Complete through `0.2.2.0`; Partner Center shows the latest product available in Microsoft Store and the read-only package page lists `0.2.2.0` |
+| N1 — 24→48 next-update candidate | Saved user opt-in, source fallback, pinned runtime/model/notices, portable/MSIX staging | Clean-candidate native and focused playback qualification passed for `0.2.3`; corresponding source publication, exact portable/MSIX payload verification, WACK, and Partner Center submission remain |
 
 ## Immediate next work
 
-1. Wait for Submission 3 certification to complete without resubmitting it.
-2. Review the certification result, select `Publish now`, and independently
-   verify Microsoft Store propagation and device delivery before calling 0.2.2
-   published.
-3. Preserve the `v0.2.2` tag and portable asset hashes as the source/package correspondence record.
-4. Preserve the selected Windows 10 minimum-image limitation until a real Windows 10 test image is exercised.
-5. For the next update, rebuild the 24→48 candidate from a clean commit, run
-   the targeted native/foreground fallback and teardown gates, verify the
-   portable/MSIX license payloads, and only then mark both RIFE manifests
-   release-eligible.
+1. Publish the `0.2.3` corresponding-source bundle at its exact release URL.
+2. Promote both RIFE manifests only from the recorded clean-commit native and
+   playback qualification summaries.
+3. Build and hash-verify the matching portable ZIP and Store MSIX, including
+   their RIFE model, runtime, notice, and license payloads.
+4. Run Defender and WACK against the exact package, then submit it in Partner
+   Center without claiming certification, publication, or device delivery.
+5. Preserve the selected Windows 10 minimum-image limitation until a real
+   Windows 10 test image is exercised.
