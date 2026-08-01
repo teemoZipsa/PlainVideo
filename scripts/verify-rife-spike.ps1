@@ -4,7 +4,8 @@ param(
     [string]$Profile = 'Quick',
     [int]$GpuIndex = -1,
     [string]$EvidenceDirectory,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$Only24To48
 )
 
 $ErrorActionPreference = 'Stop'
@@ -117,6 +118,7 @@ $evidenceArtifactPaths = [System.Collections.Generic.List[string]]::new()
 $generatedOutputProofVerifiedRuns = 0
 $generatedOutputDigestReferenceKey = $null
 $generatedOutputDigestReference = @()
+$cadences = if ($Only24To48) { @(24) } else { @(24, 30) }
 
 function Get-RequiredPropertyValue {
     param(
@@ -256,7 +258,7 @@ $variantOrder = @(
     }
 )
 
-foreach ($fps in @(24, 30)) {
+foreach ($fps in $cadences) {
     $expectedLimitMs = Get-FixedGateMilliseconds $fps
     foreach ($variant in $variantOrder) {
         $fileStem = 'rife-{0}-to-{1}-{2:d2}-{3}-{4}' -f `
@@ -595,7 +597,7 @@ function Get-SpeedupRatio {
     return $From / $To
 }
 
-foreach ($fps in @(24, 30)) {
+foreach ($fps in $cadences) {
     $expectedLimitMs = Get-FixedGateMilliseconds $fps
     $cadenceRuns = @($runRecords | Where-Object { $_.sourceFps -eq $fps })
     $baselineRuns = @($cadenceRuns | Where-Object { $_.role -eq 'baseline' })
@@ -778,6 +780,7 @@ $summary = [ordered]@{
     schemaVersion = 2
     createdAt = [DateTimeOffset]::Now.ToString('o')
     profile = $Profile
+    only24To48 = [bool]$Only24To48
     implementation = 'RIFE 4.25-lite + ncnn/Vulkan same-DLL host-boundary ABCCBA comparison'
     comparisonClass = 'host-bgra8-to-host-bgra8'
     executionOrder = @('A', 'B', 'C', 'C', 'B', 'A')

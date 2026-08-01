@@ -46,7 +46,8 @@ if ($build.releaseAllowed -ne $true -or $build.configuration -ne 'Release' -or
     $build.repository.revision -ne $head -or $build.repository.dirty -ne $false) {
     throw 'The native RIFE DLL was not built as a clean-commit Release candidate for HEAD.'
 }
-if ($native.profile -ne 'Full' -or $native.performanceGatePassed -ne $true -or
+if ($native.profile -ne 'Full' -or $native.only24To48 -ne $true -or
+    $native.performanceGatePassed -ne $true -or
     $native.activationEligible -ne $true -or $native.repository.revision -ne $head -or
     $native.repository.dirty -ne $false) {
     throw 'Full native RIFE qualification did not pass on clean HEAD.'
