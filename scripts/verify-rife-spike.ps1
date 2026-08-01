@@ -584,9 +584,10 @@ foreach ($fps in $cadences) {
     }
 }
 
-if ($generatedOutputProofVerifiedRuns -ne 12 `
+$expectedOutputProofRuns = $cadences.Count * $variantOrder.Count
+if ($generatedOutputProofVerifiedRuns -ne $expectedOutputProofRuns `
     -or $generatedOutputDigestReference.Count -ne 4) {
-    throw "Generated-output correctness proof was not verified for all 12 ABCCBA runs."
+    throw "Generated-output correctness proof was not verified for all $expectedOutputProofRuns selected ABCCBA runs."
 }
 
 $comparisons = [System.Collections.Generic.List[object]]::new()
