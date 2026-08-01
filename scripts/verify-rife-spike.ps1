@@ -313,6 +313,9 @@ foreach ($fps in $cadences) {
         }
 
         $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
+        if ($ReuseEvidenceDirectory) {
+            $benchmarkExit = if ([bool]$result.performanceGate.passed) { 0 } else { 2 }
+        }
         $context = "RIFE $fps fps ABCCBA sequence $($variant.sequence) $($variant.expectedId)"
         $bufferPolicy = Get-RequiredPropertyValue $result 'bufferPolicy' $context
         if ($bufferPolicy -ne $variant.expectedBufferPolicy) {
