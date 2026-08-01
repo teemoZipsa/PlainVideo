@@ -52,6 +52,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WS_THICKFRAME,
 };
 
+use crate::control_panel::{
+    CONTROL_PANEL_FOCUS_ORDER, ControlPanelControl, ControlPanelLayout, EQUALIZER_MAX_GAIN,
+    EQUALIZER_MIN_GAIN, EQUALIZER_PRESETS, control_panel_control_at, control_panel_control_rect,
+    control_panel_layout_for_size, equalizer_gain_from_point,
+};
 use crate::locale::{Locale, UiText};
 use crate::media_queue::{
     MEDIA_DIALOG_PATTERN, MediaQueue, SUBTITLE_DIALOG_PATTERN, is_subtitle_path,
@@ -106,6 +111,7 @@ const MENU_RESTART: usize = 109;
 const MENU_ABOUT: usize = 110;
 const MENU_OPEN_SCREENSHOT_FOLDER: usize = 111;
 const MENU_RIFE_INTERPOLATION: usize = 112;
+const MENU_CONTROL_PANEL: usize = 113;
 const MENU_SUBTITLE_OFF: usize = 200;
 const MENU_SUBTITLE_OPEN: usize = 201;
 const MENU_SUBTITLE_EARLIER: usize = 202;
@@ -334,6 +340,11 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         pressed_control: None,
         volume_drag_active: false,
         keyboard_focus: None,
+        control_panel_visible: false,
+        hovered_panel: None,
+        pressed_panel: None,
+        panel_keyboard_focus: None,
+        equalizer_gains: EQUALIZER_PRESETS[0],
         dpi: current_dpi(window.hwnd),
         text_scale: text_scale_factor(),
         surface_theme,
@@ -350,6 +361,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         last_subtitle_id: None,
         playback_error_visible: false,
         rife_available,
+        smooth_24_to_48_requested: preferences.smooth_24_to_48,
         last_seek_drag: None,
         seek_preview,
         thumbnail_service,
@@ -361,6 +373,15 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         diagnostic_input_locked,
         last_error: None,
     });
+
+    if app.rife_available && app.smooth_24_to_48_requested {
+        if let Err(error) = app.player.set_rife_enabled(true) {
+            app.rife_available = false;
+            app.record_error(&format!(
+                "The saved 24-to-48 preference could not start: {error}"
+            ));
+        }
+    }
 
     unsafe {
         SetWindowLongPtrW(window.hwnd, GWLP_USERDATA, (&mut *app as *mut App) as isize);
@@ -426,6 +447,11 @@ struct App {
     pressed_control: Option<PressedControl>,
     volume_drag_active: bool,
     keyboard_focus: Option<PressedControl>,
+    control_panel_visible: bool,
+    hovered_panel: Option<ControlPanelControl>,
+    pressed_panel: Option<ControlPanelControl>,
+    panel_keyboard_focus: Option<ControlPanelControl>,
+    equalizer_gains: [i8; 5],
     dpi: u32,
     text_scale: f64,
     surface_theme: SurfaceTheme,
@@ -442,6 +468,7 @@ struct App {
     last_subtitle_id: Option<i64>,
     playback_error_visible: bool,
     rife_available: bool,
+    smooth_24_to_48_requested: bool,
     last_seek_drag: Option<Instant>,
     seek_preview: Option<SeekPreview>,
     thumbnail_service: Option<ThumbnailService>,
@@ -516,6 +543,7 @@ impl App {
         self.last_subtitle_id = None;
         self.pending_resume = self.resume_store.position(path);
         self.update_window_title();
+        let _ = self.player.clear_ab_loop();
         let _ = self.player.set_subtitle_delay(0.0);
         let _ = self.player.set_audio_delay(0.0);
         if let Err(error) = self.player.load_file(path) {
@@ -570,6 +598,7 @@ impl App {
     fn show_playback_error(&mut self, error: String) {
         self.hide_seek_preview(self.hwnd);
         self.has_media = false;
+        self.set_control_panel_visible(false);
         self.pending_media_resize = false;
         self.clear_keyboard_focus();
         self.pending_resume = None;
@@ -650,6 +679,9 @@ impl App {
     }
 
     fn set_window_controls_visible(&mut self, visible: bool) {
+        if !visible && self.control_panel_visible {
+            return;
+        }
         if !visible && self.keyboard_focus.is_some() {
             return;
         }
@@ -720,10 +752,118 @@ impl App {
             pressed,
             focused,
         ]);
+        self.sync_control_panel();
+    }
+
+    fn sync_control_panel(&mut self) {
+        let visible = if self.control_panel_visible {
+            "yes"
+        } else {
+            "no"
+        };
+        let hovered = self
+            .hovered_panel
+            .map(ControlPanelControl::message_name)
+            .unwrap_or("none");
+        let pressed = self
+            .pressed_panel
+            .map(ControlPanelControl::message_name)
+            .unwrap_or("none");
+        let focused = self
+            .panel_keyboard_focus
+            .map(ControlPanelControl::message_name)
+            .unwrap_or("none");
+        let rife_available = if self.rife_available { "yes" } else { "no" };
+        let rife_enabled = if self.player.rife_enabled() {
+            "yes"
+        } else {
+            "no"
+        };
+        let rife_eligible = match self.player.rife_source_eligible() {
+            Some(true) => "yes",
+            Some(false) => "no",
+            None => "unknown",
+        };
+        let gains = self.equalizer_gains.map(|gain| gain.to_string());
+        self.command(&[
+            "script-message",
+            "plainvideo-control-panel",
+            visible,
+            hovered,
+            pressed,
+            focused,
+            rife_available,
+            rife_enabled,
+            rife_eligible,
+            &gains[0],
+            &gains[1],
+            &gains[2],
+            &gains[3],
+            &gains[4],
+        ]);
+    }
+
+    fn set_control_panel_visible(&mut self, visible: bool) {
+        if visible && (!self.has_media || self.playback_error_visible) {
+            return;
+        }
+        if self.control_panel_visible == visible {
+            return;
+        }
+        self.control_panel_visible = visible;
+        self.hovered_panel = None;
+        self.pressed_panel = None;
+        self.panel_keyboard_focus = None;
+        if visible {
+            self.keyboard_focus = None;
+        }
+        self.last_seek_drag = None;
+        self.hide_seek_preview(self.hwnd);
+        if visible {
+            self.window_controls_visible = true;
+            self.show_cursor();
+            unsafe { KillTimer(self.hwnd, TIMER_HIDE_CURSOR) };
+        } else {
+            unsafe { ReleaseCapture() };
+            self.note_pointer_activity(self.hwnd);
+        }
+        self.sync_window_controls();
+    }
+
+    fn set_hovered_panel(&mut self, control: Option<ControlPanelControl>) {
+        if self.hovered_panel == control {
+            return;
+        }
+        self.hovered_panel = control;
+        self.sync_control_panel();
+    }
+
+    fn cycle_control_panel_focus(&mut self, reverse: bool) {
+        let current = self.panel_keyboard_focus.and_then(|focused| {
+            CONTROL_PANEL_FOCUS_ORDER
+                .iter()
+                .position(|candidate| *candidate == focused)
+        });
+        let next = match (current, reverse) {
+            (None, false) => 0,
+            (None, true) => CONTROL_PANEL_FOCUS_ORDER.len() - 1,
+            (Some(0), true) => CONTROL_PANEL_FOCUS_ORDER.len() - 1,
+            (Some(index), true) => index - 1,
+            (Some(index), false) => (index + 1) % CONTROL_PANEL_FOCUS_ORDER.len(),
+        };
+        self.panel_keyboard_focus = Some(CONTROL_PANEL_FOCUS_ORDER[next]);
+        self.sync_control_panel();
+    }
+
+    fn clear_control_panel_focus(&mut self) {
+        if self.panel_keyboard_focus.take().is_some() {
+            self.sync_control_panel();
+        }
     }
 
     fn hide_transient_chrome(&mut self, hwnd: HWND) {
-        if self.pressed_control.is_some()
+        if self.control_panel_visible
+            || self.pressed_control.is_some()
             || self.keyboard_focus.is_some()
             || pointer_over_interactive_chrome(hwnd, self.window_controls_visible, self.dpi)
         {
@@ -749,7 +889,13 @@ impl App {
             }
         }
 
-        if self.pressed_control == Some(PressedControl::Playback(PlaybackControl::Seek)) {
+        if self.pressed_panel == Some(ControlPanelControl::SeekTrack) {
+            self.seek_from_control_panel(hwnd, client_point(lparam), false);
+        } else if self.pressed_panel == Some(ControlPanelControl::VolumeTrack) {
+            self.set_volume_from_control_panel(hwnd, client_point(lparam));
+        } else if let Some(ControlPanelControl::EqualizerBand(index)) = self.pressed_panel {
+            self.set_equalizer_gain_from_pointer(hwnd, index, client_point(lparam));
+        } else if self.pressed_control == Some(PressedControl::Playback(PlaybackControl::Seek)) {
             self.seek_from_pointer(hwnd, client_point(lparam), false);
         } else if self.pressed_control == Some(PressedControl::Playback(PlaybackControl::Volume))
             && self.volume_drag_active
@@ -758,18 +904,34 @@ impl App {
         }
         let hovered_control = window_control_at(hwnd, lparam, self.dpi);
         self.set_hovered_control(hovered_control);
-        let hovered_playback = if self.window_controls_visible {
+        let hovered_panel = if self.control_panel_visible {
+            control_panel_layout(hwnd, self.dpi)
+                .and_then(|layout| control_panel_control_at(&layout, client_point(lparam)))
+        } else {
+            None
+        };
+        self.set_hovered_panel(hovered_panel);
+        let hovered_playback = if self.window_controls_visible && !self.control_panel_visible {
             playback_control_at(hwnd, client_point(lparam), self.dpi)
         } else {
             None
         };
         self.set_hovered_playback(hovered_playback);
-        self.update_seek_preview(hwnd, client_point(lparam));
+        if self.control_panel_visible {
+            self.hide_seek_preview(hwnd);
+        } else {
+            self.update_seek_preview(hwnd, client_point(lparam));
+        }
     }
 
     fn pointer_left(&mut self, hwnd: HWND) {
         self.tracking_mouse_leave = false;
-        if self.pressed_control.is_some() {
+        if self.pressed_control.is_some() || self.pressed_panel.is_some() {
+            return;
+        }
+        if self.control_panel_visible {
+            self.set_hovered_panel(None);
+            self.show_cursor();
             return;
         }
         self.hide_seek_preview(hwnd);
@@ -997,13 +1159,27 @@ impl App {
     }
 
     fn toggle_rife_interpolation(&mut self) {
+        if !self.rife_available {
+            self.show_status(self.locale.text().rife_unavailable);
+            self.sync_control_panel();
+            return;
+        }
         let enabled = !self.player.rife_enabled();
         match self.player.set_rife_enabled(enabled) {
-            Ok(()) => self.show_status(if enabled {
-                self.locale.text().rife_enabled
-            } else {
-                self.locale.text().rife_disabled
-            }),
+            Ok(()) => {
+                self.smooth_24_to_48_requested = enabled;
+                self.queue_preferences_save();
+                self.sync_control_panel();
+                self.show_status(
+                    if enabled && self.player.rife_source_eligible() == Some(false) {
+                        self.locale.text().rife_source_fallback
+                    } else if enabled {
+                        self.locale.text().rife_enabled
+                    } else {
+                        self.locale.text().rife_disabled
+                    },
+                );
+            }
             Err(error) => self.operation_error(error),
         }
     }
@@ -1114,6 +1290,7 @@ impl App {
             always_on_top: self.always_on_top,
             volume: self.player.volume(),
             muted: self.player.is_muted(),
+            smooth_24_to_48: self.smooth_24_to_48_requested,
             last_window_bounds: self.last_window_bounds,
         });
     }
@@ -1327,6 +1504,246 @@ impl App {
     fn adjust_playback_speed(&mut self, direction: i32) {
         let speed = adjacent_playback_speed(self.player.playback_speed(), direction);
         self.set_playback_speed(speed);
+    }
+
+    fn seek_from_control_panel(&mut self, hwnd: HWND, point: POINT, exact: bool) {
+        if !self.player.is_seekable() {
+            return;
+        }
+        let Some(layout) = control_panel_layout(hwnd, self.dpi) else {
+            return;
+        };
+        let percent = track_percent(point.x, layout.seek_track.left, layout.seek_track.right);
+        if let Err(error) = self.player.seek_absolute_percent(percent, exact) {
+            self.operation_error(error);
+        }
+    }
+
+    fn set_volume_from_control_panel(&mut self, hwnd: HWND, point: POINT) {
+        let Some(layout) = control_panel_layout(hwnd, self.dpi) else {
+            return;
+        };
+        let volume = track_percent(point.x, layout.volume_track.left, layout.volume_track.right);
+        if let Err(error) = self.player.set_volume(volume) {
+            self.operation_error(error);
+            return;
+        }
+        let _ = self.player.command(&["set", "mute", "no"]);
+        let _ = self
+            .player
+            .command(&["script-message", "plainvideo-volume-feedback"]);
+        self.queue_preferences_save();
+        self.sync_control_panel();
+    }
+
+    fn set_equalizer_gain_from_pointer(&mut self, hwnd: HWND, band: usize, point: POINT) {
+        if band >= self.equalizer_gains.len() {
+            return;
+        }
+        let Some(layout) = control_panel_layout(hwnd, self.dpi) else {
+            return;
+        };
+        let gain = equalizer_gain_from_point(&layout, point);
+        if self.equalizer_gains[band] == gain {
+            return;
+        }
+        let mut gains = self.equalizer_gains;
+        gains[band] = gain;
+        self.apply_equalizer(gains);
+    }
+
+    fn apply_equalizer(&mut self, gains: [i8; 5]) {
+        let previous = self.equalizer_gains;
+        match self.player.set_equalizer(gains) {
+            Ok(()) => {
+                self.equalizer_gains = gains;
+                self.sync_control_panel();
+            }
+            Err(error) => {
+                let _ = self.player.set_equalizer(previous);
+                self.operation_error(error);
+            }
+        }
+    }
+
+    fn set_loop_start(&mut self) {
+        let Some(position) = self.player.playback_position() else {
+            return;
+        };
+        let result = if self
+            .player
+            .ab_loop_b()
+            .is_some_and(|loop_end| loop_end <= position + 0.05)
+        {
+            self.player
+                .clear_ab_loop()
+                .and_then(|_| self.player.set_ab_loop_a(position))
+        } else {
+            self.player.set_ab_loop_a(position)
+        };
+        if let Err(error) = result {
+            self.operation_error(error);
+        } else {
+            self.sync_control_panel();
+        }
+    }
+
+    fn set_loop_end(&mut self) {
+        let Some(loop_start) = self.player.ab_loop_a() else {
+            self.show_status(self.locale.text().loop_start_required);
+            return;
+        };
+        let Some(position) = self.player.playback_position() else {
+            return;
+        };
+        if position <= loop_start + 0.05 {
+            self.show_status(self.locale.text().loop_end_after_start);
+            return;
+        }
+        if let Err(error) = self.player.set_ab_loop_b(position) {
+            self.operation_error(error);
+        } else {
+            self.sync_control_panel();
+        }
+    }
+
+    fn clear_loop(&mut self) {
+        if let Err(error) = self.player.clear_ab_loop() {
+            self.operation_error(error);
+        } else {
+            self.show_status(self.locale.text().loop_cleared);
+            self.sync_control_panel();
+        }
+    }
+
+    fn activate_control_panel_control(
+        &mut self,
+        hwnd: HWND,
+        control: ControlPanelControl,
+        point: POINT,
+    ) {
+        match control {
+            ControlPanelControl::Close => self.set_control_panel_visible(false),
+            ControlPanelControl::SeekBack => {
+                self.binding("plainvideo/seek-back-double");
+            }
+            ControlPanelControl::PlayPause => {
+                self.binding("plainvideo/toggle-pause");
+            }
+            ControlPanelControl::SeekForward => {
+                self.binding("plainvideo/seek-forward-double");
+            }
+            ControlPanelControl::SeekTrack => self.seek_from_control_panel(hwnd, point, true),
+            ControlPanelControl::Speed(index) => {
+                if let Some((_, _, speed)) = PLAYBACK_SPEEDS.get(index) {
+                    self.set_playback_speed(*speed);
+                }
+            }
+            ControlPanelControl::LoopA => self.set_loop_start(),
+            ControlPanelControl::LoopB => self.set_loop_end(),
+            ControlPanelControl::LoopClear => self.clear_loop(),
+            ControlPanelControl::Smooth24To48 => self.toggle_rife_interpolation(),
+            ControlPanelControl::Mute => {
+                self.toggle_mute();
+                self.sync_control_panel();
+            }
+            ControlPanelControl::VolumeTrack => self.set_volume_from_control_panel(hwnd, point),
+            ControlPanelControl::EqualizerPreset(index) => {
+                if let Some(preset) = EQUALIZER_PRESETS.get(index) {
+                    self.apply_equalizer(*preset);
+                }
+            }
+            ControlPanelControl::EqualizerBand(index) => {
+                self.set_equalizer_gain_from_pointer(hwnd, index, point);
+            }
+        }
+    }
+
+    fn activate_control_panel_focus(&mut self, hwnd: HWND) -> bool {
+        let Some(focused) = self.panel_keyboard_focus else {
+            return false;
+        };
+        match focused {
+            ControlPanelControl::SeekTrack => {
+                self.binding("plainvideo/toggle-pause");
+            }
+            ControlPanelControl::VolumeTrack => {
+                self.toggle_mute();
+            }
+            ControlPanelControl::EqualizerBand(index) => {
+                let mut gains = self.equalizer_gains;
+                gains[index.min(gains.len() - 1)] = 0;
+                self.apply_equalizer(gains);
+            }
+            _ => {
+                let Some(layout) = control_panel_layout(hwnd, self.dpi) else {
+                    return true;
+                };
+                let point = rect_center(control_panel_control_rect(&layout, focused));
+                self.activate_control_panel_control(hwnd, focused, point);
+            }
+        }
+        true
+    }
+
+    fn handle_control_panel_direction(&mut self, direction: u16, shift: bool) -> bool {
+        let Some(focused) = self.panel_keyboard_focus else {
+            return false;
+        };
+        match focused {
+            ControlPanelControl::Speed(index) => {
+                let next = if matches!(direction, VK_LEFT | VK_DOWN) {
+                    index.saturating_sub(1)
+                } else {
+                    (index + 1).min(PLAYBACK_SPEEDS.len() - 1)
+                };
+                self.panel_keyboard_focus = Some(ControlPanelControl::Speed(next));
+                self.set_playback_speed(PLAYBACK_SPEEDS[next].2);
+                self.sync_control_panel();
+                true
+            }
+            ControlPanelControl::EqualizerBand(index) => {
+                if matches!(direction, VK_LEFT | VK_RIGHT) {
+                    let next = if direction == VK_LEFT {
+                        index.saturating_sub(1)
+                    } else {
+                        (index + 1).min(self.equalizer_gains.len() - 1)
+                    };
+                    self.panel_keyboard_focus = Some(ControlPanelControl::EqualizerBand(next));
+                    self.sync_control_panel();
+                } else {
+                    let mut gains = self.equalizer_gains;
+                    let amount = if direction == VK_UP { 1 } else { -1 };
+                    gains[index] = gains[index]
+                        .saturating_add(amount)
+                        .clamp(EQUALIZER_MIN_GAIN, EQUALIZER_MAX_GAIN);
+                    self.apply_equalizer(gains);
+                }
+                true
+            }
+            ControlPanelControl::VolumeTrack | ControlPanelControl::Mute => {
+                let amount = if matches!(direction, VK_RIGHT | VK_UP) {
+                    2.0
+                } else {
+                    -2.0
+                };
+                self.adjust_volume(amount);
+                self.sync_control_panel();
+                true
+            }
+            ControlPanelControl::SeekTrack => {
+                let binding = match (direction, shift) {
+                    (VK_LEFT, true) => "plainvideo/seek-back-large",
+                    (VK_RIGHT, true) => "plainvideo/seek-forward-large",
+                    (VK_LEFT, false) => "plainvideo/seek-back-small",
+                    (VK_RIGHT, false) => "plainvideo/seek-forward-small",
+                    _ => return false,
+                };
+                self.binding(binding);
+                true
+            }
+            _ => false,
+        }
     }
 
     fn disable_subtitles_ui(&mut self) {
@@ -1558,6 +1975,7 @@ impl App {
         let audio_timing_reset = wide(text.audio_timing_reset);
         let audio_later = wide(text.audio_later);
         let playback_speed = wide(text.playback_speed);
+        let playback_controls = wide(text.playback_controls);
         let rife_interpolation = wide(text.rife_interpolation);
         let save_screenshot = wide(text.save_screenshot);
         let open_screenshot_folder = wide(text.open_screenshot_folder);
@@ -1596,6 +2014,18 @@ impl App {
                         },
                     MENU_NEXT,
                     next.as_ptr(),
+                );
+                AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
+                AppendMenuW(
+                    menu,
+                    MF_STRING
+                        | if self.control_panel_visible {
+                            MF_CHECKED
+                        } else {
+                            0
+                        },
+                    MENU_CONTROL_PANEL,
+                    playback_controls.as_ptr(),
                 );
                 AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
             }
@@ -1744,19 +2174,18 @@ impl App {
                     );
                 }
                 AppendMenuW(menu, MF_POPUP, speed_menu as usize, playback_speed.as_ptr());
-                if self.rife_available {
-                    AppendMenuW(
-                        menu,
-                        MF_STRING
-                            | if self.player.rife_enabled() {
-                                MF_CHECKED
-                            } else {
-                                0
-                            },
-                        MENU_RIFE_INTERPOLATION,
-                        rife_interpolation.as_ptr(),
-                    );
-                }
+                AppendMenuW(
+                    menu,
+                    MF_STRING
+                        | if !self.rife_available { MF_GRAYED } else { 0 }
+                        | if self.player.rife_enabled() {
+                            MF_CHECKED
+                        } else {
+                            0
+                        },
+                    MENU_RIFE_INTERPOLATION,
+                    rife_interpolation.as_ptr(),
+                );
                 AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
                 AppendMenuW(menu, MF_STRING, MENU_SCREENSHOT, save_screenshot.as_ptr());
                 AppendMenuW(
@@ -1832,6 +2261,7 @@ impl App {
                 }
                 MENU_FULLSCREEN => self.toggle_fullscreen(hwnd),
                 MENU_RIFE_INTERPOLATION => self.toggle_rife_interpolation(),
+                MENU_CONTROL_PANEL => self.set_control_panel_visible(!self.control_panel_visible),
                 MENU_ABOUT => show_about(hwnd, text),
                 MENU_SUBTITLE_OFF => {
                     self.disable_subtitles_ui();
@@ -2050,6 +2480,7 @@ unsafe extern "system" fn window_proc(
                 app.ignore_unpaired_button_up = true;
                 app.pending_surface_click = None;
                 app.pressed_control = None;
+                app.pressed_panel = None;
                 app.volume_drag_active = false;
                 app.last_seek_drag = None;
                 app.hide_seek_preview(hwnd);
@@ -2100,11 +2531,15 @@ unsafe extern "system" fn window_proc(
                     if events.media_ready && app.has_media {
                         app.clear_playback_error();
                         app.resize_to_pending_media(hwnd);
+                        if app.control_panel_visible {
+                            app.sync_control_panel();
+                        }
                     }
                     if events.reached_end {
                         app.save_resume_progress();
                         if !app.next_video() {
                             app.has_media = false;
+                            app.set_control_panel_visible(false);
                             app.pending_media_resize = false;
                             app.clear_keyboard_focus();
                         }
@@ -2183,7 +2618,12 @@ unsafe extern "system" fn window_proc(
                         app.dpi,
                     )
                     .is_some()
-                        || playback_control_at(hwnd, point, app.dpi).is_some())
+                        || (!app.control_panel_visible
+                            && playback_control_at(hwnd, point, app.dpi).is_some())
+                        || (app.control_panel_visible
+                            && control_panel_layout(hwnd, app.dpi).is_some_and(|layout| {
+                                control_panel_control_at(&layout, point).is_some()
+                            })))
                 {
                     let cursor = unsafe { LoadCursorW(ptr::null_mut(), IDC_HAND) };
                     if !cursor.is_null() {
@@ -2212,7 +2652,48 @@ unsafe extern "system" fn window_proc(
                 app.pending_surface_click = None;
                 app.ignore_unpaired_button_up = false;
                 app.clear_keyboard_focus();
+                app.clear_control_panel_focus();
                 let point = client_point(lparam);
+                if app.control_panel_visible {
+                    if let Some(layout) = control_panel_layout(hwnd, app.dpi) {
+                        if let Some(control) = control_panel_control_at(&layout, point) {
+                            app.note_pointer_activity(hwnd);
+                            app.pressed_panel = Some(control);
+                            app.suppress_click = true;
+                            app.sync_control_panel();
+                            unsafe { SetCapture(hwnd) };
+                            match control {
+                                ControlPanelControl::SeekTrack => {
+                                    app.seek_from_control_panel(hwnd, point, false)
+                                }
+                                ControlPanelControl::VolumeTrack => {
+                                    app.set_volume_from_control_panel(hwnd, point)
+                                }
+                                ControlPanelControl::EqualizerBand(index) => {
+                                    app.set_equalizer_gain_from_pointer(hwnd, index, point)
+                                }
+                                _ => {}
+                            }
+                            return 0;
+                        }
+                        if rect_contains(layout.panel, point) {
+                            app.note_pointer_activity(hwnd);
+                            app.suppress_click = true;
+                            return 0;
+                        }
+                    }
+                    let over_window_control = window_control_at_point(
+                        client_size(hwnd).map(|size| size.0).unwrap_or(0),
+                        point,
+                        app.dpi,
+                    )
+                    .is_some();
+                    if !over_window_control {
+                        app.set_control_panel_visible(false);
+                        app.suppress_click = true;
+                        return 0;
+                    }
+                }
                 let pressed = if app.window_controls_visible {
                     window_control_at_point(
                         client_size(hwnd).map(|size| size.0).unwrap_or(0),
@@ -2221,7 +2702,10 @@ unsafe extern "system" fn window_proc(
                     )
                     .map(PressedControl::Window)
                     .or_else(|| {
-                        playback_control_at(hwnd, point, app.dpi).map(PressedControl::Playback)
+                        (!app.control_panel_visible)
+                            .then(|| playback_control_at(hwnd, point, app.dpi))
+                            .flatten()
+                            .map(PressedControl::Playback)
                     })
                 } else {
                     None
@@ -2257,6 +2741,31 @@ unsafe extern "system" fn window_proc(
                     return 0;
                 }
                 let point = client_point(lparam);
+                if let Some(pressed) = app.pressed_panel.take() {
+                    unsafe { ReleaseCapture() };
+                    app.suppress_click = false;
+                    app.last_seek_drag = None;
+                    unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
+                    let released = control_panel_layout(hwnd, app.dpi)
+                        .and_then(|layout| control_panel_control_at(&layout, point));
+                    match pressed {
+                        ControlPanelControl::SeekTrack => {
+                            app.seek_from_control_panel(hwnd, point, true)
+                        }
+                        ControlPanelControl::VolumeTrack => {
+                            app.set_volume_from_control_panel(hwnd, point)
+                        }
+                        ControlPanelControl::EqualizerBand(index) => {
+                            app.set_equalizer_gain_from_pointer(hwnd, index, point)
+                        }
+                        _ if released == Some(pressed) => {
+                            app.activate_control_panel_control(hwnd, pressed, point)
+                        }
+                        _ => {}
+                    }
+                    app.sync_control_panel();
+                    return 0;
+                }
                 if let Some(pressed) = app.pressed_control.take() {
                     let volume_drag_active = app.volume_drag_active;
                     app.volume_drag_active = false;
@@ -2320,6 +2829,7 @@ unsafe extern "system" fn window_proc(
         WM_CAPTURECHANGED | WM_CANCELMODE => {
             if let Some(app) = app {
                 app.pressed_control = None;
+                app.pressed_panel = None;
                 app.volume_drag_active = false;
                 app.last_seek_drag = None;
                 app.suppress_click = false;
@@ -2331,6 +2841,10 @@ unsafe extern "system" fn window_proc(
         WM_LBUTTONDBLCLK => {
             unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
             if let Some(app) = app {
+                if app.control_panel_visible {
+                    app.suppress_click = true;
+                    return 0;
+                }
                 if let Some(click) = app.pending_surface_click.take() {
                     if let Some(paused) = click.restore_after_double_click() {
                         let paused = if paused { "yes" } else { "no" };
@@ -2373,6 +2887,7 @@ unsafe extern "system" fn window_proc(
                 app.suppress_click = false;
                 app.pending_surface_click = None;
                 app.pressed_control = None;
+                app.pressed_panel = None;
                 app.volume_drag_active = false;
                 app.last_seek_drag = None;
                 app.update_scale(hwnd);
@@ -2506,6 +3021,28 @@ unsafe extern "system" fn window_proc(
 fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
     let control = unsafe { GetKeyState(VK_CONTROL as i32) } < 0;
     let alt = unsafe { GetKeyState(VK_MENU as i32) } < 0;
+    let shift = unsafe { GetKeyState(VK_SHIFT as i32) } < 0;
+    if key == VK_ESCAPE && app.control_panel_visible {
+        app.set_control_panel_visible(false);
+        return;
+    }
+    if app.control_panel_visible && matches!(key, VK_TAB | VK_F6) {
+        app.cycle_control_panel_focus(shift);
+        app.show_cursor();
+        return;
+    }
+    if app.control_panel_visible && matches!(key, VK_SPACE | VK_RETURN) {
+        if !app.activate_control_panel_focus(hwnd) && key == VK_SPACE {
+            app.binding("plainvideo/toggle-pause");
+        }
+        return;
+    }
+    if app.control_panel_visible
+        && matches!(key, VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN)
+        && app.handle_control_panel_direction(key, shift)
+    {
+        return;
+    }
     if key == VK_O && control {
         app.show_cursor();
         unsafe { KillTimer(hwnd, TIMER_HIDE_CURSOR) };
@@ -2516,8 +3053,7 @@ fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
         return;
     }
     if key == VK_F6 {
-        let reverse = unsafe { GetKeyState(VK_SHIFT as i32) } < 0;
-        app.cycle_keyboard_focus(reverse);
+        app.cycle_keyboard_focus(shift);
         app.note_pointer_activity(hwnd);
         return;
     }
@@ -2527,7 +3063,6 @@ fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
         app.note_pointer_activity(hwnd);
         return;
     }
-    let shift = unsafe { GetKeyState(VK_SHIFT as i32) } < 0;
     match key {
         VK_SPACE => {
             if !app.activate_keyboard_focus(hwnd) {
@@ -2577,9 +3112,10 @@ fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
         0x4D => {
             app.toggle_mute(); // M
         }
-        0x52 if app.playback_error_visible => app.retry_video(), // R
-        0x54 => app.toggle_always_on_top(hwnd),                  // T
-        0x56 => app.cycle_subtitle(),                            // V
+        0x50 => app.set_control_panel_visible(!app.control_panel_visible), // P
+        0x52 if app.playback_error_visible => app.retry_video(),           // R
+        0x54 => app.toggle_always_on_top(hwnd),                            // T
+        0x56 => app.cycle_subtitle(),                                      // V
         VK_S => {
             app.save_screenshot();
         }
@@ -2676,6 +3212,11 @@ fn window_control_at_point(client_width: i32, point: POINT, dpi: u32) -> Option<
 fn playback_layout(hwnd: HWND, dpi: u32) -> Option<PlaybackLayout> {
     let (width, height) = client_size(hwnd)?;
     playback_layout_for_size(width, height, dpi)
+}
+
+fn control_panel_layout(hwnd: HWND, dpi: u32) -> Option<ControlPanelLayout> {
+    let (width, height) = client_size(hwnd)?;
+    control_panel_layout_for_size(width, height, dpi)
 }
 
 fn seek_track_bounds(layout: &PlaybackLayout, dpi: u32) -> (i32, i32) {
@@ -2793,6 +3334,12 @@ fn hit_test_client(hwnd: HWND, point: POINT, app: &App) -> LRESULT {
     if app.window_controls_visible
         && (window_control_at_point(width, point, app.dpi).is_some()
             || playback_control_at(hwnd, point, app.dpi).is_some())
+    {
+        return HTCLIENT as LRESULT;
+    }
+    if app.control_panel_visible
+        && control_panel_layout_for_size(width, height, app.dpi)
+            .is_some_and(|layout| rect_contains(layout.panel, point))
     {
         return HTCLIENT as LRESULT;
     }

@@ -156,6 +156,7 @@ Submission, certification, and publication are distinct states. Update `STORE_RE
 | S4 — Listing readiness | Privacy/support/source pages and localized captures | Complete for Submission 3; bilingual 0.2.2 release notes were saved and existing rights-cleared media was retained |
 | S5 — Partner Center submission | Exact package uploaded and submitted | Submission 3 (`1152921505701493629`) accepted the validated `0.2.2.0` package and is in certification step 2 of 4, `Pre-processing` |
 | S6 — Public release | Certification passed and availability verified independently | Complete through 0.2.0.0 only; 0.2.2 is not certified or published and remains on manual publication hold |
+| N1 — 24→48 next-update candidate | Saved user opt-in, source fallback, pinned runtime/model/notices, portable/MSIX staging | In progress; product UI, exact staging, one 24→48 playback probe, and developer MSIX assembly pass locally, while clean-candidate soak and both release-eligible manifests remain pending |
 
 ## Immediate next work
 
@@ -165,3 +166,7 @@ Submission, certification, and publication are distinct states. Update `STORE_RE
    published.
 3. Preserve the `v0.2.2` tag and portable asset hashes as the source/package correspondence record.
 4. Preserve the selected Windows 10 minimum-image limitation until a real Windows 10 test image is exercised.
+5. For the next update, rebuild the 24→48 candidate from a clean commit, run
+   the targeted native/foreground fallback and teardown gates, verify the
+   portable/MSIX license payloads, and only then mark both RIFE manifests
+   release-eligible.

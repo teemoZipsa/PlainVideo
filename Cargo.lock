@@ -20,7 +20,7 @@ dependencies = [
 
 [[package]]
 name = "plainvideo"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "libloading",
  "windows-sys",

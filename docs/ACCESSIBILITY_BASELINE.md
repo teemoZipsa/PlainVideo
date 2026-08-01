@@ -1,6 +1,6 @@
 # Accessibility Baseline
 
-Last updated: 2026-07-26
+Last updated: 2026-08-01
 
 This document records PlainVideo's keyboard, scaling, and accessibility baseline. It is not a screen-reader conformance claim. The current developer build has source checks, automated layout tests, and a focused-control capture at 200% text scale, but still needs manual assistive-technology verification before any item can be promoted to release accessibility evidence.
 
@@ -38,6 +38,9 @@ PlainVideo's custom-drawn ASS overlay does not yet expose a custom UI Automation
 | Information | Show or hide media details | `Tab` | Toggles a left-aligned playback information overlay without dimming video or changing play/pause state. |
 | Controls | Move focus forward/back | `F6` / `Shift+F6` | Reveals the overlay and cycles through playback and window controls. |
 | Controls | Activate focused control | `Enter` or `Space` | Invokes the focused button or control. |
+| Control panel | Open/close | `P` / `Esc` | Opens the on-demand playback panel; closes it without leaving permanent controls on the video. |
+| Control panel | Move focus | `Tab` / `Shift+Tab` | Cycles through seek, speed, A–B repeat, mute/volume, sound presets, equalizer bands, and close while the panel is open. |
+| Control panel | Adjust/activate | Arrow keys / `Enter` / `Space` | Adjusts the focused seek, speed, volume, or equalizer control, or activates the focused button. |
 | Seek | Small seek | `Left` / `Right` | Seeks backward/forward five seconds. |
 | Seek | Large seek | `Shift+Left` / `Shift+Right` | Seeks backward/forward thirty seconds. |
 | Volume | Adjust volume | `Up` / `Down` | Changes volume in two-point steps; increasing volume clears mute. |
@@ -57,7 +60,7 @@ PlainVideo's custom-drawn ASS overlay does not yet expose a custom UI Automation
 | Capture | Save screenshot | `S` | Requests a video screenshot from libmpv. |
 | App | Close | `Q` or `Alt+F4` | Closes PlainVideo. |
 
-Pointer equivalents remain available: click the video to play or pause; double-click the left or right third to seek backward or forward ten seconds; double-click the center third or use the top-right button for fullscreen; use the mouse wheel for volume; drag the seek bar; click the speaker icon to mute; click or drag the adjacent volume track; click `CC` to toggle the current subtitle; drop one subtitle file onto active playback to attach it without replacing the video; and right-click for subtitle selection, external subtitle loading and timing, open, retry, previous/next, audio, and close actions.
+Pointer equivalents remain available: click the video to play or pause; double-click the left or right third to seek backward or forward ten seconds; double-click the center third or use the top-right button for fullscreen; use the mouse wheel for volume; drag the seek bar; click the speaker icon to mute; click or drag the adjacent volume track; click `CC` to toggle the current subtitle; drop one subtitle file onto active playback to attach it without replacing the video; and right-click for the on-demand playback panel, subtitle selection, external subtitle loading and timing, open, retry, previous/next, audio, and close actions. The playback panel also exposes pointer-operable mute, volume, speed, A–B repeat, sound-preset, and equalizer controls.
 
 ## 100-200% scaling expectations
 

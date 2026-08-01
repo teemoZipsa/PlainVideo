@@ -5,6 +5,8 @@ param(
     [switch]$Probe30To60,
     [switch]$SeekDuringProbe,
     [switch]$SceneCutProbe,
+    [switch]$Only24To48,
+    [switch]$ReleaseQualification,
     [ValidateSet('baseline', 'fp16-arithmetic')]
     [string]$PrecisionMode = 'baseline'
 )
@@ -16,8 +18,14 @@ if ($SeekDuringProbe -and -not $Probe30To60) {
 if ($SceneCutProbe -and -not $Probe30To60) {
     throw '-SceneCutProbe requires -Probe30To60.'
 }
+if ($Only24To48 -and ($Probe30To60 -or $SeekDuringProbe -or $SceneCutProbe)) {
+    throw '-Only24To48 cannot be combined with a 30-to-60 development probe.'
+}
+if ($ReleaseQualification -and ($Only24To48 -or $Probe30To60 -or $SeekDuringProbe -or $SceneCutProbe)) {
+    throw '-ReleaseQualification cannot be combined with development probe switches.'
+}
 
-if ($SeekDuringProbe) {
+if ($SeekDuringProbe -or $ReleaseQualification) {
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -72,15 +80,18 @@ function New-RifeFixture {
 }
 
 function New-RifeSceneCutFixture {
-    param([Parameter(Mandatory)] [string]$Path)
+    param(
+        [Parameter(Mandatory)] [int]$Fps,
+        [Parameter(Mandatory)] [string]$Path
+    )
 
     & $FfmpegPath -hide_banner -loglevel error -y `
-        -f lavfi -i "testsrc2=duration=8:size=1920x1080:rate=30,drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='gte(t,4)'" `
+        -f lavfi -i "testsrc2=duration=8:size=1920x1080:rate=$Fps,drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='gte(t,4)'" `
         -f lavfi -i 'sine=frequency=440:duration=8:sample_rate=48000' `
         -map 0:v -map 1:a -c:v libx264 -preset ultrafast -pix_fmt yuv420p `
         -c:a aac -shortest $Path
     if ($LASTEXITCODE -ne 0) {
-        throw 'Could not generate the 30 fps hard-cut RIFE fixture.'
+        throw "Could not generate the $Fps fps hard-cut RIFE fixture."
     }
 }
 
@@ -90,7 +101,8 @@ function Invoke-RifePlaybackCase {
         [Parameter(Mandatory)] [string]$Fixture,
         [Parameter(Mandatory)] [bool]$ExpectGenerated,
         [Parameter(Mandatory)] [int]$SourceFps,
-        [bool]$ExpectSceneFallback = $false
+        [bool]$ExpectSceneFallback = $false,
+        [bool]$Seek = $false
     )
 
     $logPath = Join-Path $evidenceRoot "$Name.log"
@@ -118,13 +130,13 @@ function Invoke-RifePlaybackCase {
     # The 30->60 probe must measure a full eight seconds of playback even when
     # first-run Vulkan pipeline compilation adds several seconds before the
     # first frame. Normal fallback verification keeps its shorter smoke window.
-    $start.Environment['PLAINVIDEO_DIAGNOSTIC_EXIT_MS'] = if ($Probe30To60) {
-        if ($SeekDuringProbe) { '15000' } else { '12000' }
+    $start.Environment['PLAINVIDEO_DIAGNOSTIC_EXIT_MS'] = if ($Probe30To60 -or $Seek) {
+        if ($Seek) { '15000' } else { '12000' }
     }
     else {
         '6000'
     }
-    if ($SeekDuringProbe) {
+    if ($Seek) {
         $start.Environment.Remove('PLAINVIDEO_DIAGNOSTIC_IGNORE_INPUT') | Out-Null
     }
     else {
@@ -134,7 +146,7 @@ function Invoke-RifePlaybackCase {
 
     $process = [System.Diagnostics.Process]::Start($start)
     $seekPosted = $false
-    if ($SeekDuringProbe) {
+    if ($Seek) {
         $readyDeadline = [DateTime]::UtcNow.AddSeconds(10)
         do {
             if ($process.HasExited) {
@@ -227,7 +239,7 @@ function Invoke-RifePlaybackCase {
         $log,
         'playback restart complete'
     ).Count
-    $seekPassed = -not $SeekDuringProbe -or
+    $seekPassed = -not $Seek -or
         ($seekPosted -and $seekBindings -ge 1 -and $playbackRestarts -ge 2)
     $generationThresholdPassed = if ($ExpectSceneFallback) {
         $scene -ge 1
@@ -283,6 +295,7 @@ function Invoke-RifePlaybackCase {
                 hostOutputMax = [int]$stages.Groups['outputMax'].Value
             }
         } else { $null }
+        seekRequested = $Seek
         seekPosted = $seekPosted
         seekBindings = $seekBindings
         playbackRestarts = $playbackRestarts
@@ -293,16 +306,42 @@ function Invoke-RifePlaybackCase {
 }
 
 $fixture24 = Join-Path $evidenceRoot 'rife-1080p-24fps.mp4'
-$fixture30 = Join-Path $evidenceRoot 'rife-1080p-30fps.mp4'
 New-RifeFixture -Fps 24 -Path $fixture24
-New-RifeFixture -Fps 30 -Path $fixture30
+$fixture30 = $null
+if (-not $Only24To48) {
+    $fixture30 = Join-Path $evidenceRoot 'rife-1080p-30fps.mp4'
+    New-RifeFixture -Fps 30 -Path $fixture30
+}
 $sceneCutFixture = $null
 if ($SceneCutProbe) {
     $sceneCutFixture = Join-Path $evidenceRoot 'rife-1080p-30fps-hard-cut.mp4'
-    New-RifeSceneCutFixture -Path $sceneCutFixture
+    New-RifeSceneCutFixture -Fps 30 -Path $sceneCutFixture
+}
+elseif ($ReleaseQualification) {
+    $sceneCutFixture = Join-Path $evidenceRoot 'rife-1080p-24fps-hard-cut.mp4'
+    New-RifeSceneCutFixture -Fps 24 -Path $sceneCutFixture
 }
 
-$cases = if ($SceneCutProbe) {
+$cases = if ($ReleaseQualification) {
+    @(
+        Invoke-RifePlaybackCase -Name '24-to-48-generated' `
+            -Fixture $fixture24 -ExpectGenerated $true -SourceFps 24
+        Invoke-RifePlaybackCase -Name '24-to-48-seek-fallback' `
+            -Fixture $fixture24 -ExpectGenerated $true -SourceFps 24 -Seek $true
+        Invoke-RifePlaybackCase -Name '24-to-48-scene-cut-fallback' `
+            -Fixture $sceneCutFixture -ExpectGenerated $true -SourceFps 24 `
+            -ExpectSceneFallback $true
+        Invoke-RifePlaybackCase -Name '30fps-source-fallback' `
+            -Fixture $fixture30 -ExpectGenerated $false -SourceFps 30
+    )
+}
+elseif ($Only24To48) {
+    @(
+        Invoke-RifePlaybackCase -Name '24-to-48-generated' `
+            -Fixture $fixture24 -ExpectGenerated $true -SourceFps 24
+    )
+}
+elseif ($SceneCutProbe) {
     @(
         Invoke-RifePlaybackCase -Name '30-to-60-scene-cut-probe' `
             -Fixture $sceneCutFixture -ExpectGenerated $true -SourceFps 30 `
@@ -325,14 +364,25 @@ else {
 }
 $summary = [ordered]@{
     schemaVersion = 1
-    status = 'local experimental playback evidence; not release approval'
+    status = if ($ReleaseQualification) {
+        'release-qualification-evidence'
+    }
+    else {
+        'local experimental playback evidence; not release approval'
+    }
     createdAt = [DateTimeOffset]::Now.ToString('o')
     probe30To60 = [bool]$Probe30To60
     seekDuringProbe = [bool]$SeekDuringProbe
     sceneCutProbe = [bool]$SceneCutProbe
+    only24To48 = [bool]$Only24To48
+    releaseQualification = [bool]$ReleaseQualification
     precisionMode = $PrecisionMode
     executableSha256 = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant()
     libmpvSha256 = (Get-FileHash -LiteralPath (Join-Path $playerRoot 'libmpv-2.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
+    repository = [ordered]@{
+        revision = (& git -C $repoRoot rev-parse HEAD).Trim()
+        dirty = @(& git -C $repoRoot status --short).Count -ne 0
+    }
     cases = $cases
     passed = @($cases | Where-Object { -not $_.passed }).Count -eq 0
 }

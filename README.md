@@ -38,6 +38,8 @@ Display synchronization and AI frame generation are intentionally treated as dif
 - A pointer that hides after 1.6 seconds during playback and returns on mouse movement
 - A full-width invisible 56 px top move zone with a move cursor and no visible handle
 - PlainView-style top-right theme, always-on-top, minimize, fullscreen, and close controls, plus transient play, seek, volume-slider/mute, and subtitle controls
+- An on-demand control panel opened from `Playback controls…` in the right-click menu or with `P`, providing 10-second seek, playback speed, A–B repeat, mute/volume, four sound presets, and a five-band equalizer; it is operable with `Tab`/`Shift+Tab`, arrow keys, and `Enter`/`Space`
+- A next-update `Smooth playback 24→48` candidate that remembers the opt-in when its engine is present, applies to 1080p SDR 24/25 fps video, and automatically preserves source frames during seeks, scene changes, overload, or errors
 - Physical-pixel window placement across monitors, DPI-scaled 280×240 minimum sizing, and DWM border suppression with the native shadow retained
 - Automatic discovery of same-name external SRT subtitles, plus contextual subtitle and audio-track selection, subtitle-file drop attachment, external subtitle loading, and 0.1-second subtitle/audio timing correction
 - A localized empty state with no Korean/English mixing and a `Ctrl+O` open path
@@ -47,7 +49,7 @@ Display synchronization and AI frame generation are intentionally treated as dif
 - Hover thumbnail previews on the seek bar, direct CC subtitle toggle, remembered volume and mute state, and unambiguous muted feedback
 - `S` saves a playback screenshot to the Windows Pictures library with transient confirmation
 - `F6`/`Shift+F6` keyboard focus for transient controls, with `Enter` or `Space` activation and a visible focus state
-- Real file-drop replacement, plus a progressively disclosed right-click menu for open, retry, previous/next, audio, subtitles, and close
+- Real file-drop replacement, plus a progressively disclosed right-click menu for open, retry, previous/next, playback controls, audio, subtitles, and close
 - Recoverable per-file playback errors that keep the window open for retry, another file, or drag and drop instead of terminating the app
 - A reproducible local developer portable directory with per-file hashes
 

@@ -19,6 +19,14 @@ local status_timer = nil
 local media_info_visible = false
 local media_queue_position = 1
 local media_queue_count = 1
+local control_panel_visible = false
+local control_panel_hover = "none"
+local control_panel_pressed = "none"
+local control_panel_focus = "none"
+local equalizer_gains = { 0, 0, 0, 0, 0 }
+local smooth_24_48_available = false
+local smooth_24_48_enabled = false
+local smooth_24_48_eligible = "unknown"
 
 local TYPE_SIZE = {
     primary = 22,
@@ -60,6 +68,26 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     rife_preparing = "측정 중",
     none = "없음",
     software = "소프트웨어",
+    playback_controls = "재생 제어",
+    back_10 = "−10초",
+    forward_10 = "+10초",
+    repeat_section = "구간 반복",
+    set_a = "A 지정",
+    set_b = "B 지정",
+    clear = "해제",
+    sound = "음향",
+    equalizer = "이퀄라이저",
+    presets = "프리셋",
+    flat = "기본",
+    voice = "대사",
+    bass = "저음",
+    bright = "선명",
+    video = "영상",
+    smooth_24_48 = "24→48 부드러운 재생",
+    enabled = "켬",
+    disabled = "끔",
+    unavailable = "엔진 없음",
+    source_fallback = "현재 영상 원본 재생",
 } or {
     idle_title = "Drop a video here",
     idle_hint = "or press Ctrl+O to open",
@@ -94,6 +122,26 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     rife_preparing = "Measuring",
     none = "None",
     software = "Software",
+    playback_controls = "Playback controls",
+    back_10 = "−10 s",
+    forward_10 = "+10 s",
+    repeat_section = "A–B repeat",
+    set_a = "Set A",
+    set_b = "Set B",
+    clear = "Clear",
+    sound = "Sound",
+    equalizer = "Equalizer",
+    presets = "Presets",
+    flat = "Flat",
+    voice = "Voice",
+    bass = "Bass",
+    bright = "Bright",
+    video = "Video",
+    smooth_24_48 = "Smooth playback 24→48",
+    enabled = "On",
+    disabled = "Off",
+    unavailable = "Engine unavailable",
+    source_fallback = "Current video uses source frames",
 }
 
 local function theme_palette()
@@ -1025,6 +1073,8 @@ local function draw_playback_controls(width, height)
     local track_top = center_y - px(2)
     local track_bottom = center_y + px(1)
     local filled = track_left + math.floor((track_right - track_left) * progress)
+    local loop_a = mp.get_property_number("ab-loop-a", -1)
+    local loop_b = mp.get_property_number("ab-loop-b", -1)
     local events = {
         box_event(left, top, right, bottom, px(16), palette.panel, palette.panel_alpha),
     }
@@ -1036,6 +1086,25 @@ local function draw_playback_controls(width, height)
         table.insert(events, box_event(track_left, track_top, track_right, track_bottom, px(2), palette.track, "&H58&"))
         if filled > track_left then
             table.insert(events, box_event(track_left, track_top, filled, track_bottom, px(2), palette.accent, "&H08&"))
+        end
+        if loop_a >= 0 then
+            local marker_a = track_left + math.floor((track_right - track_left)
+                * clamp(loop_a / duration, 0, 1))
+            local marker_b = nil
+            if loop_b >= 0 then
+                marker_b = track_left + math.floor((track_right - track_left)
+                    * clamp(loop_b / duration, 0, 1))
+            end
+            if marker_b and marker_b > marker_a then
+                table.insert(events, box_event(marker_a, center_y + px(4), marker_b,
+                    center_y + px(6), px(1), palette.accent, "&H48&"))
+            end
+            table.insert(events, box_event(marker_a - px(1), center_y - px(7), marker_a + px(1),
+                center_y + px(7), px(1), palette.accent, "&H08&"))
+            if marker_b then
+                table.insert(events, box_event(marker_b - px(1), center_y - px(7), marker_b + px(1),
+                    center_y + px(7), px(1), palette.accent, "&H08&"))
+            end
         end
     else
         table.insert(events, text_event(5, math.floor((seek_left + seek_right) / 2), center_y,
@@ -1082,6 +1151,11 @@ local function draw_playback_controls(width, height)
             type_size("secondary", width, height), palette.secondary, "&H10&", false, format_time(position)))
         table.insert(events, text_event(6, seek_right - px(4), label_y,
             type_size("secondary", width, height), palette.secondary, "&H10&", false, format_time(duration)))
+        if loop_a >= 0 and loop_b >= 0 then
+            table.insert(events, text_event(5, math.floor((seek_left + seek_right) / 2), label_y,
+                math.max(px(10), type_size("secondary", width, height) - px(1)),
+                palette.accent, "&H08&", true, "A–B"))
+        end
     end
 
     local tooltip_name = playback_control_hover ~= "none" and playback_control_hover or focused_control
@@ -1114,6 +1188,324 @@ local function draw_playback_controls(width, height)
     return table.concat(events, "\n")
 end
 
+local function control_panel_geometry(width, height)
+    if width < 120 or height < 120 then return nil end
+    local outer = math.max(6, math.floor(12 * ui_scale + 0.5))
+    local available_width = width - outer * 2
+    local available_height = height - outer * 2
+    if available_width < 96 or available_height < 96 then return nil end
+    local fit = math.min(
+        available_width / (520 * ui_scale),
+        available_height / (446 * ui_scale),
+        1.0
+    )
+    local scale = math.max(ui_scale * fit, 0.2)
+    local function q(value)
+        return math.floor(value * scale + 0.5)
+    end
+    local panel_width = math.min(q(520), available_width)
+    local panel_height = math.min(q(446), available_height)
+    return {
+        scale = scale,
+        q = q,
+        left = math.floor((width - panel_width) / 2),
+        top = math.floor((height - panel_height) / 2),
+        width = panel_width,
+        height = panel_height,
+    }
+end
+
+local function panel_rect(geometry, x, y, width, height)
+    return {
+        left = geometry.left + geometry.q(x),
+        top = geometry.top + geometry.q(y),
+        right = geometry.left + geometry.q(x + width),
+        bottom = geometry.top + geometry.q(y + height),
+    }
+end
+
+local function append_panel_button(events, geometry, palette, name, rect, label, selected, enabled)
+    enabled = enabled ~= false
+    local focused = control_panel_focus == name
+    local active = control_panel_hover == name or control_panel_pressed == name or focused
+    local background = selected and palette.active or palette.surface
+    local alpha = selected and "&H18&" or palette.surface_alpha
+    if active and enabled then
+        background = palette.hover
+        alpha = "&H18&"
+    end
+    if focused then
+        table.insert(events, box_event(
+            rect.left - math.max(1, geometry.q(2)),
+            rect.top - math.max(1, geometry.q(2)),
+            rect.right + math.max(1, geometry.q(2)),
+            rect.bottom + math.max(1, geometry.q(2)),
+            math.max(2, geometry.q(9)), palette.accent, "&H20&"
+        ))
+    end
+    table.insert(events, box_event(
+        rect.left, rect.top, rect.right, rect.bottom,
+        math.max(2, geometry.q(8)), background, alpha
+    ))
+    local color = not enabled and palette.muted or (selected and palette.accent or palette.text)
+    table.insert(events, text_event(
+        5,
+        math.floor((rect.left + rect.right) / 2),
+        math.floor((rect.top + rect.bottom) / 2),
+        math.max(8, geometry.q(13)),
+        color,
+        enabled and "&H08&" or "&H58&",
+        selected,
+        label
+    ))
+end
+
+local function draw_panel_play_icon(events, geometry, palette, rect)
+    local center_x = math.floor((rect.left + rect.right) / 2)
+    local center_y = math.floor((rect.top + rect.bottom) / 2)
+    local color = palette.text
+    if mp.get_property_bool("pause", false) then
+        local half = math.max(4, geometry.q(9))
+        table.insert(events, string.format(
+            "{\\an7\\pos(0,0)\\bord0\\shad0\\p1\\1c%s\\1a&H08&}" ..
+            "m %d %d l %d %d %d %d{\\p0}",
+            color,
+            center_x - geometry.q(6), center_y - half,
+            center_x + geometry.q(8), center_y,
+            center_x - geometry.q(6), center_y + half
+        ))
+    else
+        table.insert(events, box_event(
+            center_x - geometry.q(7), center_y - geometry.q(9),
+            center_x - geometry.q(2), center_y + geometry.q(9),
+            math.max(1, geometry.q(1)), color, "&H08&"
+        ))
+        table.insert(events, box_event(
+            center_x + geometry.q(2), center_y - geometry.q(9),
+            center_x + geometry.q(7), center_y + geometry.q(9),
+            math.max(1, geometry.q(1)), color, "&H08&"
+        ))
+    end
+end
+
+local function equalizer_preset_index()
+    local presets = {
+        { 0, 0, 0, 0, 0 },
+        { -2, 0, 2, 3, 1 },
+        { 5, 3, 0, -1, -1 },
+        { -1, 0, 1, 3, 4 },
+    }
+    for preset_index, preset in ipairs(presets) do
+        local matches = true
+        for band = 1, 5 do
+            if equalizer_gains[band] ~= preset[band] then
+                matches = false
+                break
+            end
+        end
+        if matches then return preset_index end
+    end
+    return 0
+end
+
+local function draw_control_panel(width, height)
+    local geometry = control_panel_geometry(width, height)
+    if not geometry then return "" end
+    local palette = theme_palette()
+    local q = geometry.q
+    local left = geometry.left
+    local top = geometry.top
+    local right = left + geometry.width
+    local bottom = top + geometry.height
+    local title_size = math.max(10, q(20))
+    local label_size = math.max(8, q(13))
+    local events = {
+        box_event(0, 0, width, height, 0, palette.app, "&H88&"),
+        box_event(left, top, right, bottom, math.max(4, q(18)), palette.panel, "&H10&"),
+        text_event(7, left + q(20), top + q(24), title_size,
+            palette.text, "&H08&", true, copy.playback_controls),
+    }
+
+    local close = panel_rect(geometry, 480, 10, 28, 28)
+    append_panel_button(events, geometry, palette, "panel-close", close, "×", false, true)
+
+    local seek_back = panel_rect(geometry, 176, 46, 44, 38)
+    local play_pause = panel_rect(geometry, 238, 46, 44, 38)
+    local seek_forward = panel_rect(geometry, 300, 46, 44, 38)
+    append_panel_button(events, geometry, palette, "panel-back", seek_back, copy.back_10, false, true)
+    append_panel_button(events, geometry, palette, "panel-play", play_pause, "", false, true)
+    draw_panel_play_icon(events, geometry, palette, play_pause)
+    append_panel_button(events, geometry, palette, "panel-forward", seek_forward, copy.forward_10, false, true)
+
+    local position = mp.get_property_number("time-pos", 0)
+    local duration = mp.get_property_number("duration", 0)
+    local seekable = mp.get_property_bool("seekable", duration > 0)
+    local seek = panel_rect(geometry, 28, 88, 464, 20)
+    local seek_left = seek.left
+    local seek_right = seek.right
+    local seek_y = top + q(94)
+    local progress = duration > 0 and clamp(position / duration, 0, 1) or 0
+    local filled = seek_left + math.floor((seek_right - seek_left) * progress)
+    table.insert(events, box_event(seek_left, seek_y - math.max(1, q(2)), seek_right,
+        seek_y + math.max(1, q(2)), math.max(1, q(2)), palette.track, "&H44&"))
+    if seekable and filled > seek_left then
+        table.insert(events, box_event(seek_left, seek_y - math.max(1, q(2)), filled,
+            seek_y + math.max(1, q(2)), math.max(1, q(2)), palette.accent, "&H08&"))
+    end
+    local thumb_x = clamp(filled, seek_left + q(3), seek_right - q(3))
+    table.insert(events, box_event(thumb_x - q(3), seek_y - q(3), thumb_x + q(3), seek_y + q(3),
+        math.max(1, q(3)), palette.accent, "&H08&"))
+    table.insert(events, text_event(4, seek_left, top + q(105), math.max(7, q(10)),
+        palette.secondary, "&H10&", false, format_time(position)))
+    table.insert(events, text_event(6, seek_right, top + q(105), math.max(7, q(10)),
+        palette.secondary, "&H10&", false, format_time(duration)))
+
+    local label_x = left + q(20)
+    local label_center_x = left + q(56)
+    table.insert(events, text_event(5, label_center_x, top + q(131), label_size,
+        palette.secondary, "&H08&", true, copy.speed))
+    local speeds = { "0.5×", "0.75×", "1.0×", "1.25×", "1.5×", "2.0×" }
+    local speed_values = { 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 }
+    local current_speed = mp.get_property_number("speed", 1.0)
+    local speed_left = 96
+    local speed_gap = 4
+    local speed_width = (500 - speed_left - speed_gap * 5) / 6
+    for index, label in ipairs(speeds) do
+        local rect = panel_rect(geometry,
+            speed_left + (index - 1) * (speed_width + speed_gap), 116, speed_width, 30)
+        append_panel_button(events, geometry, palette, "panel-speed-" .. index, rect, label,
+            math.abs(current_speed - speed_values[index]) < 0.001, true)
+    end
+
+    table.insert(events, text_event(5, label_center_x, top + q(172), label_size,
+        palette.secondary, "&H08&", true, copy.repeat_section))
+    local loop_a = mp.get_property_number("ab-loop-a", -1)
+    local loop_b = mp.get_property_number("ab-loop-b", -1)
+    local loop_labels = {
+        loop_a >= 0 and ("A  " .. format_time(loop_a)) or copy.set_a,
+        loop_b >= 0 and ("B  " .. format_time(loop_b)) or copy.set_b,
+        copy.clear,
+    }
+    local loop_names = { "panel-loop-a", "panel-loop-b", "panel-loop-clear" }
+    local loop_left = 96
+    local loop_gap = 8
+    local loop_width = (500 - loop_left - loop_gap * 2) / 3
+    for index, label in ipairs(loop_labels) do
+        local rect = panel_rect(geometry,
+            loop_left + (index - 1) * (loop_width + loop_gap), 156, loop_width, 32)
+        append_panel_button(events, geometry, palette, loop_names[index], rect, label,
+            index < 3 and ((index == 1 and loop_a >= 0) or (index == 2 and loop_b >= 0)),
+            index ~= 2 or loop_a >= 0)
+    end
+
+    table.insert(events, text_event(5, label_center_x, top + q(214), label_size,
+        palette.secondary, "&H08&", true, copy.video))
+    local smooth_label = copy.smooth_24_48 .. " · " .. copy.disabled
+    if not smooth_24_48_available then
+        smooth_label = copy.smooth_24_48 .. " · " .. copy.unavailable
+    elseif smooth_24_48_enabled and smooth_24_48_eligible == "no" then
+        smooth_label = copy.smooth_24_48 .. " · " .. copy.source_fallback
+    elseif smooth_24_48_enabled then
+        smooth_label = copy.smooth_24_48 .. " · " .. copy.enabled
+    end
+    local smooth_rect = panel_rect(geometry, 96, 198, 404, 32)
+    append_panel_button(events, geometry, palette, "panel-smooth-24-48", smooth_rect,
+        smooth_label, smooth_24_48_enabled, smooth_24_48_available)
+
+    table.insert(events, text_event(5, label_center_x, top + q(254), label_size,
+        palette.secondary, "&H08&", true, copy.sound))
+    local muted = mp.get_property_bool("mute", false)
+    local volume = clamp(mp.get_property_number("volume", 100), 0, 100)
+    local mute_rect = panel_rect(geometry, 96, 238, 44, 32)
+    append_panel_button(events, geometry, palette, "panel-mute", mute_rect,
+        muted and "🔇" or "🔊", muted, true)
+    local volume_rect = panel_rect(geometry, 148, 238, 352, 32)
+    local volume_active = control_panel_hover == "panel-volume"
+        or control_panel_pressed == "panel-volume"
+        or control_panel_focus == "panel-volume"
+    if control_panel_focus == "panel-volume" then
+        table.insert(events, box_event(volume_rect.left - q(2), volume_rect.top - q(2),
+            volume_rect.right + q(2), volume_rect.bottom + q(2), math.max(2, q(9)),
+            palette.accent, "&H20&"))
+    end
+    table.insert(events, box_event(volume_rect.left, volume_rect.top,
+        volume_rect.right, volume_rect.bottom, math.max(2, q(8)),
+        volume_active and palette.hover or palette.surface,
+        volume_active and "&H18&" or palette.surface_alpha))
+    local volume_left = volume_rect.left + q(12)
+    local volume_right = volume_rect.right - q(46)
+    local volume_y = math.floor((volume_rect.top + volume_rect.bottom) / 2)
+    local volume_filled = volume_left + math.floor((volume_right - volume_left) * volume / 100)
+    table.insert(events, box_event(volume_left, volume_y - math.max(1, q(2)), volume_right,
+        volume_y + math.max(1, q(2)), math.max(1, q(2)), palette.track, "&H48&"))
+    if volume_filled > volume_left and not muted then
+        table.insert(events, box_event(volume_left, volume_y - math.max(1, q(2)), volume_filled,
+            volume_y + math.max(1, q(2)), math.max(1, q(2)), palette.accent, "&H08&"))
+    end
+    local volume_thumb = clamp(volume_filled, volume_left + q(3), volume_right - q(3))
+    table.insert(events, box_event(volume_thumb - q(volume_active and 5 or 4),
+        volume_y - q(volume_active and 5 or 4), volume_thumb + q(volume_active and 5 or 4),
+        volume_y + q(volume_active and 5 or 4), math.max(1, q(volume_active and 5 or 4)),
+        muted and palette.muted or palette.accent, "&H08&"))
+    table.insert(events, text_event(6, volume_rect.right - q(9), volume_y,
+        math.max(7, q(10)), muted and palette.muted or palette.secondary,
+        "&H08&", false, string.format("%d%%", math.floor(volume + 0.5))))
+
+    table.insert(events, text_event(5, label_center_x, top + q(294), label_size,
+        palette.secondary, "&H08&", true, copy.presets))
+    local preset_labels = { copy.flat, copy.voice, copy.bass, copy.bright }
+    local preset_names = { "panel-eq-flat", "panel-eq-voice", "panel-eq-bass", "panel-eq-bright" }
+    local selected_preset = equalizer_preset_index()
+    local preset_left = 96
+    local preset_gap = 6
+    local preset_width = (500 - preset_left - preset_gap * 3) / 4
+    for index, label in ipairs(preset_labels) do
+        local rect = panel_rect(geometry,
+            preset_left + (index - 1) * (preset_width + preset_gap), 278, preset_width, 32)
+        append_panel_button(events, geometry, palette, preset_names[index], rect, label,
+            selected_preset == index, true)
+    end
+
+    table.insert(events, text_event(5, label_x + q(28), top + q(366), label_size,
+        palette.secondary, "&H08&", true, copy.equalizer))
+    local frequencies = { "60", "230", "910", "3.6k", "14k" }
+    local eq_left = 92
+    local eq_gap = 12
+    local eq_width = (500 - eq_left - eq_gap * 4) / 5
+    local track_top = top + q(340)
+    local track_bottom = top + q(406)
+    local zero_y = math.floor((track_top + track_bottom) / 2)
+    for index, frequency in ipairs(frequencies) do
+        local rect = panel_rect(geometry,
+            eq_left + (index - 1) * (eq_width + eq_gap), 322, eq_width, 104)
+        local center_x = math.floor((rect.left + rect.right) / 2)
+        local gain = clamp(equalizer_gains[index] or 0, -12, 12)
+        local thumb_y = track_top + math.floor((12 - gain) / 24 * (track_bottom - track_top))
+        local active = control_panel_hover == "panel-eq-" .. index
+            or control_panel_pressed == "panel-eq-" .. index
+            or control_panel_focus == "panel-eq-" .. index
+        table.insert(events, box_event(center_x - math.max(1, q(2)), track_top,
+            center_x + math.max(1, q(2)), track_bottom, math.max(1, q(2)),
+            palette.track, "&H48&"))
+        local fill_top = math.min(zero_y, thumb_y)
+        local fill_bottom = math.max(zero_y, thumb_y)
+        if fill_bottom > fill_top then
+            table.insert(events, box_event(center_x - math.max(1, q(2)), fill_top,
+                center_x + math.max(1, q(2)), fill_bottom, math.max(1, q(2)),
+                palette.accent, "&H08&"))
+        end
+        table.insert(events, box_event(center_x - q(active and 5 or 4), thumb_y - q(active and 5 or 4),
+            center_x + q(active and 5 or 4), thumb_y + q(active and 5 or 4),
+            math.max(1, q(active and 5 or 4)), palette.accent, "&H08&"))
+        local gain_label = gain > 0 and ("+" .. gain) or tostring(gain)
+        table.insert(events, text_event(5, center_x, top + q(329), math.max(7, q(10)),
+            palette.text, "&H08&", false, gain_label))
+        table.insert(events, text_event(5, center_x, top + q(421), math.max(7, q(10)),
+            palette.secondary, "&H08&", false, frequency))
+    end
+    return table.concat(events, "\n")
+end
+
 local function draw_status(width, height)
     if not status_message or status_message == "" then
         return ""
@@ -1142,7 +1534,8 @@ local function draw_surface()
 
     local has_playback_error = playback_error_title ~= nil
     if not is_idle and not has_playback_error and feedback_kind == nil
-        and status_message == nil and not window_controls_visible and not media_info_visible then
+        and status_message == nil and not window_controls_visible and not media_info_visible
+        and not control_panel_visible then
         overlay:remove()
         return
     end
@@ -1167,9 +1560,12 @@ local function draw_surface()
     end
     if window_controls_visible then
         table.insert(events, draw_window_controls(width, height))
-        if not has_playback_error and not is_idle then
+        if not has_playback_error and not is_idle and not control_panel_visible then
             table.insert(events, draw_playback_controls(width, height))
         end
+    end
+    if control_panel_visible and not has_playback_error and not is_idle then
+        table.insert(events, draw_control_panel(width, height))
     end
     if status_message ~= nil then
         table.insert(events, draw_status(width, height))
@@ -1278,6 +1674,27 @@ local function set_window_controls(visible, theme, pinned, hovered, next_ui_scal
     draw_surface()
 end
 
+local function set_control_panel(visible, hovered, pressed, focused,
+    rife_available, rife_enabled, rife_eligible,
+    gain_1, gain_2, gain_3, gain_4, gain_5)
+    control_panel_visible = visible == "yes"
+    control_panel_hover = hovered or "none"
+    control_panel_pressed = pressed or "none"
+    control_panel_focus = focused or "none"
+    smooth_24_48_available = rife_available == "yes"
+    smooth_24_48_enabled = rife_enabled == "yes"
+    smooth_24_48_eligible = rife_eligible or "unknown"
+    equalizer_gains = {
+        clamp(math.floor((tonumber(gain_1) or 0) + 0.5), -12, 12),
+        clamp(math.floor((tonumber(gain_2) or 0) + 0.5), -12, 12),
+        clamp(math.floor((tonumber(gain_3) or 0) + 0.5), -12, 12),
+        clamp(math.floor((tonumber(gain_4) or 0) + 0.5), -12, 12),
+        clamp(math.floor((tonumber(gain_5) or 0) + 0.5), -12, 12),
+    }
+    if control_panel_visible then media_info_visible = false end
+    draw_surface()
+end
+
 mp.add_key_binding(nil, "toggle-pause", toggle_pause)
 mp.add_key_binding(nil, "seek-back-small", function() seek(-5) end)
 mp.add_key_binding(nil, "seek-forward-small", function() seek(5) end)
@@ -1288,6 +1705,7 @@ mp.add_key_binding(nil, "seek-forward-double", function() seek(10) end)
 mp.add_key_binding(nil, "volume-up", function() change_volume(2) end)
 mp.add_key_binding(nil, "volume-down", function() change_volume(-2) end)
 mp.register_script_message("plainvideo-window-controls", set_window_controls)
+mp.register_script_message("plainvideo-control-panel", set_control_panel)
 mp.register_script_message("plainvideo-playback-status", set_playback_status)
 mp.register_script_message("plainvideo-status", show_status_message)
 mp.register_script_message("plainvideo-media-info", set_media_info)
@@ -1303,12 +1721,13 @@ mp.observe_property("path", "string", function()
 end)
 mp.observe_property("osd-dimensions", "native", draw_surface)
 mp.observe_property("time-pos", "number", function()
-    if feedback_kind == "seek" or window_controls_visible or media_info_visible then
+    if feedback_kind == "seek" or window_controls_visible or media_info_visible
+        or control_panel_visible then
         draw_surface()
     end
 end)
 mp.observe_property("pause", "bool", function()
-    if window_controls_visible then draw_surface() end
+    if window_controls_visible or control_panel_visible then draw_surface() end
 end)
 mp.observe_property("volume", "number", function()
     if window_controls_visible then draw_surface() end
@@ -1323,10 +1742,16 @@ mp.observe_property("aid", "native", function()
     if window_controls_visible or media_info_visible then draw_surface() end
 end)
 mp.observe_property("seekable", "bool", function()
-    if window_controls_visible then draw_surface() end
+    if window_controls_visible or control_panel_visible then draw_surface() end
 end)
 mp.observe_property("speed", "number", function()
-    if media_info_visible then draw_surface() end
+    if media_info_visible or control_panel_visible then draw_surface() end
+end)
+mp.observe_property("ab-loop-a", "native", function()
+    if control_panel_visible or window_controls_visible then draw_surface() end
+end)
+mp.observe_property("ab-loop-b", "native", function()
+    if control_panel_visible or window_controls_visible then draw_surface() end
 end)
 mp.observe_property("hwdec-current", "string", function()
     if media_info_visible then draw_surface() end

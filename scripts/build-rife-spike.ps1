@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release')]
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+    [switch]$ReleaseCandidate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,6 +18,16 @@ $bootstrapProvenancePath = Join-Path $spikeRoot 'bootstrap-provenance.json'
 $modelName = 'rife-v4.25-lite_ensembleFalse'
 $sourceModel = Join-Path $sourceRoot "models\$modelName"
 $stagedModel = Join-Path $stageRoot "models\$modelName"
+
+if ($ReleaseCandidate) {
+    if ($Configuration -ne 'Release') {
+        throw '-ReleaseCandidate requires -Configuration Release.'
+    }
+    $releaseChanges = @(& git -C $repoRoot status --short)
+    if ($releaseChanges.Count -ne 0) {
+        throw "A RIFE release candidate requires one clean source commit:`n$($releaseChanges -join [Environment]::NewLine)"
+    }
+}
 
 # Dependency checkout state, recursive submodule pins, and model hashes are
 # validated on every build. This keeps the staged binary tied to fresh
@@ -73,6 +84,8 @@ Copy-Item -LiteralPath (Join-Path $sourceRoot 'subprojects\ncnn\LICENSE.txt') `
     -Destination (Join-Path $licenseRoot 'ncnn-LICENSE.txt') -Force
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'subprojects\ncnn\glslang\LICENSE.txt') `
     -Destination (Join-Path $licenseRoot 'glslang-LICENSE.txt') -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot 'third_party\licenses\Practical-RIFE-LICENSE.txt') `
+    -Destination (Join-Path $licenseRoot 'Practical-RIFE-LICENSE.txt') -Force
 
 $inventory = foreach ($path in @(
     (Join-Path $stageRoot 'plainvideo_rife.dll'),
@@ -163,7 +176,13 @@ $buildProvenance = [ordered]@{
     dependencyProvenanceSha256 = $bootstrapProvenanceSha256
     sourceInputs = @($sourceInputs)
     outputs = @($inventory)
-    releaseAllowed = $false
+    releaseAllowed = [bool]$ReleaseCandidate
+    releasePolicy = if ($ReleaseCandidate) {
+        'Clean-commit release candidate; promotion still requires native and playback qualification evidence.'
+    }
+    else {
+        'Development candidate only.'
+    }
 }
 $buildProvenance | ConvertTo-Json -Depth 6 | Set-Content `
     -LiteralPath (Join-Path $stageRoot 'build-provenance.json') -Encoding utf8

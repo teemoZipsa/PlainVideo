@@ -32,8 +32,10 @@
       "license": "MIT",
       "verification": "External research observation only; this archive is not acquired or verified by the bootstrap script."
     },
-    "conversionProvenance": "unverified",
-    "conversionBlocker": "The reference plugin does not publish a reproducible conversion recipe that proves its ncnn param/bin came from the pinned official Practical-RIFE weights. The files are prototype inputs only."
+    "conversionProvenance": "pinned-upstream-converted-artifact",
+    "artifactSource": "VapourSynth-RIFE-ncnn-Vulkan commit c3ec6aabc07c8fa37a4f58d7fed9e2ad1fc1b13f, models/rife-v4.25-lite_ensembleFalse",
+    "officialWeightEquivalence": "not-claimed",
+    "qualificationBasis": "Qualify and distribute the exact pinned converted artifact by source commit, hashes, deterministic output, real playback, fallback behavior, and included MIT notices; do not claim byte-equivalence to a fresh conversion of the official PyTorch weight."
   },
   "runtime": {
     "name": "ncnn",
@@ -98,5 +100,5 @@
       "p95LimitMs": 27.0
     }
   ],
-  "releasePolicy": "Do not add this DLL, model, or its dependencies to Store or portable artifacts until conversion provenance and the complete redistribution inventory are closed."
+  "releasePolicy": "The exact pinned DLL and model may enter a next-update candidate only with their hashes and complete license inventory. Store or portable release still requires a clean candidate build, targeted native and foreground playback qualification, package verification, and an explicit release-eligible manifest."
 }

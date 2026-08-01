@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$IncludeRife24To48Candidate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,6 +41,7 @@ $buildArguments = @{
     NoSign = $true
 }
 if ($SkipBuild) { $buildArguments.SkipBuild = $true }
+if ($IncludeRife24To48Candidate) { $buildArguments.IncludeRife24To48Candidate = $true }
 & (Join-Path $PSScriptRoot 'build-msix.ps1') @buildArguments
 if ($LASTEXITCODE -ne 0) { throw 'Store MSIX staging failed.' }
 
@@ -82,6 +84,12 @@ Get-ChildItem -LiteralPath $layoutRoot -File -Filter '*.dll' | ForEach-Object {
 }
 Copy-Item -LiteralPath (Join-Path $layoutRoot 'assets') -Destination $portableRoot -Recurse
 Copy-Item -LiteralPath (Join-Path $layoutRoot 'licenses') -Destination $portableRoot -Recurse
+if ($IncludeRife24To48Candidate) {
+    Copy-Item -LiteralPath (Join-Path $layoutRoot 'rife') -Destination $portableRoot -Recurse
+    foreach ($fileName in @('RIFE_24_TO_48_NOTICE.md', 'rife-feature-manifest.json')) {
+        Copy-Item -LiteralPath (Join-Path $layoutRoot $fileName) -Destination $portableRoot
+    }
+}
 
 @"
 PlainVideo $version portable release
@@ -106,6 +114,7 @@ $manifest = [ordered]@{
     status = 'release-portable'
     version = $version
     sourceCommit = (& git -C $repoRoot rev-parse HEAD).Trim()
+    rife24To48Included = [bool]$IncludeRife24To48Candidate
     files = $files
 }
 [System.IO.File]::WriteAllText(

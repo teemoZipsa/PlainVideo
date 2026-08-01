@@ -38,9 +38,15 @@ pub struct UiText {
     pub audio_later: &'static str,
     pub audio_timing_requires_active: &'static str,
     pub playback_speed: &'static str,
+    pub playback_controls: &'static str,
+    pub loop_start_required: &'static str,
+    pub loop_end_after_start: &'static str,
+    pub loop_cleared: &'static str,
     pub rife_interpolation: &'static str,
     pub rife_enabled: &'static str,
     pub rife_disabled: &'static str,
+    pub rife_unavailable: &'static str,
+    pub rife_source_fallback: &'static str,
     pub save_screenshot: &'static str,
     pub screenshot_saved: &'static str,
     pub open_screenshot_folder: &'static str,
@@ -92,9 +98,15 @@ const KOREAN: UiText = UiText {
     audio_later: "0.1초 늦추기\tAlt+]",
     audio_timing_requires_active: "오디오를 먼저 켜세요",
     playback_speed: "재생 속도",
-    rife_interpolation: "RIFE 프레임 보간 (실험)",
-    rife_enabled: "RIFE 보간 켬 · 24/25fps 영상에만 적용",
-    rife_disabled: "RIFE 보간 끔",
+    playback_controls: "재생 제어…\tP",
+    loop_start_required: "A 지점을 먼저 지정하세요",
+    loop_end_after_start: "B 지점은 A 지점보다 뒤여야 합니다",
+    loop_cleared: "구간 반복 해제",
+    rife_interpolation: "부드러운 재생 24→48",
+    rife_enabled: "24→48 부드러운 재생 켬",
+    rife_disabled: "24→48 부드러운 재생 끔",
+    rife_unavailable: "이 빌드에는 24→48 재생 엔진이 없습니다",
+    rife_source_fallback: "24→48 켬 · 현재 영상은 원본 프레임으로 재생",
     save_screenshot: "스크린샷 저장\tS",
     screenshot_saved: "스크린샷 저장됨 · {}",
     open_screenshot_folder: "스크린샷 폴더 열기",
@@ -146,9 +158,15 @@ const ENGLISH: UiText = UiText {
     audio_later: "0.1 s later\tAlt+]",
     audio_timing_requires_active: "Turn audio on first",
     playback_speed: "Playback speed",
-    rife_interpolation: "RIFE frame interpolation (experimental)",
-    rife_enabled: "RIFE interpolation on · applies only to 24/25 fps video",
-    rife_disabled: "RIFE interpolation off",
+    playback_controls: "Playback controls…\tP",
+    loop_start_required: "Set point A first",
+    loop_end_after_start: "Point B must be after point A",
+    loop_cleared: "A–B repeat cleared",
+    rife_interpolation: "Smooth playback 24→48",
+    rife_enabled: "Smooth 24→48 playback on",
+    rife_disabled: "Smooth 24→48 playback off",
+    rife_unavailable: "This build does not include the 24→48 playback engine",
+    rife_source_fallback: "24→48 on · current video is using source frames",
     save_screenshot: "Save screenshot\tS",
     screenshot_saved: "Screenshot saved · {}",
     open_screenshot_folder: "Open screenshot folder",
@@ -261,9 +279,15 @@ mod tests {
             assert!(!text.audio_later.is_empty());
             assert!(!text.audio_timing_requires_active.is_empty());
             assert!(!text.playback_speed.is_empty());
+            assert!(!text.playback_controls.is_empty());
+            assert!(!text.loop_start_required.is_empty());
+            assert!(!text.loop_end_after_start.is_empty());
+            assert!(!text.loop_cleared.is_empty());
             assert!(!text.rife_interpolation.is_empty());
             assert!(!text.rife_enabled.is_empty());
             assert!(!text.rife_disabled.is_empty());
+            assert!(!text.rife_unavailable.is_empty());
+            assert!(!text.rife_source_fallback.is_empty());
             assert!(!text.save_screenshot.is_empty());
             assert!(!text.screenshot_saved.is_empty());
             assert!(!text.open_screenshot_folder.is_empty());

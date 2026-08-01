@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[cfg(target_os = "windows")]
+mod control_panel;
+#[cfg(target_os = "windows")]
 mod locale;
 #[cfg(target_os = "windows")]
 mod media_queue;

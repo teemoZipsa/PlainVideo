@@ -2,7 +2,8 @@ param(
     [string]$CertificateThumbprint = $env:PLAINVIDEO_CERTIFICATE_THUMBPRINT,
     [switch]$NoSign,
     [switch]$SkipBuild,
-    [switch]$ForStoreUpload
+    [switch]$ForStoreUpload,
+    [switch]$IncludeRife24To48Candidate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -10,8 +11,16 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot)).TrimEnd('\')
 $outputRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot '.runtime\msix')).TrimEnd('\')
 $layoutRoot = [System.IO.Path]::GetFullPath((Join-Path $outputRoot 'layout')).TrimEnd('\')
-$runtimeRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot '.runtime\lgpl-libmpv\runtime')).TrimEnd('\')
-$runtimeManifestPath = Join-Path $repoRoot '.runtime\lgpl-libmpv\runtime-manifest.json'
+$standardRuntimeRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot '.runtime\lgpl-libmpv\runtime')).TrimEnd('\')
+$standardRuntimeManifestPath = Join-Path $repoRoot '.runtime\lgpl-libmpv\runtime-manifest.json'
+$rifeCandidateRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot '.runtime\rife-player\PlainVideo')).TrimEnd('\')
+$rifeFeatureManifestPath = Join-Path $rifeCandidateRoot 'experimental-manifest.json'
+$runtimeRoot = if ($IncludeRife24To48Candidate) { $rifeCandidateRoot } else { $standardRuntimeRoot }
+$runtimeManifestPath = if ($IncludeRife24To48Candidate) {
+    Join-Path $rifeCandidateRoot 'custom-libmpv-manifest.json'
+} else {
+    $standardRuntimeManifestPath
+}
 $releaseStatePath = Join-Path $repoRoot 'docs\STORE_RELEASE_STATE.json'
 $manifestTemplatePath = Join-Path $repoRoot 'packaging\msix\Package.appxmanifest'
 $developerReadmePath = Join-Path $repoRoot 'packaging\msix\DEVELOPER_PACKAGE_README.txt'
@@ -102,6 +111,15 @@ function Assert-StoreUploadAllowed {
     $runtimeManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw | ConvertFrom-Json
     if ($releaseState.release.eligible -ne $true -or $runtimeManifest.releaseEligible -ne $true) {
         throw 'Store upload is blocked: the release state and runtime manifest must both explicitly mark the candidate eligible.'
+    }
+    if ($IncludeRife24To48Candidate) {
+        if (-not (Test-Path -LiteralPath $rifeFeatureManifestPath -PathType Leaf)) {
+            throw "Store upload is blocked: the 24-to-48 feature manifest is missing: $rifeFeatureManifestPath"
+        }
+        $rifeFeatureManifest = Get-Content -LiteralPath $rifeFeatureManifestPath -Raw | ConvertFrom-Json
+        if ($rifeFeatureManifest.releaseEligible -ne $true) {
+            throw 'Store upload is blocked: the 24-to-48 feature manifest is not release-eligible.'
+        }
     }
     $expectedPackageVersion = "$(Get-CargoVersion).0"
     if ($releaseState.release.packageVersion -ne $expectedPackageVersion) {
@@ -256,11 +274,24 @@ New-Item -ItemType Directory -Path (Join-Path $layoutRoot 'Assets') -Force | Out
 New-Item -ItemType Directory -Path (Join-Path $layoutRoot 'licenses') -Force | Out-Null
 
 Copy-Item -LiteralPath $exePath -Destination (Join-Path $layoutRoot 'plainvideo.exe')
-Get-ChildItem -LiteralPath $runtimeRoot -File | ForEach-Object {
+Get-ChildItem -LiteralPath $runtimeRoot -File -Filter '*.dll' | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $layoutRoot $_.Name)
 }
 New-Item -ItemType Directory -Path (Join-Path $layoutRoot 'assets') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot 'assets\mpv') -Destination (Join-Path $layoutRoot 'assets\mpv') -Recurse
+if ($IncludeRife24To48Candidate) {
+    foreach ($required in @('rife', 'licenses\rife', 'RIFE_24_TO_48_NOTICE.md', 'experimental-manifest.json')) {
+        $source = Join-Path $rifeCandidateRoot $required
+        if (-not (Test-Path -LiteralPath $source)) {
+            throw "The staged 24-to-48 candidate is missing: $source"
+        }
+    }
+    Copy-Item -LiteralPath (Join-Path $rifeCandidateRoot 'rife') -Destination $layoutRoot -Recurse
+    Copy-Item -LiteralPath (Join-Path $rifeCandidateRoot 'licenses\rife') `
+        -Destination (Join-Path $layoutRoot 'licenses') -Recurse
+    Copy-Item -LiteralPath (Join-Path $rifeCandidateRoot 'RIFE_24_TO_48_NOTICE.md') -Destination $layoutRoot
+    Copy-Item -LiteralPath $rifeFeatureManifestPath -Destination (Join-Path $layoutRoot 'rife-feature-manifest.json')
+}
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination (Join-Path $layoutRoot 'LICENSE')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'THIRD_PARTY_NOTICES.md') -Destination (Join-Path $layoutRoot 'THIRD_PARTY_NOTICES.md')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'PRIVACY.md') -Destination (Join-Path $layoutRoot 'PRIVACY.md')
@@ -337,6 +368,10 @@ $evidence = [ordered]@{
     sourceChanges = $changes
     runtimeManifestSha256 = (Get-FileHash -LiteralPath $runtimeManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
     runtimeReleaseEligible = $runtimeManifest.releaseEligible
+    rife24To48Included = [bool]$IncludeRife24To48Candidate
+    rifeFeatureManifestSha256 = if ($IncludeRife24To48Candidate) {
+        (Get-FileHash -LiteralPath $rifeFeatureManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    } else { $null }
     certificateThumbprint = $certificateThumbprintUsed
     payload = $payload
 }

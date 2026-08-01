@@ -58,7 +58,7 @@ remaining multimedia-patent and worldwide distribution risk on 2026-07-21;
 that decision is not a legal opinion that no patents apply. See
 `docs/RUNTIME_DISTRIBUTION_REVIEW.md`.
 
-## RIFE performance-spike dependencies
+## Optional 24-to-48 RIFE playback dependencies
 
 The isolated Slice 3A benchmark fetches the MIT-licensed
 [VapourSynth-RIFE-ncnn-Vulkan](https://github.com/styler00dollar/VapourSynth-RIFE-ncnn-Vulkan)
@@ -70,14 +70,21 @@ It statically links the reference plugin's pinned
 ncnn's recursively pinned glslang source at commit
 `a9ac7d5f307e5db5b8c4fbf904bdba8fca6283bc`.
 
-The reference repository's converted RIFE 4.25-lite `param/bin` model is used
-only as a prototype input. Its binary SHA-256 is
+The next-update candidate uses the reference repository's converted RIFE
+4.25-lite `param/bin` model as a pinned upstream artifact. Its binary SHA-256 is
 `350a15e464bea5ad378e06c0fb43996e90a0d35653d5a6ef6bc980d832538fb7`.
-The repository does not provide a reproducible conversion recipe proving that
-this ncnn model is equivalent to the official Practical-RIFE PyTorch weight.
+PlainVideo does not claim that this artifact is byte-equivalent to a fresh
+conversion of the official Practical-RIFE PyTorch weight. The exact source
+commit, model hashes, deterministic output checks, real-playback checks, and
+fallback behavior form the qualification boundary. Practical-RIFE publishes
+its model material under the project's MIT license; that license is included
+alongside the runtime notices.
 
-These sources, licenses, model files, DLL, CLI, and measurements stay in the
-ignored `.runtime/rife-spike` tree. They are **not release dependencies** and
-must not be copied into PlainVideo's portable or Store artifacts. Exact pins,
-hashes, and the release blocker are recorded in
-[`third_party/rife-spike.json`](third_party/rife-spike.json).
+The benchmark CLI and measurements remain in the ignored `.runtime/rife-spike`
+tree. A 24-to-48 candidate may copy only the verified runtime DLL, model, and
+license set through `scripts/stage-rife-player.ps1`. It remains blocked from a
+portable or Store release until its staged manifest is explicitly marked
+release-eligible after the targeted playback and package gates pass. Exact
+pins, hashes, and policy are recorded in
+[`third_party/rife-spike.json`](third_party/rife-spike.json) and
+[`third_party/RIFE_24_TO_48_NOTICE.md`](third_party/RIFE_24_TO_48_NOTICE.md).

@@ -1,9 +1,10 @@
-# Experimental RIFE player integration
+# 24-to-48 RIFE player integration
 
-Date: 2026-07-23
+Last updated: 2026-08-01
 
-Status: local experimental player integration verified; disabled by default;
-not release-approved and not included in the ordinary portable or Store build
+Status: promoted to a next-update candidate with product UI, saved opt-in,
+runtime/license staging, and a developer MSIX path; still disabled by default
+and not release-approved
 
 ## Result
 
@@ -11,10 +12,18 @@ PlainVideo now has an isolated custom-libmpv build that can insert RIFE
 4.25-lite midpoint frames before the normal libmpv renderer. This is actual
 motion-estimated frame interpolation, not mpv display resampling.
 
-The feature is exposed only when the staged root contains the experimental
-RIFE DLL and model. In that build, the right-click menu contains `RIFE frame
-interpolation (experimental)`. It remains off on every launch. The ordinary
-libmpv runtime and release staging are unchanged.
+The control panel and right-click menu now expose `Smooth playback 24→48`.
+The control panel remains visible as a disabled capability when the current
+build lacks the engine, distinguishes active generation from current-video
+source fallback, and remembers an explicit user opt-in. It never becomes an
+automatic default.
+
+`scripts/stage-rife-player.ps1` assembles the custom libmpv runtime, RIFE DLL,
+pinned converted model, exact hashes, and RIFE license set into an isolated
+next-update candidate. `scripts/build-msix.ps1 -IncludeRife24To48Candidate`
+can build a local developer MSIX from that staged
+root. Store upload remains mechanically blocked while either the custom-libmpv
+or feature manifest has `releaseEligible: false`.
 
 The currently qualified playback policy is deliberately narrow:
 

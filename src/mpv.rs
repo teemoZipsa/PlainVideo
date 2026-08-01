@@ -9,6 +9,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use crate::control_panel::EQUALIZER_FREQUENCIES;
 use libloading::Library;
 use libloading::os::windows::{
     LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, LOAD_LIBRARY_SEARCH_SYSTEM32, Library as WindowsLibrary,
@@ -61,6 +62,25 @@ fn environment_flag_enabled(name: &str) -> bool {
     std::env::var(name)
         .ok()
         .is_some_and(|value| matches!(value.as_str(), "1" | "yes" | "true"))
+}
+
+fn rife_source_supported(
+    width: u32,
+    height: u32,
+    frame_rate: f64,
+    gamma: &str,
+    primaries: &str,
+) -> bool {
+    if !frame_rate.is_finite() || frame_rate <= 0.0 {
+        return false;
+    }
+    let gamma = gamma.to_ascii_lowercase();
+    let primaries = primaries.to_ascii_lowercase();
+    let hdr = gamma.contains("pq")
+        || gamma.contains("hlg")
+        || primaries.contains("bt.2020")
+        || primaries.contains("bt2020");
+    width == 1_920 && height == 1_080 && (23.0..=25.5).contains(&frame_rate) && !hdr
 }
 
 #[repr(C)]
@@ -891,6 +911,22 @@ impl Player {
         (width > 0 && height > 0).then_some((width, height))
     }
 
+    pub fn rife_source_eligible(&self) -> Option<bool> {
+        let (width, height) = self.video_dimensions()?;
+        let frame_rate = self
+            .property_string("container-fps")
+            .or_else(|| self.property_string("estimated-vf-fps"))?
+            .parse::<f64>()
+            .ok()?;
+        let gamma = self.property_string("video-params/gamma")?;
+        let primaries = self
+            .property_string("video-params/primaries")
+            .unwrap_or_default();
+        Some(rife_source_supported(
+            width, height, frame_rate, &gamma, &primaries,
+        ))
+    }
+
     pub fn is_seekable(&self) -> bool {
         self.property_string("seekable")
             .is_some_and(|value| matches!(value.as_str(), "yes" | "true"))
@@ -905,6 +941,43 @@ impl Player {
         self.property_string("speed")
             .and_then(|value| value.parse().ok())
             .unwrap_or(1.0)
+    }
+
+    pub fn ab_loop_a(&self) -> Option<f64> {
+        optional_number_property(self.property_string("ab-loop-a"))
+    }
+
+    pub fn ab_loop_b(&self) -> Option<f64> {
+        optional_number_property(self.property_string("ab-loop-b"))
+    }
+
+    pub fn set_ab_loop_a(&self, seconds: f64) -> Result<(), String> {
+        let seconds = format!("{:.3}", seconds.max(0.0));
+        self.command(&["set", "ab-loop-a", &seconds])
+    }
+
+    pub fn set_ab_loop_b(&self, seconds: f64) -> Result<(), String> {
+        let seconds = format!("{:.3}", seconds.max(0.0));
+        self.command(&["set", "ab-loop-b", &seconds])
+    }
+
+    pub fn clear_ab_loop(&self) -> Result<(), String> {
+        self.command(&["set", "ab-loop-a", "no"])?;
+        self.command(&["set", "ab-loop-b", "no"])
+    }
+
+    pub fn set_equalizer(&self, gains: [i8; 5]) -> Result<(), String> {
+        let active = self
+            .property_string("af")
+            .is_some_and(|filters| filters.contains("plainvideo-eq"));
+        if active {
+            self.command(&["af", "remove", "@plainvideo-eq"])?;
+        }
+        if gains.iter().all(|gain| *gain == 0) {
+            return Ok(());
+        }
+        let filter = equalizer_filter_spec(gains);
+        self.command(&["af", "add", &filter])
     }
 
     pub fn rife_enabled(&self) -> bool {
@@ -1750,6 +1823,23 @@ fn set_option(api: &Api, handle: *mut MpvHandle, name: &str, value: &str) -> Res
     Ok(())
 }
 
+fn optional_number_property(value: Option<String>) -> Option<f64> {
+    value.and_then(|value| match value.as_str() {
+        "" | "no" | "none" => None,
+        _ => value.parse().ok(),
+    })
+}
+
+fn equalizer_filter_spec(gains: [i8; 5]) -> String {
+    let filters = EQUALIZER_FREQUENCIES
+        .into_iter()
+        .zip(gains)
+        .map(|(frequency, gain)| format!("equalizer=f={frequency}:t=q:w=1:g={gain}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("@plainvideo-eq:lavfi=[{filters}]")
+}
+
 fn utf8_path(path: &Path) -> Result<String, String> {
     let value = path
         .to_str()
@@ -1794,6 +1884,30 @@ mod tests {
         assert_eq!(size_of::<MpvEventEndFile>(), 32);
         assert_eq!(MPV_END_FILE_REASON_EOF, 0);
         assert_eq!(MPV_END_FILE_REASON_ERROR, 4);
+    }
+
+    #[test]
+    fn equalizer_filter_is_labeled_and_keeps_all_five_bands() {
+        let filter = equalizer_filter_spec([-2, 0, 2, 3, 1]);
+        assert!(filter.starts_with("@plainvideo-eq:lavfi=["));
+        assert_eq!(filter.matches("equalizer=").count(), 5);
+        assert!(filter.contains("f=60:t=q:w=1:g=-2"));
+        assert!(filter.contains("f=14000:t=q:w=1:g=1"));
+    }
+
+    #[test]
+    fn rife_24_to_48_support_is_limited_to_1080p_sdr_source_cadence() {
+        assert!(rife_source_supported(
+            1_920, 1_080, 23.976, "bt.1886", "bt.709"
+        ));
+        assert!(rife_source_supported(1_920, 1_080, 25.0, "srgb", "bt.709"));
+        assert!(!rife_source_supported(
+            3_840, 2_160, 24.0, "bt.1886", "bt.709"
+        ));
+        assert!(!rife_source_supported(
+            1_920, 1_080, 30.0, "bt.1886", "bt.709"
+        ));
+        assert!(!rife_source_supported(1_920, 1_080, 24.0, "pq", "bt.2020"));
     }
 
     #[test]
