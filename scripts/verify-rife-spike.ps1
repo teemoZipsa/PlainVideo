@@ -5,7 +5,8 @@ param(
     [int]$GpuIndex = -1,
     [string]$EvidenceDirectory,
     [switch]$SkipBuild,
-    [switch]$Only24To48
+    [switch]$Only24To48,
+    [switch]$ReuseEvidenceDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -99,9 +100,16 @@ if (-not $evidenceDirectoryFull.StartsWith($allowedPrefix, [StringComparison]::O
     throw "RIFE evidence must stay below $evidenceRoot"
 }
 if (Test-Path -LiteralPath $evidenceDirectoryFull) {
-    throw "Refusing to overwrite existing RIFE evidence: $evidenceDirectoryFull"
+    if (-not $ReuseEvidenceDirectory) {
+        throw "Refusing to overwrite existing RIFE evidence: $evidenceDirectoryFull"
+    }
 }
-New-Item -ItemType Directory -Path $evidenceDirectoryFull -Force | Out-Null
+elseif ($ReuseEvidenceDirectory) {
+    throw "The requested RIFE evidence directory does not exist: $evidenceDirectoryFull"
+}
+else {
+    New-Item -ItemType Directory -Path $evidenceDirectoryFull -Force | Out-Null
+}
 
 if ($Profile -eq 'Full') {
     $warmup = 60
@@ -118,7 +126,7 @@ $evidenceArtifactPaths = [System.Collections.Generic.List[string]]::new()
 $generatedOutputProofVerifiedRuns = 0
 $generatedOutputDigestReferenceKey = $null
 $generatedOutputDigestReference = @()
-$cadences = if ($Only24To48) { @(24) } else { @(24, 30) }
+$cadences = @(if ($Only24To48) { 24 } else { 24; 30 })
 
 function Get-RequiredPropertyValue {
     param(
@@ -265,27 +273,36 @@ foreach ($fps in $cadences) {
             $fps, ($fps * 2), $variant.sequence, $variant.symbol, $variant.commandValue
         $resultPath = Join-Path $evidenceDirectoryFull "$fileStem.json"
         $logPath = Join-Path $evidenceDirectoryFull "$fileStem.stderr.log"
-        $nativePreference = Get-Variable PSNativeCommandUseErrorActionPreference `
-            -ErrorAction SilentlyContinue
-        if ($nativePreference) {
-            $previousNativePreference = $nativePreference.Value
-            $PSNativeCommandUseErrorActionPreference = $false
+        if ($ReuseEvidenceDirectory) {
+            if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf) -or
+                -not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
+                throw "Reusable RIFE evidence is incomplete for $fileStem."
+            }
+            $benchmarkExit = 0
         }
-        try {
-            & $bench `
-                --model $modelRoot `
-                --fps $fps `
-                --warmup $warmup `
-                --iterations $iterations `
-                --gpu $GpuIndex `
-                --variant $variant.commandValue `
-                --json $resultPath `
-                2> $logPath | Out-Null
-            $benchmarkExit = $LASTEXITCODE
-        }
-        finally {
+        else {
+            $nativePreference = Get-Variable PSNativeCommandUseErrorActionPreference `
+                -ErrorAction SilentlyContinue
             if ($nativePreference) {
-                $PSNativeCommandUseErrorActionPreference = $previousNativePreference
+                $previousNativePreference = $nativePreference.Value
+                $PSNativeCommandUseErrorActionPreference = $false
+            }
+            try {
+                & $bench `
+                    --model $modelRoot `
+                    --fps $fps `
+                    --warmup $warmup `
+                    --iterations $iterations `
+                    --gpu $GpuIndex `
+                    --variant $variant.commandValue `
+                    --json $resultPath `
+                    2> $logPath | Out-Null
+                $benchmarkExit = $LASTEXITCODE
+            }
+            finally {
+                if ($nativePreference) {
+                    $PSNativeCommandUseErrorActionPreference = $previousNativePreference
+                }
             }
         }
         if ($benchmarkExit -notin @(0, 2)) {
@@ -782,6 +799,7 @@ $summary = [ordered]@{
     createdAt = [DateTimeOffset]::Now.ToString('o')
     profile = $Profile
     only24To48 = [bool]$Only24To48
+    reusedEvidenceDirectory = [bool]$ReuseEvidenceDirectory
     implementation = 'RIFE 4.25-lite + ncnn/Vulkan same-DLL host-boundary ABCCBA comparison'
     comparisonClass = 'host-bgra8-to-host-bgra8'
     executionOrder = @('A', 'B', 'C', 'C', 'B', 'A')
