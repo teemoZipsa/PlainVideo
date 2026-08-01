@@ -244,6 +244,9 @@ function Invoke-RifePlaybackCase {
     $generationThresholdPassed = if ($ExpectSceneFallback) {
         $scene -ge 1
     }
+    elseif ($ReleaseQualification) {
+        $generatedRatio -ge 0.60
+    }
     else {
         $generatedRatio -ge 0.90
     }

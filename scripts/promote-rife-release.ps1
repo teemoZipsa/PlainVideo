@@ -71,7 +71,9 @@ foreach ($name in @(
     }
 }
 if ($cases['24-to-48-generated'].generated -lt 80 -or
+    $cases['24-to-48-generated'].generatedRatio -lt 0.60 -or
     $cases['24-to-48-seek-fallback'].seekPassed -ne $true -or
+    $cases['24-to-48-seek-fallback'].generatedRatio -lt 0.60 -or
     $cases['24-to-48-scene-cut-fallback'].sceneFallback -lt 1 -or
     $cases['30fps-source-fallback'].generated -ne 0 -or
     $cases['30fps-source-fallback'].cadenceFallback -lt 80) {
