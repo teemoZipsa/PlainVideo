@@ -1,8 +1,8 @@
 # PlainVideo 0.2.3 release notes
 
-Status: clean-candidate playback qualification passed; Store package assembly,
-Partner Center submission, certification, publication, and Store delivery are
-separate later states
+Status: release artifacts and local gates passed; Partner Center Submission 4
+is in Pre-processing with manual publication hold. Certification, publication,
+and Store delivery remain separate later states.
 
 ## 한국어
 
@@ -29,5 +29,6 @@ separate later states
 
 The clean candidate passed the 24-to-48 native timing gate and focused playback
 checks for generation, seek, scene-cut, overload, teardown, and unsupported
-30 fps source fallback. Portable/MSIX payload verification and Store submission
-remain separate release steps.
+30 fps source fallback. The exact portable/MSIX payloads passed verification,
+Defender found no threats, WACK reported PASS, and the Store MSIX was submitted
+as Partner Center Submission 4. It is not yet certified or published.

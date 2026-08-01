@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "observedAt": "2026-08-01T10:05:00+09:00",
-  "status": "submission-3-0.2.2-in-microsoft-store-0.2.3-qualified-for-packaging",
+  "observedAt": "2026-08-01T10:56:50+09:00",
+  "status": "submission-4-0.2.3-pre-processing-manual-publish-hold",
   "repository": {
     "nameWithOwner": "teemoZipsa/PlainVideo",
     "visibility": "public",
     "defaultBranch": "master",
     "baselineCommit": "184c60e5d7d4238cb07821228d49283e4285e671",
-    "releaseCommit": "36ce3e8469829f5724eddbd4fff78aba5db4e93c",
+    "releaseCommit": "4417b459475aeb0d99e32374077731d9ba6b99b1",
     "githubActionsRepositoryPermission": "enabled",
     "localWorkflowCount": 0,
     "workflowPolicy": "Do not add, dispatch, rerun, or broaden workflows without explicit user approval."
@@ -31,7 +31,7 @@
     "telemetry": false
   },
   "partnerCenter": {
-    "status": "submission-3-0.2.2-in-microsoft-store",
+    "status": "submission-4-0.2.3-update-in-certification-pre-processing",
     "productNameReserved": true,
     "productName": "PlainVideo",
     "storeId": "9PDKQ88FKG1L",
@@ -41,13 +41,13 @@
     "publisherDisplayName": "SeonkyuIM",
     "packageFamilyName": "SeonkyuIM.PlainVideo_9c7j90kvgvwr0",
     "publishedSubmissionId": "1152921505701493629",
-    "submissionId": "1152921505701493629",
+    "submissionId": "1152921505701552228",
     "pricingAndAvailability": "complete-worldwide-free",
     "properties": "complete-photo-and-video-public-privacy-policy",
     "ageRatings": "complete-iarc-3-plus",
-    "packages": "submission-3-plainvideo-0.2.2.0-in-microsoft-store",
+    "packages": "submission-4-plainvideo-0.2.3.0-validated",
     "storeListings": {
-      "status": "submission-3-bilingual-0.2.2-listing-in-microsoft-store",
+      "status": "submission-4-bilingual-0.2.3-release-notes-saved",
       "locales": [
         "en-US",
         "ko-KR"
@@ -78,10 +78,10 @@
         ]
       }
     },
-    "submissionOptions": "submission-3-published",
-    "certificationNotes": "0.2.2-notes-saved-no-credentials-required-audio-timing-test-experimental-interpolation-excluded",
-    "certificationStatus": "submission-3-certification-completed",
-    "publicationStatus": "submission-3-0.2.2.0-in-microsoft-store"
+    "submissionOptions": "submission-4-manual-publish-hold-retained",
+    "certificationNotes": "existing-product-additional-testing-information-retained",
+    "certificationStatus": "submission-4-step-2-of-4-pre-processing",
+    "publicationStatus": "not-published-submission-3-0.2.2.0-remains-in-microsoft-store"
   },
   "localPackageEvidence": {
     "status": "published-0.1.0-package-evidence",
@@ -156,27 +156,38 @@
     },
     "playbackRife": {
       "status": "passed-clean-commit-release-qualification",
-      "summary": ".runtime/rife-player/evidence/20260801-103710-945/summary.json",
+      "summary": ".runtime/rife-player/evidence/20260801-104209-845/summary.json",
       "cases": "24-to-48-generated-seek-scene-cut-and-30fps-source-fallback"
     },
     "packageEvidence": {
-      "status": "pending-corresponding-source-portable-msix-defender-wack-and-partner-center"
+      "status": "complete-and-submitted",
+      "sourceCommit": "4417b459475aeb0d99e32374077731d9ba6b99b1",
+      "storeMsix": ".runtime/msix/PlainVideo_0.2.3.0_x64-store.msix",
+      "storeMsixSha256": "d4e431a226aba4b02a272283128f1cbc8ec12f77b54abe9c6669fa02924c2685",
+      "storeMsixSizeBytes": 30468974,
+      "payloadFileCount": 75,
+      "developerMsixSha256": "0fc935cff980ec3c00d3e3d310de241a22364a5c4e18bbc5fb50a7ddfdad7c60",
+      "portableSha256": "a1433aecfb8fc2ae77e2d7ded869c9667d46a1580a9eb4fc2befce56358e1adc",
+      "correspondingSourceSha256": "67b047b4f947d76d4c6920ae0cf46c3a81248348931fb915224573814fda8aa4",
+      "defender": "no-threats-store-msix-developer-msix-portable-zip",
+      "wackOverallResult": "PASS",
+      "wackReport": ".runtime/msix/wack-report-0.2.3.xml",
+      "wackReportSha256": "9cea47fb5cdd96589ac628d40301e59e9d4569fe842935817320342bd064eeca"
     }
   },
   "release": {
     "eligible": true,
     "publisherRiskDecision": "accepted-free-worldwide-distribution-2026-07-21",
     "packageVersion": "0.2.3.0",
-    "packageSha256": null,
-    "portableSha256": null,
+    "packageSha256": "d4e431a226aba4b02a272283128f1cbc8ec12f77b54abe9c6669fa02924c2685",
+    "portableSha256": "a1433aecfb8fc2ae77e2d7ded869c9667d46a1580a9eb4fc2befce56358e1adc",
     "githubRelease": "https://github.com/teemoZipsa/PlainVideo/releases/tag/v0.2.3",
-    "githubReleaseState": "pending-corresponding-source-and-portable-assets",
-    "partnerCenterSubmissionId": null,
-    "nextMilestone": "publish-corresponding-source-build-verify-and-submit-0.2.3"
+    "githubReleaseState": "prerelease-with-portable-and-corresponding-source-assets",
+    "partnerCenterSubmissionId": "1152921505701552228",
+    "nextMilestone": "await-certification-then-explicitly-publish-after-review"
   },
   "blockingGates": [
-    "0.2.3 corresponding source, portable, and Store MSIX are not yet published or submitted.",
-    "Exact 0.2.3 Defender and WACK package validation remain pending.",
+    "Submission 4 certification has not completed and 0.2.3 is not published or Store-live.",
     "The selected Windows 10 minimum-image proof remains open."
   ]
 }

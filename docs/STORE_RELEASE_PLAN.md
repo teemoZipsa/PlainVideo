@@ -1,7 +1,7 @@
 # Microsoft Store release plan
 
-Date: 2026-07-27
-Status: Submission 2 (0.2.0.0) is in Microsoft Store; Submission 3 (0.2.2.0) is in certification step 2 of 4, Pre-processing
+Date: 2026-08-01
+Status: Submission 3 (0.2.2.0) is in Microsoft Store; Submission 4 (0.2.3.0) is in certification step 2 of 4, Pre-processing, with manual publication hold retained
 
 ## Product decision
 
@@ -151,21 +151,18 @@ Submission, certification, and publication are distinct states. Update `STORE_RE
 |---|---|---|
 | S0 — Store plan | Distribution choice, gates, bilingual listing draft, state file | Complete |
 | S1 — Runtime closure | Shared-libmpv candidate built, host-tested, and clean-Windows-11-Sandbox-tested | Complete; corresponding source is public and publisher accepted residual worldwide codec-patent risk; selected Windows 10 minimum-image proof remains a documented limitation |
-| S2 — Package proof | Partner identity, assets, manifest, x64 developer MSIX | Complete for `0.2.2.0`; clean-commit package, valid developer signature, Defender scans, WACK overall PASS, and zero interpolation runtime/model assets verified |
+| S2 — Package proof | Partner identity, assets, manifest, x64 developer MSIX | Complete for `0.2.3.0`; clean-commit package, valid developer signature, Defender scans, WACK overall PASS, and the qualified RIFE runtime/model/notices/licenses verified |
 | S3 — Installed-app proof | WACK, host/Sandbox, activation/update/uninstall | Complete for a first release; full host validation, WACK PASS, Sandbox proof, activation, uninstall, and reinstall passed; prior-version update is not applicable |
-| S4 — Listing readiness | Privacy/support/source pages and localized captures | Complete for Submission 3; bilingual 0.2.2 release notes were saved and existing rights-cleared media was retained |
-| S5 — Partner Center submission | Exact package uploaded and submitted | Submission 3 (`1152921505701493629`) completed and its `0.2.2.0` package is now shown by Partner Center as the current Store package |
+| S4 — Listing readiness | Privacy/support/source pages and localized captures | Complete for Submission 4; bilingual 0.2.3 release notes were saved and existing rights-cleared media was retained |
+| S5 — Partner Center submission | Exact package uploaded and submitted | Submission 4 (`1152921505701552228`) accepted the validated `0.2.3.0` package and is in Pre-processing |
 | S6 — Public release | Certification passed and availability verified independently | Complete through `0.2.2.0`; Partner Center shows the latest product available in Microsoft Store and the read-only package page lists `0.2.2.0` |
-| N1 — 24→48 next-update candidate | Saved user opt-in, source fallback, pinned runtime/model/notices, portable/MSIX staging | Clean-candidate native and focused playback qualification passed for `0.2.3`; corresponding source publication, exact portable/MSIX payload verification, WACK, and Partner Center submission remain |
+| N1 — 24→48 next-update candidate | Saved user opt-in, source fallback, pinned runtime/model/notices, portable/MSIX staging | Complete for Submission 4; native and playback qualification, source publication, portable/MSIX verification, Defender, WACK, and Partner Center submission passed |
 
 ## Immediate next work
 
-1. Publish the `0.2.3` corresponding-source bundle at its exact release URL.
-2. Promote both RIFE manifests only from the recorded clean-commit native and
-   playback qualification summaries.
-3. Build and hash-verify the matching portable ZIP and Store MSIX, including
-   their RIFE model, runtime, notice, and license payloads.
-4. Run Defender and WACK against the exact package, then submit it in Partner
-   Center without claiming certification, publication, or device delivery.
-5. Preserve the selected Windows 10 minimum-image limitation until a real
+1. Monitor Submission 4 until Microsoft reports certification completed.
+2. Review the certification result, then use `Publish now` only as a separate,
+   explicit publication action; do not call 0.2.3 Store-live before propagation
+   is independently verified.
+3. Preserve the selected Windows 10 minimum-image limitation until a real
    Windows 10 test image is exercised.
