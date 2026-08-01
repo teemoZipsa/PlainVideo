@@ -131,7 +131,7 @@ function Invoke-RifePlaybackCase {
     # first-run Vulkan pipeline compilation adds several seconds before the
     # first frame. Normal fallback verification keeps its shorter smoke window.
     $start.Environment['PLAINVIDEO_DIAGNOSTIC_EXIT_MS'] = if ($Probe30To60 -or $Seek) {
-        if ($Seek) { '15000' } else { '12000' }
+        if ($Seek) { '7000' } else { '12000' }
     }
     else {
         '6000'
