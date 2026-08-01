@@ -4418,10 +4418,10 @@ mod tests {
     fn tab_toggles_media_info_without_toggling_playback() {
         let source = include_str!("windows_app.rs");
         let tab_branch = source
-            .split_once("if key == VK_TAB")
-            .and_then(|(_, rest)| rest.split_once("let shift ="))
+            .split_once("if key == VK_TAB {\n        app.clear_keyboard_focus();")
+            .and_then(|(_, rest)| rest.split_once("    match key {"))
             .map(|(body, _)| body)
-            .expect("Tab key branch");
+            .expect("unmodified Tab media information branch");
 
         assert!(tab_branch.contains("app.toggle_media_info();"));
         assert!(tab_branch.contains("return;"));
@@ -4432,10 +4432,12 @@ mod tests {
     fn media_info_stays_enabled_until_an_explicit_toggle() {
         let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
 
-        // One assignment initializes the state; the other is the explicit
-        // script-message "hide" action. Playback lifecycle events must not
-        // silently clear a view the user pinned with Tab.
-        assert_eq!(lua.matches("media_info_visible = false").count(), 2);
+        // One assignment initializes the state, one is the explicit
+        // script-message "hide" action, and one switches from the diagnostic
+        // view to the explicitly opened control panel. Playback lifecycle
+        // events must not silently clear a view the user pinned with Tab.
+        assert_eq!(lua.matches("media_info_visible = false").count(), 3);
+        assert!(lua.contains("if control_panel_visible then media_info_visible = false end"));
         assert!(!lua.contains("if value then media_info_visible = false end"));
     }
 
