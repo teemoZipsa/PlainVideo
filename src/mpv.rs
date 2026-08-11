@@ -1,5 +1,7 @@
+use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
 use std::ffi::{CStr, CString, c_char, c_double, c_int, c_void};
+use std::fs;
 use std::mem::size_of;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
@@ -49,12 +51,45 @@ const MPV_CLIENT_API_MAJOR: u32 = 2;
 const MPV_CLIENT_API_MIN_MINOR: u32 = 5;
 const RIFE_FILTER_DEFAULT: &str = "@plainvideo-rife:plainvideo-rife";
 const RIFE_FILTER_30FPS_PROBE: &str = "@plainvideo-rife:plainvideo-rife=max-source-fps=30.5";
+const RIFE_INPUT_FILTER_LABEL: &str = "@plainvideo-rife-input";
+const RIFE_OUTPUT_FILTER_LABEL: &str = "@plainvideo-rife-output";
+const RIFE_INTERNAL_WIDTH: u32 = 1_920;
+const RIFE_INTERNAL_HEIGHT: u32 = 1_080;
+const RIFE_COMPATIBILITY_MAX_WIDTH: u32 = 4_096;
+const RIFE_COMPATIBILITY_MAX_HEIGHT: u32 = 2_160;
 
-fn rife_filter_spec(allow_30fps_probe: bool) -> &'static str {
-    if allow_30fps_probe {
-        RIFE_FILTER_30FPS_PROBE
-    } else {
-        RIFE_FILTER_DEFAULT
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RifeMode {
+    Off,
+    Fps24To48,
+    Fps30To60,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RifeCompatibilityPlan {
+    content_width: u32,
+    content_height: u32,
+    pad_x: u32,
+    pad_y: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct RifeCapabilities {
+    allow_30_to_60: bool,
+    allow_compatibility_bridge: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RifeSourcePlan {
+    Direct,
+    Compatibility(RifeCompatibilityPlan),
+}
+
+fn rife_filter_spec(mode: RifeMode) -> Option<&'static str> {
+    match mode {
+        RifeMode::Off => None,
+        RifeMode::Fps24To48 => Some(RIFE_FILTER_DEFAULT),
+        RifeMode::Fps30To60 => Some(RIFE_FILTER_30FPS_PROBE),
     }
 }
 
@@ -64,23 +99,119 @@ fn environment_flag_enabled(name: &str) -> bool {
         .is_some_and(|value| matches!(value.as_str(), "1" | "yes" | "true"))
 }
 
-fn rife_source_supported(
+fn environment_rife_mode() -> RifeMode {
+    if !environment_flag_enabled("PLAINVIDEO_RIFE") {
+        RifeMode::Off
+    } else if environment_flag_enabled("PLAINVIDEO_RIFE_ALLOW_30FPS") {
+        RifeMode::Fps30To60
+    } else {
+        RifeMode::Fps24To48
+    }
+}
+
+fn rife_capabilities(root: &Path) -> RifeCapabilities {
+    let manifest = ["rife-feature-manifest.json", "experimental-manifest.json"]
+        .iter()
+        .find_map(|name| fs::read_to_string(root.join(name)).ok())
+        .map(|contents| contents.split_whitespace().collect::<String>())
+        .unwrap_or_default();
+    RifeCapabilities {
+        allow_30_to_60: environment_flag_enabled("PLAINVIDEO_RIFE_ALLOW_30FPS")
+            || manifest.contains("\"probe30To60Included\":true"),
+        allow_compatibility_bridge: environment_flag_enabled("PLAINVIDEO_RIFE_ALLOW_COMPATIBILITY")
+            || manifest.contains("\"compatibilityBridge\""),
+    }
+}
+
+fn fit_rife_compatibility_source(width: u32, height: u32) -> Option<RifeCompatibilityPlan> {
+    if width < 2
+        || height < 2
+        || width > RIFE_COMPATIBILITY_MAX_WIDTH
+        || height > RIFE_COMPATIBILITY_MAX_HEIGHT
+    {
+        return None;
+    }
+
+    let (content_width, content_height) = if u64::from(width) * u64::from(RIFE_INTERNAL_HEIGHT)
+        >= u64::from(height) * u64::from(RIFE_INTERNAL_WIDTH)
+    {
+        let scaled = ((u64::from(height) * u64::from(RIFE_INTERNAL_WIDTH) + u64::from(width) / 2)
+            / u64::from(width)) as u32;
+        (
+            RIFE_INTERNAL_WIDTH,
+            scaled.clamp(2, RIFE_INTERNAL_HEIGHT) & !1,
+        )
+    } else {
+        let scaled = ((u64::from(width) * u64::from(RIFE_INTERNAL_HEIGHT) + u64::from(height) / 2)
+            / u64::from(height)) as u32;
+        (
+            scaled.clamp(2, RIFE_INTERNAL_WIDTH) & !1,
+            RIFE_INTERNAL_HEIGHT,
+        )
+    };
+    let pad_x = (RIFE_INTERNAL_WIDTH - content_width) / 2;
+    let pad_y = (RIFE_INTERNAL_HEIGHT - content_height) / 2;
+    Some(RifeCompatibilityPlan {
+        content_width,
+        content_height,
+        pad_x,
+        pad_y,
+    })
+}
+
+fn rife_source_plan(
+    mode: RifeMode,
     width: u32,
     height: u32,
     frame_rate: f64,
-    gamma: &str,
-    primaries: &str,
-) -> bool {
+    capabilities: RifeCapabilities,
+) -> Option<RifeSourcePlan> {
     if !frame_rate.is_finite() || frame_rate <= 0.0 {
-        return false;
+        return None;
     }
-    let gamma = gamma.to_ascii_lowercase();
-    let primaries = primaries.to_ascii_lowercase();
-    let hdr = gamma.contains("pq")
-        || gamma.contains("hlg")
-        || primaries.contains("bt.2020")
-        || primaries.contains("bt2020");
-    width == 1_920 && height == 1_080 && (23.0..=25.5).contains(&frame_rate) && !hdr
+    let supported_cadence = match mode {
+        RifeMode::Off => false,
+        RifeMode::Fps24To48 => (23.0..=25.5).contains(&frame_rate),
+        RifeMode::Fps30To60 => capabilities.allow_30_to_60 && (29.0..=30.5).contains(&frame_rate),
+    };
+    if !supported_cadence {
+        return None;
+    }
+    if width == RIFE_INTERNAL_WIDTH && height == RIFE_INTERNAL_HEIGHT {
+        return Some(RifeSourcePlan::Direct);
+    }
+    capabilities
+        .allow_compatibility_bridge
+        .then(|| fit_rife_compatibility_source(width, height))
+        .flatten()
+        .map(RifeSourcePlan::Compatibility)
+}
+
+#[cfg(test)]
+fn rife_source_supported(mode: RifeMode, width: u32, height: u32, frame_rate: f64) -> bool {
+    rife_source_plan(
+        mode,
+        width,
+        height,
+        frame_rate,
+        RifeCapabilities {
+            allow_30_to_60: true,
+            allow_compatibility_bridge: true,
+        },
+    )
+    .is_some()
+}
+
+fn rife_compatibility_filter_specs(plan: RifeCompatibilityPlan) -> (String, String) {
+    let input = format!(
+        "{RIFE_INPUT_FILTER_LABEL}:lavfi=[scale=w={}:h={}:flags=lanczos,pad=w={RIFE_INTERNAL_WIDTH}:h={RIFE_INTERNAL_HEIGHT}:x={}:y={}:color=black]",
+        plan.content_width, plan.content_height, plan.pad_x, plan.pad_y
+    );
+    let output = format!(
+        "{RIFE_OUTPUT_FILTER_LABEL}:lavfi=[crop=w={}:h={}:x={}:y={}]",
+        plan.content_width, plan.content_height, plan.pad_x, plan.pad_y
+    );
+    (input, output)
 }
 
 #[repr(C)]
@@ -436,6 +567,9 @@ pub struct Player {
     render_thread: Option<JoinHandle<()>>,
     render_error: Arc<Mutex<Option<String>>>,
     event_wake: Box<EventWake>,
+    rife_mode: Cell<RifeMode>,
+    rife_compatibility_bridge: Cell<bool>,
+    rife_capabilities: RifeCapabilities,
 }
 
 #[derive(Clone, Debug)]
@@ -576,6 +710,8 @@ impl Player {
             return Err("libmpv could not create a playback core.".to_string());
         }
 
+        let initial_rife_mode = environment_rife_mode();
+        let rife_capabilities = rife_capabilities(root);
         let result = Self::configure_and_initialize(&api, handle, root);
         if let Err(error) = result {
             unsafe { (api.terminate_destroy)(handle) };
@@ -696,6 +832,9 @@ impl Player {
             render_thread: Some(render_thread),
             render_error,
             event_wake,
+            rife_mode: Cell::new(initial_rife_mode),
+            rife_compatibility_bridge: Cell::new(false),
+            rife_capabilities,
         })
     }
 
@@ -711,8 +850,7 @@ impl Player {
             .as_ref()
             .and_then(|_| std::env::var("PLAINVIDEO_DIAGNOSTIC_HWDEC").ok())
             .filter(|value| matches!(value.as_str(), "no" | "auto-safe"));
-        let rife_enabled = environment_flag_enabled("PLAINVIDEO_RIFE");
-        let allow_30fps_probe = environment_flag_enabled("PLAINVIDEO_RIFE_ALLOW_30FPS");
+        let rife_mode = environment_rife_mode();
         let mut options = vec![
             ("config-dir", utf8_path(&config_dir)?),
             ("config", "yes".to_string()),
@@ -733,8 +871,8 @@ impl Player {
             options.push(("log-file", utf8_path(Path::new(&log_path))?));
             options.push(("msg-level", "all=v".to_string()));
         }
-        if rife_enabled {
-            options.push(("vf", rife_filter_spec(allow_30fps_probe).to_string()));
+        if let Some(filter) = rife_filter_spec(rife_mode) {
+            options.push(("vf", filter.to_string()));
         }
 
         for (name, value) in options {
@@ -911,20 +1049,22 @@ impl Player {
         (width > 0 && height > 0).then_some((width, height))
     }
 
-    pub fn rife_source_eligible(&self) -> Option<bool> {
+    pub fn rife_source_eligible(&self, mode: RifeMode) -> Option<bool> {
+        Some(self.current_rife_source_plan(mode).is_some())
+    }
+
+    fn current_rife_source_plan(&self, mode: RifeMode) -> Option<RifeSourcePlan> {
         let (width, height) = self.video_dimensions()?;
         let frame_rate = self
             .property_string("container-fps")
             .or_else(|| self.property_string("estimated-vf-fps"))?
             .parse::<f64>()
             .ok()?;
-        let gamma = self.property_string("video-params/gamma")?;
-        let primaries = self
-            .property_string("video-params/primaries")
-            .unwrap_or_default();
-        Some(rife_source_supported(
-            width, height, frame_rate, &gamma, &primaries,
-        ))
+        rife_source_plan(mode, width, height, frame_rate, self.rife_capabilities)
+    }
+
+    pub fn rife_30_to_60_available(&self) -> bool {
+        self.rife_capabilities.allow_30_to_60
     }
 
     pub fn is_seekable(&self) -> bool {
@@ -980,24 +1120,83 @@ impl Player {
         self.command(&["af", "add", &filter])
     }
 
-    pub fn rife_enabled(&self) -> bool {
-        self.property_string("vf")
-            .is_some_and(|filters| filters.contains("plainvideo-rife"))
+    pub fn rife_mode(&self) -> RifeMode {
+        self.rife_mode.get()
     }
 
-    pub fn set_rife_enabled(&self, enabled: bool) -> Result<(), String> {
-        if enabled == self.rife_enabled() {
+    pub fn rife_compatibility_bridge_active(&self) -> bool {
+        self.rife_compatibility_bridge.get()
+    }
+
+    fn remove_active_rife_chain(&self) -> Result<(), String> {
+        let compatibility = self.rife_compatibility_bridge_active();
+        let mut first_error = None;
+        if compatibility {
+            if let Err(error) = self.command(&["vf", "remove", RIFE_OUTPUT_FILTER_LABEL]) {
+                first_error = Some(error);
+            }
+        }
+        if let Err(error) = self.command(&["vf", "remove", "@plainvideo-rife"])
+            && first_error.is_none()
+        {
+            first_error = Some(error);
+        }
+        if compatibility
+            && let Err(error) = self.command(&["vf", "remove", RIFE_INPUT_FILTER_LABEL])
+            && first_error.is_none()
+        {
+            first_error = Some(error);
+        }
+        self.rife_mode.set(RifeMode::Off);
+        self.rife_compatibility_bridge.set(false);
+        match first_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    fn add_rife_chain(&self, mode: RifeMode, plan: RifeSourcePlan) -> Result<(), String> {
+        let filter = rife_filter_spec(mode)
+            .ok_or_else(|| "PlainVideo cannot add an inactive RIFE mode.".to_string())?;
+        match plan {
+            RifeSourcePlan::Direct => {
+                self.command(&["vf", "add", filter])?;
+                self.rife_compatibility_bridge.set(false);
+            }
+            RifeSourcePlan::Compatibility(plan) => {
+                let (input_filter, output_filter) = rife_compatibility_filter_specs(plan);
+                self.command(&["vf", "add", &input_filter])?;
+                if let Err(error) = self.command(&["vf", "add", filter]) {
+                    let _ = self.command(&["vf", "remove", RIFE_INPUT_FILTER_LABEL]);
+                    return Err(error);
+                }
+                if let Err(error) = self.command(&["vf", "add", &output_filter]) {
+                    let _ = self.command(&["vf", "remove", "@plainvideo-rife"]);
+                    let _ = self.command(&["vf", "remove", RIFE_INPUT_FILTER_LABEL]);
+                    return Err(error);
+                }
+                self.rife_compatibility_bridge.set(true);
+            }
+        }
+        self.rife_mode.set(mode);
+        Ok(())
+    }
+
+    pub fn set_rife_mode(&self, mode: RifeMode) -> Result<(), String> {
+        let current = self.rife_mode();
+        if mode == current {
             return Ok(());
         }
-        if enabled {
-            self.command(&[
-                "vf",
-                "add",
-                rife_filter_spec(environment_flag_enabled("PLAINVIDEO_RIFE_ALLOW_30FPS")),
-            ])
-        } else {
-            self.command(&["vf", "remove", "@plainvideo-rife"])
+        if current != RifeMode::Off {
+            self.remove_active_rife_chain()?;
         }
+        if mode == RifeMode::Off {
+            return Ok(());
+        }
+        let plan = self.current_rife_source_plan(mode).ok_or_else(|| {
+            "The current video does not match this RIFE frame-doubling mode.".to_string()
+        })?;
+        self.add_rife_chain(mode, plan)
     }
 
     pub fn playback_position(&self) -> Option<f64> {
@@ -1896,18 +2095,94 @@ mod tests {
     }
 
     #[test]
-    fn rife_24_to_48_support_is_limited_to_1080p_sdr_source_cadence() {
+    fn rife_modes_accept_supported_cadence_through_the_4k_compatibility_bridge() {
         assert!(rife_source_supported(
-            1_920, 1_080, 23.976, "bt.1886", "bt.709"
+            RifeMode::Fps24To48,
+            1_920,
+            1_080,
+            23.976
         ));
-        assert!(rife_source_supported(1_920, 1_080, 25.0, "srgb", "bt.709"));
+        assert!(rife_source_supported(
+            RifeMode::Fps24To48,
+            3_840,
+            1_608,
+            23.976
+        ));
+        assert_eq!(
+            rife_source_plan(
+                RifeMode::Fps24To48,
+                3_840,
+                1_608,
+                23.976,
+                RifeCapabilities {
+                    allow_30_to_60: true,
+                    allow_compatibility_bridge: true,
+                },
+            ),
+            Some(RifeSourcePlan::Compatibility(RifeCompatibilityPlan {
+                content_width: 1_920,
+                content_height: 804,
+                pad_x: 0,
+                pad_y: 138,
+            }))
+        );
+        let (input, output) = rife_compatibility_filter_specs(RifeCompatibilityPlan {
+            content_width: 1_920,
+            content_height: 804,
+            pad_x: 0,
+            pad_y: 138,
+        });
+        assert!(input.contains("scale=w=1920:h=804"));
+        assert!(input.contains("pad=w=1920:h=1080:x=0:y=138"));
+        assert!(output.contains("crop=w=1920:h=804:x=0:y=138"));
+        assert!(!output.contains("scale="));
+        assert!(rife_source_supported(
+            RifeMode::Fps24To48,
+            3_840,
+            2_160,
+            24.0
+        ));
         assert!(!rife_source_supported(
-            3_840, 2_160, 24.0, "bt.1886", "bt.709"
+            RifeMode::Fps24To48,
+            1_920,
+            1_080,
+            30.0
+        ));
+        assert!(rife_source_supported(
+            RifeMode::Fps30To60,
+            3_840,
+            2_160,
+            29.97
         ));
         assert!(!rife_source_supported(
-            1_920, 1_080, 30.0, "bt.1886", "bt.709"
+            RifeMode::Fps30To60,
+            1_920,
+            1_080,
+            25.0
         ));
-        assert!(!rife_source_supported(1_920, 1_080, 24.0, "pq", "bt.2020"));
+        assert!(!rife_source_supported(
+            RifeMode::Fps24To48,
+            7_680,
+            4_320,
+            24.0
+        ));
+    }
+
+    #[test]
+    fn rife_release_capabilities_keep_unapproved_modes_on_source_frames() {
+        let release = RifeCapabilities::default();
+        assert_eq!(
+            rife_source_plan(RifeMode::Fps24To48, 1_920, 1_080, 23.976, release),
+            Some(RifeSourcePlan::Direct)
+        );
+        assert_eq!(
+            rife_source_plan(RifeMode::Fps30To60, 1_920, 1_080, 29.97, release),
+            None
+        );
+        assert_eq!(
+            rife_source_plan(RifeMode::Fps24To48, 3_840, 1_608, 23.976, release),
+            None
+        );
     }
 
     #[test]

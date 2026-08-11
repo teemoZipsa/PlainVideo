@@ -4,7 +4,9 @@ param(
     [string]$AppRoot,
     [string]$MediaPath,
     [string]$SubtitlePath,
-    [string]$EvidencePath
+    [string]$EvidencePath,
+    [switch]$SubtitleDropOnly,
+    [switch]$DirectionalSeekOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,7 +33,16 @@ if ([string]::IsNullOrWhiteSpace($SubtitlePath)) {
     $SubtitlePath = [System.IO.Path]::ChangeExtension($MediaPath, '.srt')
 }
 if ([string]::IsNullOrWhiteSpace($EvidencePath)) {
-    $EvidencePath = Join-Path $runtimeRoot 'input-interactions-evidence.json'
+    $evidenceName = if ($SubtitleDropOnly) {
+        'subtitle-drop-evidence.json'
+    }
+    elseif ($DirectionalSeekOnly) {
+        'directional-seek-evidence.json'
+    }
+    else {
+        'input-interactions-evidence.json'
+    }
+    $EvidencePath = Join-Path $runtimeRoot $evidenceName
 }
 
 foreach ($required in @($Executable, $MediaPath, $SubtitlePath, (Join-Path $AppRoot 'assets\mpv\mpv.conf'))) {
@@ -47,6 +58,7 @@ $resumePath = Join-Path $evidenceDirectory 'resume.ini'
 $logPath = Join-Path $evidenceDirectory 'mpv.log'
 Remove-Item -LiteralPath $settingsPath, $resumePath, $logPath -Force -ErrorAction SilentlyContinue
 
+Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -273,6 +285,24 @@ function Get-ClientScreenRect {
     }
 }
 
+function Save-ClientCapture {
+    param(
+        [Parameter(Mandatory)][IntPtr]$Hwnd,
+        [Parameter(Mandatory)][string]$Path
+    )
+    $rect = Get-ClientScreenRect -Hwnd $Hwnd
+    $bitmap = [System.Drawing.Bitmap]::new($rect.width, $rect.height)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    try {
+        $graphics.CopyFromScreen($rect.x, $rect.y, 0, 0, $bitmap.Size)
+        $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+    }
+    finally {
+        $graphics.Dispose()
+        $bitmap.Dispose()
+    }
+}
+
 function Get-WindowRect {
     param([Parameter(Mandatory)][IntPtr]$Hwnd)
     $rect = New-Object PlainVideoInputProbe+RECT
@@ -472,6 +502,103 @@ try {
     [void](Wait-PatternCount -Pattern 'Starting playback' -Minimum 1 -TimeoutMilliseconds 8000)
     Start-Sleep -Milliseconds 250
 
+    if ($SubtitleDropOnly) {
+        $playbackBeforeDrop = Get-PatternCount -Pattern 'Starting playback'
+        $subAddPattern = 'Run command:\s*sub-add|name="sub-add"'
+        $subAddBefore = Get-PatternCount -Pattern $subAddPattern
+        $dropHandle = [PlainVideoInputProbe]::CreateDropFile(
+            [System.IO.Path]::GetFullPath($SubtitlePath)
+        )
+        if (-not [PlainVideoInputProbe]::PostMessageDropW(
+            $hwnd,
+            0x0233,
+            $dropHandle,
+            [IntPtr]::Zero
+        )) {
+            [void][PlainVideoInputProbe]::GlobalFree($dropHandle)
+            throw 'PostMessageW failed for the cross-process file-drop probe.'
+        }
+        $subAddAfter = Wait-PatternCount -Pattern $subAddPattern -Minimum ($subAddBefore + 1)
+        Start-Sleep -Milliseconds 180
+        $playbackAfterDrop = Get-PatternCount -Pattern 'Starting playback'
+        if ($playbackAfterDrop -ne $playbackBeforeDrop) {
+            throw 'Dropping one subtitle file replaced or restarted the active video.'
+        }
+        $evidence = [ordered]@{
+            schemaVersion = 1
+            generatedAt = [DateTimeOffset]::Now.ToString('o')
+            status = 'passed'
+            executable = [System.IO.Path]::GetFullPath($Executable)
+            appRoot = [System.IO.Path]::GetFullPath($AppRoot)
+            media = [System.IO.Path]::GetFullPath($MediaPath)
+            subtitleDrop = [ordered]@{
+                subtitle = [System.IO.Path]::GetFullPath($SubtitlePath)
+                subAddCommandDelta = $subAddAfter - $subAddBefore
+                playbackRestartDelta = $playbackAfterDrop - $playbackBeforeDrop
+            }
+            log = $logPath
+        }
+    }
+    elseif ($DirectionalSeekOnly) {
+        $client = Get-ClientScreenRect -Hwnd $hwnd
+        $edgeY = $client.y + [int]($client.height / 2)
+        $togglePattern = 'name="plainvideo/toggle-pause"'
+        $backPattern = 'name="plainvideo/seek-back-surface"'
+        $forwardPattern = 'name="plainvideo/seek-forward-surface"'
+        $toggleBefore = Get-PatternCount -Pattern $togglePattern
+        $backBefore = Get-PatternCount -Pattern $backPattern
+        $forwardBefore = Get-PatternCount -Pattern $forwardPattern
+        $leftCapture = Join-Path $evidenceDirectory 'directional-seek-left.png'
+        $rightCapture = Join-Path $evidenceDirectory 'directional-seek-right.png'
+
+        Send-MouseClick -Button Left -X ($client.x + [int]($client.width / 8)) -Y $edgeY
+        Start-Sleep -Milliseconds 80
+        Save-ClientCapture -Hwnd $hwnd -Path $leftCapture
+        [void](Wait-PatternCount -Pattern $backPattern -Minimum ($backBefore + 1))
+        Start-Sleep -Milliseconds 600
+
+        $client = Get-ClientScreenRect -Hwnd $hwnd
+        $edgeY = $client.y + [int]($client.height / 2)
+        Focus-Window -Hwnd $hwnd
+        Send-MouseClick -Button Left -X ($client.x + [int]($client.width * 7 / 8)) -Y $edgeY
+        Start-Sleep -Milliseconds 80
+        Save-ClientCapture -Hwnd $hwnd -Path $rightCapture
+        [void](Wait-PatternCount -Pattern $forwardPattern -Minimum ($forwardBefore + 1))
+        Start-Sleep -Milliseconds 600
+
+        $client = Get-ClientScreenRect -Hwnd $hwnd
+        $edgeY = $client.y + [int]($client.height / 2)
+        $backBeforeDoubleClick = Get-PatternCount -Pattern $backPattern
+        Focus-Window -Hwnd $hwnd
+        Send-DoubleClick -X ($client.x + [int]($client.width / 8)) -Y $edgeY
+        $backAfterDoubleClick = Wait-PatternCount `
+            -Pattern $backPattern `
+            -Minimum ($backBeforeDoubleClick + 2)
+
+        $toggleAfter = Get-PatternCount -Pattern $togglePattern
+        if ($toggleAfter -ne $toggleBefore) {
+            throw 'A directional single-click changed the play/pause state.'
+        }
+        $logText = Get-LogText
+        if ($logText -match 'Lua error|stack traceback|error running function') {
+            throw 'The directional-seek run recorded a Lua overlay error.'
+        }
+        $evidence = [ordered]@{
+            schemaVersion = 1
+            generatedAt = [DateTimeOffset]::Now.ToString('o')
+            status = 'passed'
+            directionalSingleClick = [ordered]@{
+                backwardTenSeconds = $true
+                forwardTenSeconds = $true
+                toggleDelta = $toggleAfter - $toggleBefore
+                rapidDoubleClickSeekDelta = $backAfterDoubleClick - $backBeforeDoubleClick
+                leftCapture = $leftCapture
+                rightCapture = $rightCapture
+            }
+            log = $logPath
+        }
+    }
+    else {
     $playbackBeforeDrop = Get-PatternCount -Pattern 'Starting playback'
     $subAddPattern = 'Run command:\s*sub-add|name="sub-add"'
     $subAddBefore = Get-PatternCount -Pattern $subAddPattern
@@ -651,13 +778,17 @@ try {
 
     $client = Get-ClientScreenRect -Hwnd $hwnd
     $edgeY = $client.y + [int]($client.height / 2)
-    Send-DoubleClick -X ($client.x + [int]($client.width / 6)) -Y $edgeY
-    [void](Wait-PatternCount -Pattern 'name="plainvideo/seek-back-double"' -Minimum 1)
-    Send-DoubleClick -X ($client.x + [int]($client.width * 5 / 6)) -Y $edgeY
-    [void](Wait-PatternCount -Pattern 'name="plainvideo/seek-forward-double"' -Minimum 1)
+    $backPattern = 'name="plainvideo/seek-back-surface"'
+    $forwardPattern = 'name="plainvideo/seek-forward-surface"'
+    $beforeBackSeeks = Get-PatternCount -Pattern $backPattern
+    Send-MouseClick -Button Left -X ($client.x + [int]($client.width / 8)) -Y $edgeY
+    [void](Wait-PatternCount -Pattern $backPattern -Minimum ($beforeBackSeeks + 1))
+    $beforeForwardSeeks = Get-PatternCount -Pattern $forwardPattern
+    Send-MouseClick -Button Left -X ($client.x + [int]($client.width * 7 / 8)) -Y $edgeY
+    [void](Wait-PatternCount -Pattern $forwardPattern -Minimum ($beforeForwardSeeks + 1))
     Start-Sleep -Milliseconds 180
     if ((Get-LastPauseState) -ne 'no') {
-        throw 'A directional double-click changed the play/pause state.'
+        throw 'A directional single-click changed the play/pause state.'
     }
 
     $logText = Get-LogText
@@ -710,12 +841,13 @@ try {
             restored = $restoredRect
             finalPause = Get-LastPauseState
         }
-        directionalDoubleClick = [ordered]@{
+        directionalSingleClick = [ordered]@{
             backwardTenSeconds = $true
             forwardTenSeconds = $true
             finalPause = Get-LastPauseState
         }
         log = $logPath
+    }
     }
 }
 finally {

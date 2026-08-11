@@ -19,6 +19,9 @@ local status_timer = nil
 local media_info_visible = false
 local media_queue_position = 1
 local media_queue_count = 1
+local rife_requested_mode = "off"
+local rife_active_mode = "off"
+local rife_compatibility_bridge = false
 local control_panel_visible = false
 local control_panel_hover = "none"
 local control_panel_pressed = "none"
@@ -66,6 +69,7 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     input = "입력",
     average = "평균",
     rife_preparing = "측정 중",
+    rife_compatibility = "4K/HDR 호환 · 내부 1080p · GPU 화면 확대",
     none = "없음",
     software = "소프트웨어",
     playback_controls = "재생 제어",
@@ -120,6 +124,7 @@ local copy = locale_tag:sub(1, 2) == "ko" and {
     input = "Input",
     average = "Avg",
     rife_preparing = "Measuring",
+    rife_compatibility = "4K/HDR compatibility · internal 1080p · GPU display scaling",
     none = "None",
     software = "Software",
     playback_controls = "Playback controls",
@@ -422,25 +427,30 @@ local function frame_rate_label()
     local source_fps = mp.get_property_number("container-fps", 0)
     local filtered_fps = mp.get_property_number("estimated-vf-fps", 0)
     local filters = mp.get_property("vf", "")
-    local rife_enabled = filters:find("plainvideo-rife", 1, true) ~= nil
+    local rife_enabled = rife_active_mode ~= "off"
+        and filters:find("plainvideo-rife", 1, true) ~= nil
+    local compatibility = rife_compatibility_bridge
+        and (" · " .. copy.rife_compatibility) or ""
 
     if rife_enabled then
-        if source_fps > 0 and filtered_fps > source_fps + 0.5 then
-            return string.format("%s → %s fps",
-                decimal(source_fps, 3), decimal(filtered_fps, 3)), true
-        end
         if source_fps > 0 then
-            return string.format("%s fps · %s",
-                decimal(source_fps, 3), copy.rife_preparing), true
+            return string.format("%s → %s fps",
+                decimal(source_fps, 3), decimal(source_fps * 2, 3)) .. compatibility, "active"
         end
         if filtered_fps > 0 then
-            return decimal(filtered_fps, 3) .. " fps", true
+            return decimal(filtered_fps, 3) .. " fps" .. compatibility, "active"
         end
-        return copy.rife_preparing, true
+        return copy.rife_preparing .. compatibility, "active"
+    end
+
+    if rife_requested_mode ~= "off" then
+        local fps = source_fps > 0 and source_fps or filtered_fps
+        local prefix = fps > 0 and (decimal(fps, 3) .. " fps · ") or ""
+        return prefix .. copy.source_fallback, "fallback"
     end
 
     local fps = source_fps > 0 and source_fps or filtered_fps
-    return fps > 0 and decimal(fps, 3) .. " fps" or "", false
+    return fps > 0 and decimal(fps, 3) .. " fps" or "", "off"
 end
 
 local function draw_media_info(width, height)
@@ -459,9 +469,11 @@ local function draw_media_info(width, height)
     local file_size = mp.get_property_number("file-size", 0)
     local container = container_label(mp.get_property("file-format", ""), filename)
     local video_codec = uppercase(mp.get_property("video-codec", mp.get_property("video-format", "")), copy.none)
-    local video_width = mp.get_property_number("video-params/w", 0)
-    local video_height = mp.get_property_number("video-params/h", 0)
-    local fps_text, rife_enabled = frame_rate_label()
+    local video_width = mp.get_property_number("video-dec-params/w",
+        mp.get_property_number("video-params/w", 0))
+    local video_height = mp.get_property_number("video-dec-params/h",
+        mp.get_property_number("video-params/h", 0))
+    local fps_text, rife_state = frame_rate_label()
     local pixel_format = first_nonempty(mp.get_property("video-params/pixelformat"), copy.none)
     local color_primaries = first_nonempty(mp.get_property("video-params/primaries"), "")
     local color_transfer = first_nonempty(mp.get_property("video-params/gamma"), "")
@@ -493,7 +505,7 @@ local function draw_media_info(width, height)
     if video_width > 0 and video_height > 0 then
         table.insert(video_parts, string.format("%d×%d", video_width, video_height))
     end
-    if fps_text ~= "" and not rife_enabled then
+    if fps_text ~= "" and rife_state == "off" then
         table.insert(video_parts, fps_text)
     end
     local file_parts = { container }
@@ -593,12 +605,13 @@ local function draw_media_info(width, height)
             value = table.concat(subtitle_parts, " · "),
         },
     }
-    if rife_enabled then
+    if rife_state ~= "off" then
+        local active = rife_state == "active"
         table.insert(rows, 5, {
             label = "RIFE",
-            label_color = palette.accent,
-            color = palette.accent,
-            bold = true,
+            label_color = active and palette.accent or palette.muted,
+            color = active and palette.accent or palette.secondary,
+            bold = active,
             value = fps_text,
         })
     end
@@ -735,6 +748,33 @@ local function draw_seek(width, height)
         table.insert(events, box_event(track_left, track_top, filled, track_bottom,
             px(2), palette.text, "&H08&"))
     end
+    return table.concat(events, "\n")
+end
+
+local function draw_surface_seek(width, height, direction)
+    local palette = theme_palette()
+    local outer_size = math.min(px(118), math.max(px(78), math.floor(math.min(width, height) * 0.18)))
+    local inner_size = math.floor(outer_size * 0.76)
+    local outer_half = math.floor(outer_size / 2)
+    local inner_half = math.floor(inner_size / 2)
+    local edge_center = math.max(outer_half + px(12), math.floor(width * 0.16))
+    local center_x = direction == "back" and edge_center or width - edge_center
+    local center_y = math.floor(height * 0.48)
+    local chevrons = direction == "back" and "‹‹" or "››"
+    local label = direction == "back" and copy.back_10 or copy.forward_10
+    local events = {
+        box_event(center_x - outer_half, center_y - outer_half,
+            center_x + outer_half, center_y + outer_half, outer_half,
+            palette.accent, "&H88&"),
+        box_event(center_x - inner_half, center_y - inner_half,
+            center_x + inner_half, center_y + inner_half, inner_half,
+            palette.panel, "&H38&"),
+        text_event(5, center_x, center_y - px(8),
+            math.max(px(18), type_size("primary", width, height) - px(4)),
+            palette.text, "&H08&", true, chevrons),
+        text_event(5, center_x, center_y + px(24),
+            type_size("secondary", width, height), palette.text, "&H08&", true, label),
+    }
     return table.concat(events, "\n")
 end
 
@@ -1320,7 +1360,6 @@ local function draw_control_panel(width, height)
     local title_size = math.max(10, q(20))
     local label_size = math.max(8, q(13))
     local events = {
-        box_event(0, 0, width, height, 0, palette.app, "&H88&"),
         box_event(left, top, right, bottom, math.max(4, q(18)), palette.panel, "&H10&"),
         text_event(7, left + q(20), top + q(24), title_size,
             palette.text, "&H08&", true, copy.playback_controls),
@@ -1534,8 +1573,7 @@ local function draw_surface()
 
     local has_playback_error = playback_error_title ~= nil
     if not is_idle and not has_playback_error and feedback_kind == nil
-        and status_message == nil and not window_controls_visible and not media_info_visible
-        and not control_panel_visible then
+        and status_message == nil and not window_controls_visible and not media_info_visible then
         overlay:remove()
         return
     end
@@ -1555,17 +1593,18 @@ local function draw_surface()
         table.insert(events, draw_idle(width, height))
     elseif feedback_kind == "seek" then
         table.insert(events, draw_seek(width, height))
+    elseif feedback_kind == "surface-seek-back" then
+        table.insert(events, draw_surface_seek(width, height, "back"))
+    elseif feedback_kind == "surface-seek-forward" then
+        table.insert(events, draw_surface_seek(width, height, "forward"))
     elseif feedback_kind == "volume" then
         table.insert(events, draw_volume(width, height))
     end
     if window_controls_visible then
         table.insert(events, draw_window_controls(width, height))
-        if not has_playback_error and not is_idle and not control_panel_visible then
+        if not has_playback_error and not is_idle then
             table.insert(events, draw_playback_controls(width, height))
         end
-    end
-    if control_panel_visible and not has_playback_error and not is_idle then
-        table.insert(events, draw_control_panel(width, height))
     end
     if status_message ~= nil then
         table.insert(events, draw_status(width, height))
@@ -1602,6 +1641,13 @@ local function set_media_info(action, position, count)
     media_queue_position = math.max(1, tonumber(position) or 1)
     media_queue_count = math.max(media_queue_position, tonumber(count) or 1)
     draw_surface()
+end
+
+local function set_rife_status(requested, active, compatibility)
+    rife_requested_mode = requested or "off"
+    rife_active_mode = active or "off"
+    rife_compatibility_bridge = compatibility == "yes"
+    if media_info_visible then draw_surface() end
 end
 
 local function show_status_message(message)
@@ -1654,6 +1700,11 @@ local function seek(seconds)
     show_feedback("seek", 1.15)
 end
 
+local function surface_seek(seconds, direction)
+    mp.commandv("seek", tostring(seconds), "relative+exact")
+    show_feedback("surface-seek-" .. direction, 0.52)
+end
+
 local function change_volume(amount)
     local current = mp.get_property_number("volume", 100)
     mp.set_property_number("volume", clamp(current + amount, 0, 100))
@@ -1691,7 +1742,6 @@ local function set_control_panel(visible, hovered, pressed, focused,
         clamp(math.floor((tonumber(gain_4) or 0) + 0.5), -12, 12),
         clamp(math.floor((tonumber(gain_5) or 0) + 0.5), -12, 12),
     }
-    if control_panel_visible then media_info_visible = false end
     draw_surface()
 end
 
@@ -1702,6 +1752,8 @@ mp.add_key_binding(nil, "seek-back-large", function() seek(-30) end)
 mp.add_key_binding(nil, "seek-forward-large", function() seek(30) end)
 mp.add_key_binding(nil, "seek-back-double", function() seek(-10) end)
 mp.add_key_binding(nil, "seek-forward-double", function() seek(10) end)
+mp.add_key_binding(nil, "seek-back-surface", function() surface_seek(-10, "back") end)
+mp.add_key_binding(nil, "seek-forward-surface", function() surface_seek(10, "forward") end)
 mp.add_key_binding(nil, "volume-up", function() change_volume(2) end)
 mp.add_key_binding(nil, "volume-down", function() change_volume(-2) end)
 mp.register_script_message("plainvideo-window-controls", set_window_controls)
@@ -1709,6 +1761,7 @@ mp.register_script_message("plainvideo-control-panel", set_control_panel)
 mp.register_script_message("plainvideo-playback-status", set_playback_status)
 mp.register_script_message("plainvideo-status", show_status_message)
 mp.register_script_message("plainvideo-media-info", set_media_info)
+mp.register_script_message("plainvideo-rife-status", set_rife_status)
 mp.register_script_message("plainvideo-volume-feedback", function()
     show_feedback("volume", 0.9)
 end)

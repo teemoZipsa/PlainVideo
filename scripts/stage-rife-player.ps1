@@ -146,11 +146,16 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'THIRD_PARTY_NOTICES.md') -Destinati
 Copy-Item -LiteralPath $rifeNoticePath -Destination (Join-Path $outputRoot 'RIFE_24_TO_48_NOTICE.md')
 Copy-Item -LiteralPath $candidateManifestPath -Destination (Join-Path $outputRoot 'custom-libmpv-manifest.json')
 $candidateReadme = @"
-PlainVideo next-update 24-to-48 candidate
+PlainVideo experimental smooth-playback candidate
 
-This candidate contains the optional RIFE 24-to-48 engine. The setting starts
-off unless the user previously enabled it. Unsupported media, seeks, scene
-boundaries, overload, and errors retain the source-frame fallback.
+This candidate contains optional RIFE 24-to-48 and experimental 30-to-60
+buttons. Both settings start off unless the user previously enabled one.
+Sources through 4096x2160 use an aspect-preserving internal 1920x1080
+compatibility bridge when they do not already match the native boundary.
+The cropped internal result is scaled to the playback surface by the GPU;
+the CPU filter chain does not upscale it back to the source dimensions.
+Unsupported cadence or size, seeks, scene boundaries, overload, and errors
+retain the source-frame fallback.
 
 This directory is local qualification material, not a Store or portable
 release. Read experimental-manifest.json and RIFE_24_TO_48_NOTICE.md.
@@ -164,18 +169,28 @@ release. Read experimental-manifest.json and RIFE_24_TO_48_NOTICE.md.
 $files = Get-ChildItem -LiteralPath $outputRoot -Recurse -File | Sort-Object FullName
 $manifest = [ordered]@{
     schemaVersion = 2
-    status = 'next-update-24-to-48-candidate-not-release-approved'
+    status = 'experimental-smooth-playback-candidate-not-release-approved'
     releaseEligible = $false
     createdAt = [DateTimeOffset]::Now.ToString('o')
     sourceCommit = (& git -C $repoRoot rev-parse HEAD).Trim()
     feature = [ordered]@{
-        name = 'smooth-playback-24-to-48'
+        name = 'smooth-playback-rife-candidate'
         defaultEnabled = $false
         sourceFps = '23.0-25.5'
         outputFactor = 2
-        boundary = '1920x1080 BGRA8 SDR'
+        nativeBoundary = '1920x1080 BGRA8'
+        compatibilityBridge = 'up to 4096x2160 source; aspect-preserving internal 1920x1080 processing; cropped result uses GPU display scaling'
+        hdrCompatibility = 'experimental BGRA8 interpolation with source HDR metadata retained'
         sourceFrameFallback = $true
-        probe30To60Included = $false
+        probe30To60Included = $true
+        probe30To60 = [ordered]@{
+            defaultEnabled = $false
+            sourceFps = '29.0-30.5'
+            outputFactor = 2
+            nativeBoundary = '1920x1080 BGRA8'
+            compatibilityBridge = 'up to 4096x2160 source; aspect-preserving internal 1920x1080 processing; cropped result uses GPU display scaling'
+            releaseApproved = $false
+        }
     }
     runtime = [ordered]@{
         customLibmpvManifestSha256 = (Get-FileHash -LiteralPath $candidateManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -189,6 +204,7 @@ $manifest = [ordered]@{
         'clean source commit and fresh candidate rebuild',
         'targeted native RIFE qualification and foreground 24-to-48 playback proof',
         'replacement, seek, scene-cut, overload, and teardown soak',
+        '30-to-60 foreground playback, repeated replacement, and recovery proof',
         'portable and MSIX payload/license verification'
     )
     files = @($files | ForEach-Object {
@@ -204,4 +220,4 @@ $manifest = [ordered]@{
     ($manifest | ConvertTo-Json -Depth 8) + [Environment]::NewLine,
     [System.Text.UTF8Encoding]::new($false)
 )
-Write-Host "Next-update 24-to-48 candidate staged at $outputRoot"
+Write-Host "Experimental smooth-playback candidate staged at $outputRoot"

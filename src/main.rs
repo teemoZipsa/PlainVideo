@@ -10,6 +10,8 @@ use std::process::ExitCode;
 #[cfg(target_os = "windows")]
 mod control_panel;
 #[cfg(target_os = "windows")]
+mod control_panel_window;
+#[cfg(target_os = "windows")]
 mod locale;
 #[cfg(target_os = "windows")]
 mod media_queue;

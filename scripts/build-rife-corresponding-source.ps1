@@ -1,8 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$BaseSourcePath = '.runtime\lgpl-libmpv\corresponding-source-0.1.0',
-    [string]$OutputPath = '.runtime\release\PlainVideo-0.2.3-corresponding-source',
-    [string]$ArchivePath = '.runtime\release\PlainVideo-0.2.3-corresponding-source.tar.zst'
+    [string]$OutputPath = '',
+    [string]$ArchivePath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,9 +35,8 @@ $version = [regex]::Match(
     (Get-Content -LiteralPath (Join-Path $repoRoot 'Cargo.toml') -Raw),
     '(?m)^version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"'
 ).Groups[1].Value
-if ($version -ne '0.2.3') {
-    throw "This source recipe is pinned to PlainVideo 0.2.3, not $version."
-}
+$OutputPath = if ($OutputPath) { $OutputPath } else { ".runtime\release\PlainVideo-$version-corresponding-source" }
+$ArchivePath = if ($ArchivePath) { $ArchivePath } else { ".runtime\release\PlainVideo-$version-corresponding-source.tar.zst" }
 $changes = @(& git -C $repoRoot status --short)
 if ($changes.Count -ne 0) {
     throw "Corresponding-source creation requires one clean source commit:`n$($changes -join [Environment]::NewLine)"
@@ -101,7 +100,7 @@ Get-ChildItem -LiteralPath $rifeOut -Recurse -Force |
     }
 
 $readme = @"
-PlainVideo 0.2.3 corresponding source
+PlainVideo $version corresponding source
 
 Source commit: $head
 

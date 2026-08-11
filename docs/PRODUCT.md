@@ -29,8 +29,8 @@ Close, always-on-top, and window movement remain discoverable without recreating
 
 | Input | Default action |
 |---|---|
-| Single click on video | Play or pause |
-| Double click on video | Enter or leave fullscreen |
+| Single click on left / center / right video region | Seek back 10 seconds / play or pause / seek forward 10 seconds |
+| Double click on center video region | Enter or leave fullscreen |
 | Space | Play or pause |
 | Left / Right | Short seek backward / forward |
 | Up / Down | Volume |

@@ -25,13 +25,14 @@ pub enum ControlPanelControl {
     LoopB,
     LoopClear,
     Smooth24To48,
+    Smooth30To60,
     Mute,
     VolumeTrack,
     EqualizerPreset(usize),
     EqualizerBand(usize),
 }
 
-pub const CONTROL_PANEL_FOCUS_ORDER: [ControlPanelControl; 26] = [
+pub const CONTROL_PANEL_FOCUS_ORDER: [ControlPanelControl; 27] = [
     ControlPanelControl::SeekBack,
     ControlPanelControl::PlayPause,
     ControlPanelControl::SeekForward,
@@ -46,6 +47,7 @@ pub const CONTROL_PANEL_FOCUS_ORDER: [ControlPanelControl; 26] = [
     ControlPanelControl::LoopB,
     ControlPanelControl::LoopClear,
     ControlPanelControl::Smooth24To48,
+    ControlPanelControl::Smooth30To60,
     ControlPanelControl::Mute,
     ControlPanelControl::VolumeTrack,
     ControlPanelControl::EqualizerPreset(0),
@@ -60,39 +62,6 @@ pub const CONTROL_PANEL_FOCUS_ORDER: [ControlPanelControl; 26] = [
     ControlPanelControl::Close,
 ];
 
-impl ControlPanelControl {
-    pub fn message_name(self) -> &'static str {
-        match self {
-            Self::Close => "panel-close",
-            Self::SeekBack => "panel-back",
-            Self::PlayPause => "panel-play",
-            Self::SeekForward => "panel-forward",
-            Self::SeekTrack => "panel-seek",
-            Self::Speed(0) => "panel-speed-1",
-            Self::Speed(1) => "panel-speed-2",
-            Self::Speed(2) => "panel-speed-3",
-            Self::Speed(3) => "panel-speed-4",
-            Self::Speed(4) => "panel-speed-5",
-            Self::Speed(_) => "panel-speed-6",
-            Self::LoopA => "panel-loop-a",
-            Self::LoopB => "panel-loop-b",
-            Self::LoopClear => "panel-loop-clear",
-            Self::Smooth24To48 => "panel-smooth-24-48",
-            Self::Mute => "panel-mute",
-            Self::VolumeTrack => "panel-volume",
-            Self::EqualizerPreset(0) => "panel-eq-flat",
-            Self::EqualizerPreset(1) => "panel-eq-voice",
-            Self::EqualizerPreset(2) => "panel-eq-bass",
-            Self::EqualizerPreset(_) => "panel-eq-bright",
-            Self::EqualizerBand(0) => "panel-eq-1",
-            Self::EqualizerBand(1) => "panel-eq-2",
-            Self::EqualizerBand(2) => "panel-eq-3",
-            Self::EqualizerBand(3) => "panel-eq-4",
-            Self::EqualizerBand(_) => "panel-eq-5",
-        }
-    }
-}
-
 #[derive(Clone, Copy)]
 pub struct ControlPanelLayout {
     pub panel: RECT,
@@ -104,6 +73,7 @@ pub struct ControlPanelLayout {
     pub speeds: [RECT; 6],
     pub loops: [RECT; 3],
     pub smooth_24_to_48: RECT,
+    pub smooth_30_to_60: RECT,
     pub mute: RECT,
     pub volume_track: RECT,
     pub presets: [RECT; 4],
@@ -209,7 +179,8 @@ pub fn control_panel_layout_for_size(
         seek_track: rect(28.0, 88.0, 464.0, 20.0),
         speeds,
         loops,
-        smooth_24_to_48: rect(96.0, 198.0, 404.0, 32.0),
+        smooth_24_to_48: rect(96.0, 198.0, 198.0, 32.0),
+        smooth_30_to_60: rect(302.0, 198.0, 198.0, 32.0),
         mute: rect(96.0, 238.0, 44.0, 32.0),
         volume_track: rect(148.0, 238.0, 352.0, 32.0),
         presets,
@@ -233,6 +204,7 @@ pub fn control_panel_control_at(
         (ControlPanelControl::LoopB, layout.loops[1]),
         (ControlPanelControl::LoopClear, layout.loops[2]),
         (ControlPanelControl::Smooth24To48, layout.smooth_24_to_48),
+        (ControlPanelControl::Smooth30To60, layout.smooth_30_to_60),
         (ControlPanelControl::Mute, layout.mute),
         (ControlPanelControl::VolumeTrack, layout.volume_track),
     ];
@@ -278,6 +250,7 @@ pub fn control_panel_control_rect(
         ControlPanelControl::LoopB => layout.loops[1],
         ControlPanelControl::LoopClear => layout.loops[2],
         ControlPanelControl::Smooth24To48 => layout.smooth_24_to_48,
+        ControlPanelControl::Smooth30To60 => layout.smooth_30_to_60,
         ControlPanelControl::Mute => layout.mute,
         ControlPanelControl::VolumeTrack => layout.volume_track,
         ControlPanelControl::EqualizerPreset(index) => {
@@ -368,5 +341,6 @@ mod tests {
         assert!(CONTROL_PANEL_FOCUS_ORDER.contains(&ControlPanelControl::Mute));
         assert!(CONTROL_PANEL_FOCUS_ORDER.contains(&ControlPanelControl::VolumeTrack));
         assert!(CONTROL_PANEL_FOCUS_ORDER.contains(&ControlPanelControl::Smooth24To48));
+        assert!(CONTROL_PANEL_FOCUS_ORDER.contains(&ControlPanelControl::Smooth30To60));
     }
 }

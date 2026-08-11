@@ -20,7 +20,7 @@ A calm, borderless local video player that keeps controls out of the way.
 
 PlainVideo puts the video first. Open a local file and start watching in a borderless Windows window, with familiar controls that appear only when you need them.
 
-Click to play or pause, double-click for fullscreen, preview a position by hovering over the seek bar, and use the arrow keys to seek or change volume. Toggle subtitles directly from the transient playback bar, choose a track from the context menu, or drop a subtitle onto an active video. PlainVideo automatically discovers matching external subtitles, supports 0.1-second subtitle timing correction, resumes partially watched files, and remembers volume and a safe physical window position across monitors.
+Click the left or right edge of the video to jump back or forward ten seconds, or click the center to play or pause. Double-click the center for fullscreen, preview a position by hovering over the seek bar, and use the arrow keys to seek or change volume. Toggle subtitles directly from the transient playback bar, choose a track from the context menu, or drop a subtitle onto an active video. PlainVideo automatically discovers matching external subtitles, supports 0.1-second subtitle timing correction, resumes partially watched files, and remembers volume and a safe physical window position across monitors.
 
 PlainVideo is designed for local playback. It has no ads, accounts, recommendations, or telemetry. The source code and third-party license information are public.
 
@@ -35,7 +35,7 @@ Volume and mute now read as clearly different states. Correct audio timing in 0.
 ### Features
 
 - Borderless, content-first local playback
-- Click play/pause and double-click fullscreen
+- One-click 10-second edge seeking, center play/pause, and center double-click fullscreen
 - Compact controls that disappear after inactivity
 - External subtitle discovery and track selection
 - Subtitle-file drop attachment and 0.1-second timing correction

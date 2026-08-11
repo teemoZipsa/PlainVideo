@@ -21,7 +21,8 @@ struct MediaIdentity {
 #[derive(Clone, Debug, PartialEq)]
 struct ResumeEntry {
     media: MediaIdentity,
-    position: f64,
+    position: Option<f64>,
+    subtitle: Option<PathBuf>,
     updated_at: u64,
 }
 
@@ -56,7 +57,17 @@ impl ResumeStore {
         self.entries
             .iter()
             .find(|entry| entry.media == media)
-            .map(|entry| entry.position)
+            .and_then(|entry| entry.position)
+    }
+
+    pub fn subtitle_path(&self, path: &Path) -> Option<PathBuf> {
+        let media = MediaIdentity::from_path(path)?;
+        self.entries
+            .iter()
+            .find(|entry| entry.media == media)
+            .and_then(|entry| entry.subtitle.as_ref())
+            .filter(|subtitle| subtitle.is_file())
+            .cloned()
     }
 
     pub fn record(&mut self, path: &Path, position: f64, duration: f64) -> Result<(), String> {
@@ -70,22 +81,26 @@ impl ResumeStore {
         let completed =
             remaining <= COMPLETION_REMAINING_SECONDS || position / duration >= COMPLETION_RATIO;
         if completed {
-            return self.remove_identity(&media);
+            return self.clear_position_identity(&media);
         }
         if position < MINIMUM_RESUME_SECONDS {
             return Ok(());
         }
 
         if let Some(entry) = self.entries.iter_mut().find(|entry| entry.media == media) {
-            if (entry.position - position).abs() < 1.0 {
+            if entry
+                .position
+                .is_some_and(|previous| (previous - position).abs() < 1.0)
+            {
                 return Ok(());
             }
-            entry.position = position;
+            entry.position = Some(position);
             entry.updated_at = unix_seconds();
         } else {
             self.entries.push(ResumeEntry {
                 media,
-                position,
+                position: Some(position),
+                subtitle: None,
                 updated_at: unix_seconds(),
             });
         }
@@ -98,14 +113,45 @@ impl ResumeStore {
         let Some(media) = MediaIdentity::from_path(path) else {
             return Ok(());
         };
-        self.remove_identity(&media)
+        self.clear_position_identity(&media)
     }
 
-    fn remove_identity(&mut self, media: &MediaIdentity) -> Result<(), String> {
-        let previous_len = self.entries.len();
-        self.entries.retain(|entry| &entry.media != media);
-        if self.entries.len() == previous_len {
+    pub fn record_subtitle(&mut self, path: &Path, subtitle: &Path) -> Result<(), String> {
+        let Some(media) = MediaIdentity::from_path(path) else {
             return Ok(());
+        };
+        if !subtitle.is_file() {
+            return Ok(());
+        }
+        let subtitle = fs::canonicalize(subtitle).unwrap_or_else(|_| subtitle.to_path_buf());
+        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.media == media) {
+            if entry.subtitle.as_ref() == Some(&subtitle) {
+                return Ok(());
+            }
+            entry.subtitle = Some(subtitle);
+            entry.updated_at = unix_seconds();
+        } else {
+            self.entries.push(ResumeEntry {
+                media,
+                position: None,
+                subtitle: Some(subtitle),
+                updated_at: unix_seconds(),
+            });
+        }
+        self.entries.sort_by_key(|entry| Reverse(entry.updated_at));
+        self.entries.truncate(MAX_ENTRIES);
+        self.save()
+    }
+
+    fn clear_position_identity(&mut self, media: &MediaIdentity) -> Result<(), String> {
+        let Some(index) = self.entries.iter().position(|entry| &entry.media == media) else {
+            return Ok(());
+        };
+        if self.entries[index].position.take().is_none() {
+            return Ok(());
+        }
+        if self.entries[index].subtitle.is_none() {
+            self.entries.remove(index);
         }
         self.save()
     }
@@ -122,15 +168,25 @@ impl ResumeStore {
                 )
             })?;
         }
-        let mut contents = String::from("version=1\n");
+        let mut contents = String::from("version=2\n");
         for entry in &self.entries {
+            let position = entry
+                .position
+                .map(|position| format!("{position:.3}"))
+                .unwrap_or_default();
+            let subtitle = entry
+                .subtitle
+                .as_deref()
+                .map(encode_path)
+                .unwrap_or_default();
             contents.push_str(&format!(
-                "entry={}\t{}\t{}\t{:.3}\t{}\n",
+                "entry={}\t{}\t{}\t{}\t{}\t{}\n",
                 encode_path(&entry.media.path),
                 entry.media.size,
                 entry.media.modified_nanos,
-                entry.position,
-                entry.updated_at
+                position,
+                entry.updated_at,
+                subtitle
             ));
         }
         fs::write(path, contents)
@@ -164,15 +220,26 @@ fn parse_entries(contents: &str) -> Vec<ResumeEntry> {
             let path = decode_path(fields.next()?)?;
             let size = fields.next()?.parse().ok()?;
             let modified_nanos = fields.next()?.parse().ok()?;
-            let position = fields.next()?.parse::<f64>().ok()?;
+            let position = match fields.next()? {
+                "" => None,
+                value => {
+                    let position = value.parse::<f64>().ok()?;
+                    (position.is_finite() && position >= MINIMUM_RESUME_SECONDS).then_some(position)
+                }
+            };
             let updated_at = fields.next()?.parse().ok()?;
-            (position.is_finite() && position >= MINIMUM_RESUME_SECONDS).then_some(ResumeEntry {
+            let subtitle = fields
+                .next()
+                .filter(|value| !value.is_empty())
+                .and_then(decode_path);
+            (position.is_some() || subtitle.is_some()).then_some(ResumeEntry {
                 media: MediaIdentity {
                     path,
                     size,
                     modified_nanos,
                 },
                 position,
+                subtitle,
                 updated_at,
             })
         })
@@ -225,6 +292,22 @@ mod tests {
         let entries = parse_entries(&(row + "entry=broken\n"));
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].media.path, path);
-        assert_eq!(entries[0].position, 45.5);
+        assert_eq!(entries[0].position, Some(45.5));
+        assert_eq!(entries[0].subtitle, None);
+    }
+
+    #[test]
+    fn subtitle_only_rows_survive_without_a_resume_position() {
+        let media = Path::new(r"C:\영상\movie.mkv");
+        let subtitle = Path::new(r"C:\자막\movie.smi");
+        let row = format!(
+            "entry={}\t12\t34\t\t67\t{}\n",
+            encode_path(media),
+            encode_path(subtitle)
+        );
+        let entries = parse_entries(&row);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].position, None);
+        assert_eq!(entries[0].subtitle.as_deref(), Some(subtitle));
     }
 }

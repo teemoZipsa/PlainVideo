@@ -9,7 +9,7 @@
   <Identity
     Name="SeonkyuIM.PlainVideo"
     Publisher="CN=8958BE04-B1E7-4AE6-84E9-592921EBB405"
-    Version="0.2.2.0"
+    Version="0.2.4.0"
     ProcessorArchitecture="x64" />
 
   <Properties>
@@ -50,10 +50,21 @@
         </desktop:Extension>
         <uap:Extension Category="windows.fileTypeAssociation">
           <uap:FileTypeAssociation Name="plainvideo.video">
-            <uap:DisplayName>PlainVideo video</uap:DisplayName>
+            <uap:DisplayName>ms-resource:VideoFileAssociationDisplayName</uap:DisplayName>
             <uap:SupportedFileTypes>
               <uap:FileType>.mp4</uap:FileType>
               <uap:FileType>.mkv</uap:FileType>
+              <uap:FileType>.webm</uap:FileType>
+              <uap:FileType>.mov</uap:FileType>
+              <uap:FileType>.avi</uap:FileType>
+              <uap:FileType>.m4v</uap:FileType>
+              <uap:FileType>.m2ts</uap:FileType>
+              <uap:FileType>.mts</uap:FileType>
+              <uap:FileType>.ts</uap:FileType>
+              <uap:FileType>.mpg</uap:FileType>
+              <uap:FileType>.mpeg</uap:FileType>
+              <uap:FileType>.wmv</uap:FileType>
+              <uap:FileType>.ogv</uap:FileType>
             </uap:SupportedFileTypes>
           </uap:FileTypeAssociation>
         </uap:Extension>

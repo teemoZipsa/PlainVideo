@@ -18,6 +18,7 @@ pub struct UiText {
     pub subtitles: &'static str,
     pub subtitles_off: &'static str,
     pub open_subtitle: &'static str,
+    pub subtitle_requires_video: &'static str,
     pub no_subtitle_tracks: &'static str,
     pub subtitle_track: &'static str,
     pub subtitle_timing: &'static str,
@@ -43,10 +44,14 @@ pub struct UiText {
     pub loop_end_after_start: &'static str,
     pub loop_cleared: &'static str,
     pub rife_interpolation: &'static str,
+    pub rife_interpolation_30: &'static str,
     pub rife_enabled: &'static str,
+    pub rife_30_enabled: &'static str,
     pub rife_disabled: &'static str,
     pub rife_unavailable: &'static str,
     pub rife_source_fallback: &'static str,
+    pub rife_30_source_fallback: &'static str,
+    pub rife_compatibility_active: &'static str,
     pub save_screenshot: &'static str,
     pub screenshot_saved: &'static str,
     pub open_screenshot_folder: &'static str,
@@ -78,6 +83,7 @@ const KOREAN: UiText = UiText {
     subtitles: "자막",
     subtitles_off: "자막 끄기",
     open_subtitle: "자막 파일 열기…",
+    subtitle_requires_video: "자막을 추가하려면 먼저 영상을 여세요",
     no_subtitle_tracks: "자막 트랙 없음",
     subtitle_track: "자막",
     subtitle_timing: "자막 싱크",
@@ -103,10 +109,14 @@ const KOREAN: UiText = UiText {
     loop_end_after_start: "B 지점은 A 지점보다 뒤여야 합니다",
     loop_cleared: "구간 반복 해제",
     rife_interpolation: "부드러운 재생 24→48",
+    rife_interpolation_30: "30→60 실험",
     rife_enabled: "24→48 부드러운 재생 켬",
-    rife_disabled: "24→48 부드러운 재생 끔",
-    rife_unavailable: "이 빌드에는 24→48 재생 엔진이 없습니다",
+    rife_30_enabled: "30→60 실험 재생 켬",
+    rife_disabled: "부드러운 재생 끔",
+    rife_unavailable: "이 빌드에는 부드러운 재생 엔진이 없습니다",
     rife_source_fallback: "24→48 켬 · 현재 영상은 원본 프레임으로 재생",
+    rife_30_source_fallback: "30→60 켬 · 현재 영상은 원본 프레임으로 재생",
+    rife_compatibility_active: "4K/HDR 호환 · 내부 1080p · GPU 화면 확대",
     save_screenshot: "스크린샷 저장\tS",
     screenshot_saved: "스크린샷 저장됨 · {}",
     open_screenshot_folder: "스크린샷 폴더 열기",
@@ -138,6 +148,7 @@ const ENGLISH: UiText = UiText {
     subtitles: "Subtitles",
     subtitles_off: "Off",
     open_subtitle: "Open subtitle file…",
+    subtitle_requires_video: "Open a video before adding subtitles",
     no_subtitle_tracks: "No subtitle tracks",
     subtitle_track: "Subtitle",
     subtitle_timing: "Subtitle timing",
@@ -163,10 +174,14 @@ const ENGLISH: UiText = UiText {
     loop_end_after_start: "Point B must be after point A",
     loop_cleared: "A–B repeat cleared",
     rife_interpolation: "Smooth playback 24→48",
+    rife_interpolation_30: "Experimental 30→60",
     rife_enabled: "Smooth 24→48 playback on",
-    rife_disabled: "Smooth 24→48 playback off",
-    rife_unavailable: "This build does not include the 24→48 playback engine",
+    rife_30_enabled: "Experimental 30→60 playback on",
+    rife_disabled: "Smooth playback off",
+    rife_unavailable: "This build does not include the smooth-playback engine",
     rife_source_fallback: "24→48 on · current video is using source frames",
+    rife_30_source_fallback: "30→60 on · current video is using source frames",
+    rife_compatibility_active: "4K/HDR compatibility · internal 1080p · GPU display scaling",
     save_screenshot: "Save screenshot\tS",
     screenshot_saved: "Screenshot saved · {}",
     open_screenshot_folder: "Open screenshot folder",
@@ -259,6 +274,7 @@ mod tests {
             assert!(!text.subtitles.is_empty());
             assert!(!text.subtitles_off.is_empty());
             assert!(!text.open_subtitle.is_empty());
+            assert!(!text.subtitle_requires_video.is_empty());
             assert!(!text.no_subtitle_tracks.is_empty());
             assert!(!text.subtitle_track.is_empty());
             assert!(!text.subtitle_timing.is_empty());
@@ -284,10 +300,14 @@ mod tests {
             assert!(!text.loop_end_after_start.is_empty());
             assert!(!text.loop_cleared.is_empty());
             assert!(!text.rife_interpolation.is_empty());
+            assert!(!text.rife_interpolation_30.is_empty());
             assert!(!text.rife_enabled.is_empty());
+            assert!(!text.rife_30_enabled.is_empty());
             assert!(!text.rife_disabled.is_empty());
             assert!(!text.rife_unavailable.is_empty());
             assert!(!text.rife_source_fallback.is_empty());
+            assert!(!text.rife_30_source_fallback.is_empty());
+            assert!(!text.rife_compatibility_active.is_empty());
             assert!(!text.save_screenshot.is_empty());
             assert!(!text.screenshot_saved.is_empty());
             assert!(!text.open_screenshot_folder.is_empty());

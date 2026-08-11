@@ -11,6 +11,7 @@ pub struct Preferences {
     pub volume: f64,
     pub muted: bool,
     pub smooth_24_to_48: bool,
+    pub smooth_30_to_60: bool,
     pub last_window_bounds: Option<WindowBounds>,
 }
 
@@ -22,6 +23,7 @@ impl Default for Preferences {
             volume: 100.0,
             muted: false,
             smooth_24_to_48: false,
+            smooth_30_to_60: false,
             last_window_bounds: None,
         }
     }
@@ -65,7 +67,7 @@ impl PreferencesStore {
         fs::write(
             path,
             format!(
-                "version=4\ntheme={}\nalways_on_top={}\nvolume={:.2}\nmuted={}\nsmooth_24_to_48={}{}\n",
+                "version=5\ntheme={}\nalways_on_top={}\nvolume={:.2}\nmuted={}\nsmooth_24_to_48={}\nsmooth_30_to_60={}{}\n",
                 if preferences.light_theme {
                     "light"
                 } else {
@@ -75,6 +77,7 @@ impl PreferencesStore {
                 preferences.volume.clamp(0.0, 100.0),
                 preferences.muted,
                 preferences.smooth_24_to_48,
+                preferences.smooth_30_to_60,
                 preferences
                     .last_window_bounds
                     .map_or_else(String::new, |bounds| {
@@ -112,6 +115,7 @@ impl Preferences {
                 }
                 "muted" => preferences.muted = value.trim() == "true",
                 "smooth_24_to_48" => preferences.smooth_24_to_48 = value.trim() == "true",
+                "smooth_30_to_60" => preferences.smooth_30_to_60 = value.trim() == "true",
                 "window_x" => window_x = value.trim().parse::<i32>().ok(),
                 "window_y" => window_y = value.trim().parse::<i32>().ok(),
                 "window_width" => window_width = value.trim().parse::<u32>().ok(),
@@ -149,6 +153,7 @@ mod tests {
                 volume: 100.0,
                 muted: false,
                 smooth_24_to_48: false,
+                smooth_30_to_60: false,
                 last_window_bounds: Some(WindowBounds {
                     x: -1200,
                     y: 40,
@@ -172,6 +177,10 @@ mod tests {
 
         let smooth = Preferences::parse("version=4\nsmooth_24_to_48=true\n");
         assert!(smooth.smooth_24_to_48);
+        assert!(!smooth.smooth_30_to_60);
+
+        let smooth_30 = Preferences::parse("version=5\nsmooth_30_to_60=true\n");
+        assert!(smooth_30.smooth_30_to_60);
 
         assert_eq!(Preferences::parse("volume=240\n").volume, 100.0);
         assert_eq!(Preferences::parse("volume=-4\n").volume, 0.0);
@@ -181,5 +190,6 @@ mod tests {
         assert_eq!(legacy.volume, 100.0);
         assert!(!legacy.muted);
         assert!(!legacy.smooth_24_to_48);
+        assert!(!legacy.smooth_30_to_60);
     }
 }

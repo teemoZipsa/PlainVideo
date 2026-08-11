@@ -6,11 +6,11 @@ const MEDIA_EXTENSIONS: &[&str] = &[
     "mp4", "mkv", "webm", "mov", "avi", "m4v", "m2ts", "mts", "ts", "mpg", "mpeg", "wmv", "ogv",
 ];
 
-const SUBTITLE_EXTENSIONS: &[&str] = &["srt", "ass", "ssa", "vtt", "sub", "idx", "sup"];
+const SUBTITLE_EXTENSIONS: &[&str] = &["srt", "ass", "ssa", "vtt", "smi", "sub", "idx", "sup"];
 
 pub const MEDIA_DIALOG_PATTERN: &str =
     "*.mp4;*.mkv;*.webm;*.mov;*.avi;*.m4v;*.m2ts;*.mts;*.ts;*.mpg;*.mpeg;*.wmv;*.ogv";
-pub const SUBTITLE_DIALOG_PATTERN: &str = "*.srt;*.ass;*.ssa;*.vtt;*.sub;*.idx;*.sup";
+pub const SUBTITLE_DIALOG_PATTERN: &str = "*.srt;*.ass;*.ssa;*.vtt;*.smi;*.sub;*.idx;*.sup";
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct MediaQueue {
@@ -188,8 +188,25 @@ mod tests {
     fn extension_detection_is_case_insensitive_and_explicit() {
         assert!(is_media_path(Path::new("movie.MKV")));
         assert!(is_subtitle_path(Path::new("movie.ko.SRT")));
+        assert!(is_subtitle_path(Path::new("movie.ko.SMI")));
+        assert!(SUBTITLE_DIALOG_PATTERN.contains("*.smi"));
         assert!(!is_media_path(Path::new("notes.txt")));
         assert!(!is_subtitle_path(Path::new("movie.mp4")));
+    }
+
+    #[test]
+    fn msix_registers_every_supported_video_extension() {
+        let manifest = include_str!("../packaging/msix/Package.appxmanifest");
+        for extension in MEDIA_EXTENSIONS {
+            assert!(
+                manifest.contains(&format!("<uap:FileType>.{extension}</uap:FileType>")),
+                "MSIX association is missing .{extension}"
+            );
+        }
+        assert_eq!(
+            manifest.matches("<uap:FileType>").count(),
+            MEDIA_EXTENSIONS.len()
+        );
     }
 
     #[test]

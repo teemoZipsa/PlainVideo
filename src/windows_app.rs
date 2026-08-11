@@ -33,23 +33,23 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CS_DBLCLKS, CS_OWNDC, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
     DestroyMenu, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
-    GetMessageW, GetSystemMetrics, GetWindowLongPtrW, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT,
-    HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, HWND_NOTOPMOST,
-    HWND_TOPMOST, IDC_ARROW, IDC_HAND, IDC_SIZEALL, IMAGE_ICON, IsZoomed, KillTimer, LR_SHARED,
-    LoadCursorW, LoadImageW, MB_ICONINFORMATION, MB_OK, MF_CHECKED, MF_GRAYED, MF_POPUP,
-    MF_SEPARATOR, MF_STRING, MINMAXINFO, MSG, MessageBoxW, PostQuitMessage, RegisterClassExW,
-    SIZE_MINIMIZED, SM_CXICON, SM_CXSCREEN, SM_CXSMICON, SM_CYICON, SM_CYSCREEN, SM_CYSMICON,
-    SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetForegroundWindow,
-    SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowCursor, ShowWindow,
-    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP, WM_CANCELMODE,
-    WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES,
-    WM_DWMCOMPOSITIONCHANGED, WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO,
-    WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCLBUTTONDOWN, WM_NCPAINT, WM_PAINT, WM_QUIT,
-    WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSEXW,
-    WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
-    WS_THICKFRAME,
+    GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT,
+    HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT,
+    HWND_NOTOPMOST, HWND_TOPMOST, IDC_ARROW, IDC_HAND, IDC_SIZEALL, IMAGE_ICON, IsZoomed,
+    KillTimer, LR_SHARED, LoadCursorW, LoadImageW, MB_ICONINFORMATION, MB_OK, MF_CHECKED,
+    MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MINMAXINFO, MSG, MessageBoxW, PostQuitMessage,
+    RegisterClassExW, SIZE_MINIMIZED, SM_CXICON, SM_CXSCREEN, SM_CXSMICON, SM_CYICON, SM_CYSCREEN,
+    SM_CYSMICON, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SW_SHOWNOACTIVATE,
+    SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+    SWP_NOZORDER, SetCursor, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos,
+    SetWindowTextW, ShowCursor, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    TranslateMessage, WM_APP, WM_CANCELMODE, WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU,
+    WM_DESTROY, WM_DPICHANGED, WM_DROPFILES, WM_DWMCOMPOSITIONCHANGED, WM_ENTERSIZEMOVE,
+    WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST,
+    WM_NCLBUTTONDOWN, WM_NCPAINT, WM_PAINT, WM_QUIT, WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE,
+    WM_SYSKEYDOWN, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
 use crate::control_panel::{
@@ -57,11 +57,16 @@ use crate::control_panel::{
     EQUALIZER_MIN_GAIN, EQUALIZER_PRESETS, control_panel_control_at, control_panel_control_rect,
     control_panel_layout_for_size, equalizer_gain_from_point,
 };
+use crate::control_panel_window::{
+    ControlPanelVisualState, invalidate_control_panel, paint_control_panel,
+};
 use crate::locale::{Locale, UiText};
 use crate::media_queue::{
     MEDIA_DIALOG_PATTERN, MediaQueue, SUBTITLE_DIALOG_PATTERN, is_subtitle_path,
 };
-use crate::mpv::{AudioTrack, Player, SubtitleTrack, ThumbnailService, diagnostic_replacement};
+use crate::mpv::{
+    AudioTrack, Player, RifeMode, SubtitleTrack, ThumbnailService, diagnostic_replacement,
+};
 use crate::preferences::{Preferences, PreferencesStore};
 use crate::resume::ResumeStore;
 use crate::seek_preview::SeekPreview;
@@ -82,6 +87,7 @@ const TIMER_HIDE_CURSOR: usize = 4;
 const TIMER_RESUME_PROGRESS: usize = 5;
 const TIMER_SEEK_PREVIEW: usize = 6;
 const TIMER_SAVE_PREFERENCES: usize = 7;
+const TIMER_CONTROL_PANEL_REFRESH: usize = 8;
 const SURFACE_CLICK_DELAY_MS: u32 = 100;
 const RESUME_SAVE_INTERVAL_MS: u32 = 10_000;
 const CURSOR_HIDE_DELAY_MS: u32 = 1_600;
@@ -112,6 +118,7 @@ const MENU_ABOUT: usize = 110;
 const MENU_OPEN_SCREENSHOT_FOLDER: usize = 111;
 const MENU_RIFE_INTERPOLATION: usize = 112;
 const MENU_CONTROL_PANEL: usize = 113;
+const MENU_RIFE_INTERPOLATION_30: usize = 114;
 const MENU_SUBTITLE_OFF: usize = 200;
 const MENU_SUBTITLE_OPEN: usize = 201;
 const MENU_SUBTITLE_EARLIER: usize = 202;
@@ -183,9 +190,9 @@ enum PlaybackControl {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SurfaceDoubleClick {
+enum SurfaceClick {
     SeekBack,
-    Fullscreen,
+    PlayPause,
     SeekForward,
 }
 
@@ -283,7 +290,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
     let preferences_store = PreferencesStore::new();
     let preferences = preferences_store.load();
     let resume_store = ResumeStore::new();
-    let window = Window::create()?;
+    let window = Window::create(locale)?;
     let last_window_bounds = match preferences.last_window_bounds {
         Some(bounds) if restore_window_bounds(window.hwnd, bounds)? => Some(bounds),
         _ => restorable_window_bounds(window.hwnd, false),
@@ -295,6 +302,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         WM_APP_RENDER_ERROR,
         WM_APP_MPV_EVENT,
     )?;
+    let startup_rife_mode = player.rife_mode();
     let seek_preview = SeekPreview::create(window.hwnd).ok();
     let thumbnail_service =
         ThumbnailService::create(libmpv.clone(), window.hwnd, WM_APP_THUMBNAIL_READY).ok();
@@ -314,15 +322,27 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
     }
     let diagnostic_single_file = diagnostic_single_file();
     let diagnostic_input_locked = diagnostic_input_locked();
-    let media_queue = if media.len() == 1 && !diagnostic_single_file {
+    let media_queue = if media.len() == 1 && !diagnostic_single_file && !is_subtitle_path(&media[0])
+    {
         MediaQueue::around(&media[0])
     } else {
         MediaQueue::from_paths(media)
     };
     let has_initial_media = media_queue.current().is_some();
     let rife_available = rife_runtime_available(&root);
+    let rife_30_available = rife_available && player.rife_30_to_60_available();
+    let requested_rife_mode = if startup_rife_mode != RifeMode::Off {
+        startup_rife_mode
+    } else if preferences.smooth_30_to_60 && rife_30_available {
+        RifeMode::Fps30To60
+    } else if preferences.smooth_24_to_48 {
+        RifeMode::Fps24To48
+    } else {
+        RifeMode::Off
+    };
     let mut app = Box::new(App {
         hwnd: window.hwnd,
+        control_panel_hwnd: window.control_panel_hwnd,
         player,
         windowed_bounds: None,
         windowed_was_maximized: false,
@@ -352,8 +372,10 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         preferences_store,
         resume_store,
         pending_resume: None,
+        pending_external_subtitle: None,
         resume_error_reported: false,
         tracking_mouse_leave: false,
+        panel_tracking_mouse_leave: false,
         has_media: has_initial_media,
         pending_media_resize: has_initial_media,
         media_queue,
@@ -361,7 +383,8 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         last_subtitle_id: None,
         playback_error_visible: false,
         rife_available,
-        smooth_24_to_48_requested: preferences.smooth_24_to_48,
+        rife_30_available,
+        requested_rife_mode,
         last_seek_drag: None,
         seek_preview,
         thumbnail_service,
@@ -374,17 +397,13 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         last_error: None,
     });
 
-    if app.rife_available && app.smooth_24_to_48_requested {
-        if let Err(error) = app.player.set_rife_enabled(true) {
-            app.rife_available = false;
-            app.record_error(&format!(
-                "The saved 24-to-48 preference could not start: {error}"
-            ));
-        }
-    }
-
     unsafe {
         SetWindowLongPtrW(window.hwnd, GWLP_USERDATA, (&mut *app as *mut App) as isize);
+        SetWindowLongPtrW(
+            window.control_panel_hwnd,
+            GWLP_USERDATA,
+            (&mut *app as *mut App) as isize,
+        );
         DragAcceptFiles(window.hwnd, 1);
         app.sync_window_controls();
         ShowWindow(window.hwnd, SW_SHOW);
@@ -412,6 +431,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
     app.save_window_bounds_if_restorable(window.hwnd);
     unsafe {
         SetWindowLongPtrW(window.hwnd, GWLP_USERDATA, 0);
+        SetWindowLongPtrW(window.control_panel_hwnd, GWLP_USERDATA, 0);
     }
     app.show_cursor();
     let last_error = app.last_error.take();
@@ -430,6 +450,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
 
 struct App {
     hwnd: HWND,
+    control_panel_hwnd: HWND,
     player: Player,
     windowed_bounds: Option<WindowBounds>,
     windowed_was_maximized: bool,
@@ -459,8 +480,10 @@ struct App {
     preferences_store: PreferencesStore,
     resume_store: ResumeStore,
     pending_resume: Option<f64>,
+    pending_external_subtitle: Option<PathBuf>,
     resume_error_reported: bool,
     tracking_mouse_leave: bool,
+    panel_tracking_mouse_leave: bool,
     has_media: bool,
     pending_media_resize: bool,
     media_queue: MediaQueue,
@@ -468,7 +491,8 @@ struct App {
     last_subtitle_id: Option<i64>,
     playback_error_visible: bool,
     rife_available: bool,
-    smooth_24_to_48_requested: bool,
+    rife_30_available: bool,
+    requested_rife_mode: RifeMode,
     last_seek_drag: Option<Instant>,
     seek_preview: Option<SeekPreview>,
     thumbnail_service: Option<ThumbnailService>,
@@ -527,6 +551,16 @@ impl App {
         self.load_current();
     }
 
+    fn open_picked_path(&mut self, path: &Path) {
+        if !is_subtitle_path(path) {
+            self.open_file(path);
+        } else if self.has_media {
+            self.add_subtitle_ui(path);
+        } else {
+            self.show_status(self.locale.text().subtitle_requires_video);
+        }
+    }
+
     fn load_current(&mut self) {
         if let Some(path) = self.media_queue.current().map(Path::to_path_buf) {
             self.load_path(&path);
@@ -535,6 +569,10 @@ impl App {
 
     fn load_path(&mut self, path: &Path) {
         self.hide_seek_preview(self.hwnd);
+        if let Err(error) = self.player.set_rife_mode(RifeMode::Off) {
+            self.operation_error(error);
+            return;
+        }
         self.save_resume_progress();
         self.clear_playback_error();
         self.has_media = true;
@@ -542,6 +580,10 @@ impl App {
         self.active_path = Some(path.to_path_buf());
         self.last_subtitle_id = None;
         self.pending_resume = self.resume_store.position(path);
+        self.pending_external_subtitle = self
+            .resume_store
+            .subtitle_path(path)
+            .filter(|subtitle| is_subtitle_path(subtitle));
         self.update_window_title();
         let _ = self.player.clear_ab_loop();
         let _ = self.player.set_subtitle_delay(0.0);
@@ -602,6 +644,7 @@ impl App {
         self.pending_media_resize = false;
         self.clear_keyboard_focus();
         self.pending_resume = None;
+        self.pending_external_subtitle = None;
         self.playback_error_visible = true;
         let text = self.locale.text();
         let _ = self.player.command(&[
@@ -679,9 +722,6 @@ impl App {
     }
 
     fn set_window_controls_visible(&mut self, visible: bool) {
-        if !visible && self.control_panel_visible {
-            return;
-        }
         if !visible && self.keyboard_focus.is_some() {
             return;
         }
@@ -756,51 +796,27 @@ impl App {
     }
 
     fn sync_control_panel(&mut self) {
-        let visible = if self.control_panel_visible {
-            "yes"
-        } else {
-            "no"
-        };
-        let hovered = self
-            .hovered_panel
-            .map(ControlPanelControl::message_name)
-            .unwrap_or("none");
-        let pressed = self
-            .pressed_panel
-            .map(ControlPanelControl::message_name)
-            .unwrap_or("none");
-        let focused = self
-            .panel_keyboard_focus
-            .map(ControlPanelControl::message_name)
-            .unwrap_or("none");
-        let rife_available = if self.rife_available { "yes" } else { "no" };
-        let rife_enabled = if self.player.rife_enabled() {
-            "yes"
-        } else {
-            "no"
-        };
-        let rife_eligible = match self.player.rife_source_eligible() {
-            Some(true) => "yes",
-            Some(false) => "no",
-            None => "unknown",
-        };
-        let gains = self.equalizer_gains.map(|gain| gain.to_string());
-        self.command(&[
-            "script-message",
-            "plainvideo-control-panel",
-            visible,
-            hovered,
-            pressed,
-            focused,
-            rife_available,
-            rife_enabled,
-            rife_eligible,
-            &gains[0],
-            &gains[1],
-            &gains[2],
-            &gains[3],
-            &gains[4],
-        ]);
+        invalidate_control_panel(self.control_panel_hwnd);
+    }
+
+    fn control_panel_visual_state(&self) -> ControlPanelVisualState {
+        ControlPanelVisualState {
+            paused: self.player.is_paused(),
+            position: self.player.playback_position().unwrap_or(0.0),
+            duration: self.player.duration().unwrap_or(0.0),
+            seekable: self.player.is_seekable(),
+            speed: self.player.playback_speed(),
+            loop_a: self.player.ab_loop_a(),
+            loop_b: self.player.ab_loop_b(),
+            rife_available: self.rife_available,
+            rife_30_available: self.rife_30_available,
+            rife_requested_mode: self.requested_rife_mode,
+            rife_active_mode: self.player.rife_mode(),
+            rife_compatibility_bridge: self.player.rife_compatibility_bridge_active(),
+            muted: self.player.is_muted(),
+            volume: self.player.volume(),
+            equalizer_gains: self.equalizer_gains,
+        }
     }
 
     fn set_control_panel_visible(&mut self, visible: bool) {
@@ -820,12 +836,23 @@ impl App {
         self.last_seek_drag = None;
         self.hide_seek_preview(self.hwnd);
         if visible {
-            self.window_controls_visible = true;
-            self.show_cursor();
-            unsafe { KillTimer(self.hwnd, TIMER_HIDE_CURSOR) };
+            let _ = set_window_always_on_top(self.control_panel_hwnd, self.always_on_top);
+            unsafe {
+                ShowWindow(self.control_panel_hwnd, SW_SHOWNOACTIVATE);
+                SetTimer(
+                    self.control_panel_hwnd,
+                    TIMER_CONTROL_PANEL_REFRESH,
+                    100,
+                    None,
+                );
+            }
+            self.sync_control_panel();
         } else {
-            unsafe { ReleaseCapture() };
-            self.note_pointer_activity(self.hwnd);
+            unsafe {
+                KillTimer(self.control_panel_hwnd, TIMER_CONTROL_PANEL_REFRESH);
+                ReleaseCapture();
+                ShowWindow(self.control_panel_hwnd, SW_HIDE);
+            }
         }
         self.sync_window_controls();
     }
@@ -862,8 +889,7 @@ impl App {
     }
 
     fn hide_transient_chrome(&mut self, hwnd: HWND) {
-        if self.control_panel_visible
-            || self.pressed_control.is_some()
+        if self.pressed_control.is_some()
             || self.keyboard_focus.is_some()
             || pointer_over_interactive_chrome(hwnd, self.window_controls_visible, self.dpi)
         {
@@ -904,34 +930,18 @@ impl App {
         }
         let hovered_control = window_control_at(hwnd, lparam, self.dpi);
         self.set_hovered_control(hovered_control);
-        let hovered_panel = if self.control_panel_visible {
-            control_panel_layout(hwnd, self.dpi)
-                .and_then(|layout| control_panel_control_at(&layout, client_point(lparam)))
-        } else {
-            None
-        };
-        self.set_hovered_panel(hovered_panel);
-        let hovered_playback = if self.window_controls_visible && !self.control_panel_visible {
+        let hovered_playback = if self.window_controls_visible {
             playback_control_at(hwnd, client_point(lparam), self.dpi)
         } else {
             None
         };
         self.set_hovered_playback(hovered_playback);
-        if self.control_panel_visible {
-            self.hide_seek_preview(hwnd);
-        } else {
-            self.update_seek_preview(hwnd, client_point(lparam));
-        }
+        self.update_seek_preview(hwnd, client_point(lparam));
     }
 
     fn pointer_left(&mut self, hwnd: HWND) {
         self.tracking_mouse_leave = false;
         if self.pressed_control.is_some() || self.pressed_panel.is_some() {
-            return;
-        }
-        if self.control_panel_visible {
-            self.set_hovered_panel(None);
-            self.show_cursor();
             return;
         }
         self.hide_seek_preview(hwnd);
@@ -1129,6 +1139,20 @@ impl App {
         self.show_status(&self.locale.text().resumed_from.replace("{}", &time));
     }
 
+    fn restore_pending_external_subtitle(&mut self) {
+        let Some(path) = self.pending_external_subtitle.take() else {
+            return;
+        };
+        if let Err(error) = self.player.add_subtitle(&path) {
+            self.record_error(&format!(
+                "PlainVideo could not restore external subtitle {}: {error}",
+                path.display()
+            ));
+        } else if let Some(id) = self.player.current_subtitle_id() {
+            self.last_subtitle_id = Some(id);
+        }
+    }
+
     fn restart_video(&mut self) {
         if let Some(path) = self.active_path.clone() {
             if let Err(error) = self.resume_store.clear(&path) {
@@ -1146,6 +1170,7 @@ impl App {
         if !self.has_media || self.playback_error_visible {
             return;
         }
+        self.sync_rife_media_info();
         let (position, count) = self.media_queue.position().unwrap_or((1, 1));
         let position = position.to_string();
         let count = count.to_string();
@@ -1158,29 +1183,95 @@ impl App {
         ]);
     }
 
-    fn toggle_rife_interpolation(&mut self) {
-        if !self.rife_available {
+    fn sync_rife_media_info(&mut self) {
+        let mode_name = |mode| match mode {
+            RifeMode::Off => "off",
+            RifeMode::Fps24To48 => "24-to-48",
+            RifeMode::Fps30To60 => "30-to-60",
+        };
+        let requested = mode_name(self.requested_rife_mode);
+        let active = mode_name(self.player.rife_mode());
+        let compatibility = if self.player.rife_compatibility_bridge_active() {
+            "yes"
+        } else {
+            "no"
+        };
+        self.command(&[
+            "script-message",
+            "plainvideo-rife-status",
+            requested,
+            active,
+            compatibility,
+        ]);
+    }
+
+    fn sync_rife_mode_for_current_media(&self) -> Result<(), String> {
+        let requested_available =
+            self.requested_rife_mode != RifeMode::Fps30To60 || self.rife_30_available;
+        let active_mode = if self.rife_available
+            && requested_available
+            && self.requested_rife_mode != RifeMode::Off
+            && self.player.rife_source_eligible(self.requested_rife_mode) == Some(true)
+        {
+            self.requested_rife_mode
+        } else {
+            RifeMode::Off
+        };
+        self.player.set_rife_mode(active_mode)
+    }
+
+    fn refresh_rife_mode_for_current_media(&mut self) {
+        if let Err(error) = self.sync_rife_mode_for_current_media() {
+            self.requested_rife_mode = RifeMode::Off;
+            self.rife_available = false;
+            let _ = self.player.set_rife_mode(RifeMode::Off);
+            self.save_preferences();
+            self.record_error(&format!("The smooth-playback engine was disabled: {error}"));
+        }
+        self.sync_rife_media_info();
+        self.sync_control_panel();
+    }
+
+    fn toggle_rife_interpolation(&mut self, mode: RifeMode) {
+        if !self.rife_available || (mode == RifeMode::Fps30To60 && !self.rife_30_available) {
             self.show_status(self.locale.text().rife_unavailable);
             self.sync_control_panel();
             return;
         }
-        let enabled = !self.player.rife_enabled();
-        match self.player.set_rife_enabled(enabled) {
+        let previous = self.requested_rife_mode;
+        self.requested_rife_mode = if previous == mode {
+            RifeMode::Off
+        } else {
+            mode
+        };
+        match self.sync_rife_mode_for_current_media() {
             Ok(()) => {
-                self.smooth_24_to_48_requested = enabled;
                 self.queue_preferences_save();
                 self.sync_control_panel();
-                self.show_status(
-                    if enabled && self.player.rife_source_eligible() == Some(false) {
-                        self.locale.text().rife_source_fallback
-                    } else if enabled {
-                        self.locale.text().rife_enabled
-                    } else {
-                        self.locale.text().rife_disabled
-                    },
-                );
+                let text = self.locale.text();
+                let mut status = match self.requested_rife_mode {
+                    RifeMode::Off => text.rife_disabled.to_string(),
+                    RifeMode::Fps24To48 if self.player.rife_mode() == RifeMode::Fps24To48 => {
+                        text.rife_enabled.to_string()
+                    }
+                    RifeMode::Fps30To60 if self.player.rife_mode() == RifeMode::Fps30To60 => {
+                        text.rife_30_enabled.to_string()
+                    }
+                    RifeMode::Fps24To48 => text.rife_source_fallback.to_string(),
+                    RifeMode::Fps30To60 => text.rife_30_source_fallback.to_string(),
+                };
+                if self.player.rife_compatibility_bridge_active() {
+                    status.push_str(" · ");
+                    status.push_str(text.rife_compatibility_active);
+                }
+                self.sync_rife_media_info();
+                self.show_status(&status);
             }
-            Err(error) => self.operation_error(error),
+            Err(error) => {
+                self.requested_rife_mode = previous;
+                let _ = self.sync_rife_mode_for_current_media();
+                self.operation_error(error);
+            }
         }
     }
 
@@ -1279,6 +1370,11 @@ impl App {
             self.fail(error);
             return;
         }
+        if let Err(error) = set_window_always_on_top(self.control_panel_hwnd, next) {
+            let _ = set_window_always_on_top(hwnd, self.always_on_top);
+            self.fail(error);
+            return;
+        }
         self.always_on_top = next;
         self.sync_window_controls();
         self.save_preferences();
@@ -1290,7 +1386,8 @@ impl App {
             always_on_top: self.always_on_top,
             volume: self.player.volume(),
             muted: self.player.is_muted(),
-            smooth_24_to_48: self.smooth_24_to_48_requested,
+            smooth_24_to_48: self.requested_rife_mode == RifeMode::Fps24To48,
+            smooth_30_to_60: self.requested_rife_mode == RifeMode::Fps30To60,
             last_window_bounds: self.last_window_bounds,
         });
     }
@@ -1510,7 +1607,7 @@ impl App {
         if !self.player.is_seekable() {
             return;
         }
-        let Some(layout) = control_panel_layout(hwnd, self.dpi) else {
+        let Some(layout) = control_panel_layout(hwnd, current_dpi(hwnd)) else {
             return;
         };
         let percent = track_percent(point.x, layout.seek_track.left, layout.seek_track.right);
@@ -1520,7 +1617,7 @@ impl App {
     }
 
     fn set_volume_from_control_panel(&mut self, hwnd: HWND, point: POINT) {
-        let Some(layout) = control_panel_layout(hwnd, self.dpi) else {
+        let Some(layout) = control_panel_layout(hwnd, current_dpi(hwnd)) else {
             return;
         };
         let volume = track_percent(point.x, layout.volume_track.left, layout.volume_track.right);
@@ -1540,7 +1637,7 @@ impl App {
         if band >= self.equalizer_gains.len() {
             return;
         }
-        let Some(layout) = control_panel_layout(hwnd, self.dpi) else {
+        let Some(layout) = control_panel_layout(hwnd, current_dpi(hwnd)) else {
             return;
         };
         let gain = equalizer_gain_from_point(&layout, point);
@@ -1642,7 +1739,12 @@ impl App {
             ControlPanelControl::LoopA => self.set_loop_start(),
             ControlPanelControl::LoopB => self.set_loop_end(),
             ControlPanelControl::LoopClear => self.clear_loop(),
-            ControlPanelControl::Smooth24To48 => self.toggle_rife_interpolation(),
+            ControlPanelControl::Smooth24To48 => {
+                self.toggle_rife_interpolation(RifeMode::Fps24To48)
+            }
+            ControlPanelControl::Smooth30To60 => {
+                self.toggle_rife_interpolation(RifeMode::Fps30To60)
+            }
             ControlPanelControl::Mute => {
                 self.toggle_mute();
                 self.sync_control_panel();
@@ -1664,9 +1766,7 @@ impl App {
             return false;
         };
         match focused {
-            ControlPanelControl::SeekTrack => {
-                self.binding("plainvideo/toggle-pause");
-            }
+            ControlPanelControl::SeekTrack => {}
             ControlPanelControl::VolumeTrack => {
                 self.toggle_mute();
             }
@@ -1676,7 +1776,7 @@ impl App {
                 self.apply_equalizer(gains);
             }
             _ => {
-                let Some(layout) = control_panel_layout(hwnd, self.dpi) else {
+                let Some(layout) = control_panel_layout(hwnd, current_dpi(hwnd)) else {
                     return true;
                 };
                 let point = rect_center(control_panel_control_rect(&layout, focused));
@@ -1761,6 +1861,13 @@ impl App {
         if let Err(error) = self.player.add_subtitle(path) {
             self.operation_error(error);
         } else {
+            if let Some(media) = self.active_path.as_deref()
+                && let Err(error) = self.resume_store.record_subtitle(media, path)
+                && !self.resume_error_reported
+            {
+                self.record_error(&error);
+                self.resume_error_reported = true;
+            }
             if let Some(id) = self.player.current_subtitle_id() {
                 self.last_subtitle_id = Some(id);
             }
@@ -1977,6 +2084,7 @@ impl App {
         let playback_speed = wide(text.playback_speed);
         let playback_controls = wide(text.playback_controls);
         let rife_interpolation = wide(text.rife_interpolation);
+        let rife_interpolation_30 = wide(text.rife_interpolation_30);
         let save_screenshot = wide(text.save_screenshot);
         let open_screenshot_folder = wide(text.open_screenshot_folder);
         let open_file_location_label = wide(text.open_file_location);
@@ -2178,13 +2286,29 @@ impl App {
                     menu,
                     MF_STRING
                         | if !self.rife_available { MF_GRAYED } else { 0 }
-                        | if self.player.rife_enabled() {
+                        | if self.requested_rife_mode == RifeMode::Fps24To48 {
                             MF_CHECKED
                         } else {
                             0
                         },
                     MENU_RIFE_INTERPOLATION,
                     rife_interpolation.as_ptr(),
+                );
+                AppendMenuW(
+                    menu,
+                    MF_STRING
+                        | if !self.rife_30_available {
+                            MF_GRAYED
+                        } else {
+                            0
+                        }
+                        | if self.requested_rife_mode == RifeMode::Fps30To60 {
+                            MF_CHECKED
+                        } else {
+                            0
+                        },
+                    MENU_RIFE_INTERPOLATION_30,
+                    rife_interpolation_30.as_ptr(),
                 );
                 AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
                 AppendMenuW(menu, MF_STRING, MENU_SCREENSHOT, save_screenshot.as_ptr());
@@ -2229,7 +2353,7 @@ impl App {
             match selected {
                 MENU_OPEN => {
                     if let Some(path) = pick_media_file(hwnd, text) {
-                        self.open_file(&path);
+                        self.open_picked_path(&path);
                     }
                 }
                 MENU_PREVIOUS => self.previous_video(),
@@ -2260,7 +2384,8 @@ impl App {
                     }
                 }
                 MENU_FULLSCREEN => self.toggle_fullscreen(hwnd),
-                MENU_RIFE_INTERPOLATION => self.toggle_rife_interpolation(),
+                MENU_RIFE_INTERPOLATION => self.toggle_rife_interpolation(RifeMode::Fps24To48),
+                MENU_RIFE_INTERPOLATION_30 => self.toggle_rife_interpolation(RifeMode::Fps30To60),
                 MENU_CONTROL_PANEL => self.set_control_panel_visible(!self.control_panel_visible),
                 MENU_ABOUT => show_about(hwnd, text),
                 MENU_SUBTITLE_OFF => {
@@ -2361,10 +2486,11 @@ impl App {
 
 struct Window {
     hwnd: HWND,
+    control_panel_hwnd: HWND,
 }
 
 impl Window {
-    fn create() -> Result<Self, String> {
+    fn create(locale: Locale) -> Result<Self, String> {
         let instance = unsafe { GetModuleHandleW(ptr::null()) };
         if instance.is_null() {
             return Err("PlainVideo could not access its Windows module handle.".to_string());
@@ -2437,12 +2563,97 @@ impl Window {
             return Err("PlainVideo could not create its native playback window.".to_string());
         }
         configure_frameless_shadow(hwnd)?;
-        Ok(Self { hwnd })
+
+        let panel_class_name = wide("PlainVideo.ControlPanel");
+        let panel_class = WNDCLASSEXW {
+            cbSize: size_of::<WNDCLASSEXW>() as u32,
+            style: CS_DBLCLKS,
+            lpfnWndProc: Some(control_panel_window_proc),
+            cbClsExtra: 0,
+            cbWndExtra: 0,
+            hInstance: instance,
+            hIcon: large_icon,
+            hCursor: unsafe { LoadCursorW(ptr::null_mut(), IDC_ARROW) },
+            hbrBackground: ptr::null_mut(),
+            lpszMenuName: ptr::null(),
+            lpszClassName: panel_class_name.as_ptr(),
+            hIconSm: small_icon,
+        };
+        if unsafe { RegisterClassExW(&panel_class) } == 0 {
+            unsafe { DestroyWindow(hwnd) };
+            return Err("PlainVideo could not register its control-window class.".to_string());
+        }
+
+        let panel_dpi = current_dpi(hwnd);
+        let panel_width = scale_metric(544, panel_dpi);
+        let panel_height = scale_metric(470, panel_dpi);
+        let mut owner_rect = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        unsafe { GetWindowRect(hwnd, &mut owner_rect) };
+        let gap = scale_metric(16, panel_dpi);
+        let monitor = current_monitor_bounds(hwnd);
+        let (panel_x, panel_y) = if let Some(monitor) = monitor {
+            let monitor_right = monitor.x + monitor.width as i32;
+            let right_candidate = owner_rect.right + gap;
+            let left_candidate = owner_rect.left - gap - panel_width;
+            let panel_x = if right_candidate + panel_width <= monitor_right {
+                right_candidate
+            } else if left_candidate >= monitor.x {
+                left_candidate
+            } else {
+                (monitor_right - panel_width - gap).max(monitor.x + gap)
+            };
+            let panel_y = (owner_rect.top + gap).clamp(
+                monitor.y + gap,
+                monitor.y + monitor.height as i32 - panel_height - gap,
+            );
+            (panel_x, panel_y)
+        } else {
+            (owner_rect.right + gap, owner_rect.top + gap)
+        };
+        let panel_title = wide(match locale {
+            Locale::Korean => "PlainVideo 재생 제어",
+            Locale::English => "PlainVideo Playback controls",
+        });
+        let control_panel_hwnd = unsafe {
+            CreateWindowExW(
+                WS_EX_TOOLWINDOW,
+                panel_class_name.as_ptr(),
+                panel_title.as_ptr(),
+                WS_POPUP | WS_SYSMENU,
+                panel_x,
+                panel_y,
+                panel_width,
+                panel_height,
+                hwnd,
+                ptr::null_mut(),
+                instance,
+                ptr::null(),
+            )
+        };
+        if control_panel_hwnd.is_null() {
+            unsafe { DestroyWindow(hwnd) };
+            return Err("PlainVideo could not create its control window.".to_string());
+        }
+        configure_frameless_shadow(control_panel_hwnd)?;
+        Ok(Self {
+            hwnd,
+            control_panel_hwnd,
+        })
     }
 }
 
 impl Drop for Window {
     fn drop(&mut self) {
+        if !self.control_panel_hwnd.is_null() {
+            unsafe {
+                DestroyWindow(self.control_panel_hwnd);
+            }
+        }
         if !self.hwnd.is_null() {
             unsafe {
                 DestroyWindow(self.hwnd);
@@ -2526,10 +2737,12 @@ unsafe extern "system" fn window_proc(
                     app.show_playback_error(error);
                 } else {
                     if events.file_loaded {
+                        app.restore_pending_external_subtitle();
                         app.apply_pending_resume();
                     }
                     if events.media_ready && app.has_media {
                         app.clear_playback_error();
+                        app.refresh_rife_mode_for_current_media();
                         app.resize_to_pending_media(hwnd);
                         if app.control_panel_visible {
                             app.sync_control_panel();
@@ -2618,12 +2831,7 @@ unsafe extern "system" fn window_proc(
                         app.dpi,
                     )
                     .is_some()
-                        || (!app.control_panel_visible
-                            && playback_control_at(hwnd, point, app.dpi).is_some())
-                        || (app.control_panel_visible
-                            && control_panel_layout(hwnd, app.dpi).is_some_and(|layout| {
-                                control_panel_control_at(&layout, point).is_some()
-                            })))
+                        || playback_control_at(hwnd, point, app.dpi).is_some())
                 {
                     let cursor = unsafe { LoadCursorW(ptr::null_mut(), IDC_HAND) };
                     if !cursor.is_null() {
@@ -2652,48 +2860,8 @@ unsafe extern "system" fn window_proc(
                 app.pending_surface_click = None;
                 app.ignore_unpaired_button_up = false;
                 app.clear_keyboard_focus();
-                app.clear_control_panel_focus();
                 let point = client_point(lparam);
-                if app.control_panel_visible {
-                    if let Some(layout) = control_panel_layout(hwnd, app.dpi) {
-                        if let Some(control) = control_panel_control_at(&layout, point) {
-                            app.note_pointer_activity(hwnd);
-                            app.pressed_panel = Some(control);
-                            app.suppress_click = true;
-                            app.sync_control_panel();
-                            unsafe { SetCapture(hwnd) };
-                            match control {
-                                ControlPanelControl::SeekTrack => {
-                                    app.seek_from_control_panel(hwnd, point, false)
-                                }
-                                ControlPanelControl::VolumeTrack => {
-                                    app.set_volume_from_control_panel(hwnd, point)
-                                }
-                                ControlPanelControl::EqualizerBand(index) => {
-                                    app.set_equalizer_gain_from_pointer(hwnd, index, point)
-                                }
-                                _ => {}
-                            }
-                            return 0;
-                        }
-                        if rect_contains(layout.panel, point) {
-                            app.note_pointer_activity(hwnd);
-                            app.suppress_click = true;
-                            return 0;
-                        }
-                    }
-                    let over_window_control = window_control_at_point(
-                        client_size(hwnd).map(|size| size.0).unwrap_or(0),
-                        point,
-                        app.dpi,
-                    )
-                    .is_some();
-                    if !over_window_control {
-                        app.set_control_panel_visible(false);
-                        app.suppress_click = true;
-                        return 0;
-                    }
-                }
+                let playback_bar_was_visible = app.window_controls_visible;
                 let pressed = if app.window_controls_visible {
                     window_control_at_point(
                         client_size(hwnd).map(|size| size.0).unwrap_or(0),
@@ -2702,10 +2870,7 @@ unsafe extern "system" fn window_proc(
                     )
                     .map(PressedControl::Window)
                     .or_else(|| {
-                        (!app.control_panel_visible)
-                            .then(|| playback_control_at(hwnd, point, app.dpi))
-                            .flatten()
-                            .map(PressedControl::Playback)
+                        playback_control_at(hwnd, point, app.dpi).map(PressedControl::Playback)
                     })
                 } else {
                     None
@@ -2728,6 +2893,10 @@ unsafe extern "system" fn window_proc(
                     }
                     return 0;
                 }
+                if playback_bar_was_visible && playback_bar_contains_point(hwnd, point, app.dpi) {
+                    app.suppress_click = true;
+                    return 0;
+                }
             }
             0
         }
@@ -2741,31 +2910,6 @@ unsafe extern "system" fn window_proc(
                     return 0;
                 }
                 let point = client_point(lparam);
-                if let Some(pressed) = app.pressed_panel.take() {
-                    unsafe { ReleaseCapture() };
-                    app.suppress_click = false;
-                    app.last_seek_drag = None;
-                    unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
-                    let released = control_panel_layout(hwnd, app.dpi)
-                        .and_then(|layout| control_panel_control_at(&layout, point));
-                    match pressed {
-                        ControlPanelControl::SeekTrack => {
-                            app.seek_from_control_panel(hwnd, point, true)
-                        }
-                        ControlPanelControl::VolumeTrack => {
-                            app.set_volume_from_control_panel(hwnd, point)
-                        }
-                        ControlPanelControl::EqualizerBand(index) => {
-                            app.set_equalizer_gain_from_pointer(hwnd, index, point)
-                        }
-                        _ if released == Some(pressed) => {
-                            app.activate_control_panel_control(hwnd, pressed, point)
-                        }
-                        _ => {}
-                    }
-                    app.sync_control_panel();
-                    return 0;
-                }
                 if let Some(pressed) = app.pressed_control.take() {
                     let volume_drag_active = app.volume_drag_active;
                     app.volume_drag_active = false;
@@ -2818,10 +2962,28 @@ unsafe extern "system" fn window_proc(
                     unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
                     return 0;
                 }
-                app.pending_surface_click = Some(PendingSurfaceClick::new(app.player.is_paused()));
-                unsafe {
-                    KillTimer(hwnd, TIMER_SINGLE_CLICK);
-                    SetTimer(hwnd, TIMER_SINGLE_CLICK, SURFACE_CLICK_DELAY_MS, None);
+                let action = if app.has_media && !app.playback_error_visible {
+                    surface_click_action(client_size(hwnd).map(|size| size.0).unwrap_or(0), point.x)
+                } else {
+                    SurfaceClick::PlayPause
+                };
+                match action {
+                    SurfaceClick::SeekBack => {
+                        app.pending_surface_click = None;
+                        app.binding("plainvideo/seek-back-surface");
+                    }
+                    SurfaceClick::PlayPause => {
+                        app.pending_surface_click =
+                            Some(PendingSurfaceClick::new(app.player.is_paused()));
+                        unsafe {
+                            KillTimer(hwnd, TIMER_SINGLE_CLICK);
+                            SetTimer(hwnd, TIMER_SINGLE_CLICK, SURFACE_CLICK_DELAY_MS, None);
+                        }
+                    }
+                    SurfaceClick::SeekForward => {
+                        app.pending_surface_click = None;
+                        app.binding("plainvideo/seek-forward-surface");
+                    }
                 }
             }
             0
@@ -2841,16 +3003,6 @@ unsafe extern "system" fn window_proc(
         WM_LBUTTONDBLCLK => {
             unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
             if let Some(app) = app {
-                if app.control_panel_visible {
-                    app.suppress_click = true;
-                    return 0;
-                }
-                if let Some(click) = app.pending_surface_click.take() {
-                    if let Some(paused) = click.restore_after_double_click() {
-                        let paused = if paused { "yes" } else { "no" };
-                        app.command(&["set", "pause", paused]);
-                    }
-                }
                 app.suppress_click = true;
                 let point = client_point(lparam);
                 if window_control_at_point(
@@ -2860,22 +3012,33 @@ unsafe extern "system" fn window_proc(
                 )
                 .is_none()
                     && playback_control_at(hwnd, point, app.dpi).is_none()
+                    && !playback_bar_contains_point(hwnd, point, app.dpi)
                 {
                     let action = if app.has_media && !app.playback_error_visible {
-                        surface_double_click_action(
+                        surface_click_action(
                             client_size(hwnd).map(|size| size.0).unwrap_or(0),
                             point.x,
                         )
                     } else {
-                        SurfaceDoubleClick::Fullscreen
+                        SurfaceClick::PlayPause
                     };
                     match action {
-                        SurfaceDoubleClick::SeekBack => {
-                            app.binding("plainvideo/seek-back-double");
+                        SurfaceClick::SeekBack => {
+                            app.pending_surface_click = None;
+                            app.binding("plainvideo/seek-back-surface");
                         }
-                        SurfaceDoubleClick::Fullscreen => app.toggle_fullscreen(hwnd),
-                        SurfaceDoubleClick::SeekForward => {
-                            app.binding("plainvideo/seek-forward-double");
+                        SurfaceClick::PlayPause => {
+                            if let Some(click) = app.pending_surface_click.take() {
+                                if let Some(paused) = click.restore_after_double_click() {
+                                    let paused = if paused { "yes" } else { "no" };
+                                    app.command(&["set", "pause", paused]);
+                                }
+                            }
+                            app.toggle_fullscreen(hwnd);
+                        }
+                        SurfaceClick::SeekForward => {
+                            app.pending_surface_click = None;
+                            app.binding("plainvideo/seek-forward-surface");
                         }
                     }
                 }
@@ -3018,6 +3181,247 @@ unsafe extern "system" fn window_proc(
     }
 }
 
+unsafe extern "system" fn control_panel_window_proc(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    let app_pointer = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut App;
+    let app = if app_pointer.is_null() {
+        None
+    } else {
+        Some(unsafe { &mut *app_pointer })
+    };
+
+    match message {
+        WM_NCCALCSIZE if wparam != 0 => 0,
+        WM_NCACTIVATE => 1,
+        WM_NCPAINT => 0,
+        WM_DWMCOMPOSITIONCHANGED => {
+            let _ = configure_frameless_shadow(hwnd);
+            0
+        }
+        WM_NCHITTEST => {
+            let Some(point) = screen_to_client_point(hwnd, screen_point(lparam)) else {
+                return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
+            };
+            let dpi = current_dpi(hwnd);
+            let Some(layout) = control_panel_layout(hwnd, dpi) else {
+                return HTCLIENT as LRESULT;
+            };
+            if control_panel_control_at(&layout, point).is_none()
+                && point.y >= layout.panel.top
+                && point.y < layout.panel.top + scale_metric(42, dpi)
+            {
+                HTCAPTION as LRESULT
+            } else {
+                HTCLIENT as LRESULT
+            }
+        }
+        WM_SETCURSOR => {
+            if let Some(app) = app {
+                let mut point = POINT { x: 0, y: 0 };
+                if unsafe { GetCursorPos(&mut point) } != 0
+                    && unsafe { ScreenToClient(hwnd, &mut point) } != 0
+                    && control_panel_layout(hwnd, current_dpi(hwnd))
+                        .is_some_and(|layout| control_panel_control_at(&layout, point).is_some())
+                {
+                    let cursor = unsafe { LoadCursorW(ptr::null_mut(), IDC_HAND) };
+                    if !cursor.is_null() {
+                        unsafe { SetCursor(cursor) };
+                        return 1;
+                    }
+                }
+                let _ = app;
+            }
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
+        WM_PAINT => {
+            let mut paint: PAINTSTRUCT = unsafe { mem::zeroed() };
+            let hdc = unsafe { BeginPaint(hwnd, &mut paint) };
+            if let Some(app) = app {
+                paint_control_panel(
+                    hwnd,
+                    hdc,
+                    current_dpi(hwnd),
+                    app.surface_theme == SurfaceTheme::Light,
+                    app.locale,
+                    app.control_panel_visual_state(),
+                    app.hovered_panel,
+                    app.pressed_panel,
+                    app.panel_keyboard_focus,
+                );
+            }
+            unsafe { EndPaint(hwnd, &paint) };
+            0
+        }
+        WM_ERASEBKGND => 1,
+        WM_DPICHANGED => {
+            let rect = unsafe { *(lparam as *const RECT) };
+            unsafe {
+                SetWindowPos(
+                    hwnd,
+                    ptr::null_mut(),
+                    rect.left,
+                    rect.top,
+                    rect.right - rect.left,
+                    rect.bottom - rect.top,
+                    SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER,
+                );
+            }
+            invalidate_control_panel(hwnd);
+            0
+        }
+        WM_SETTINGCHANGE => {
+            invalidate_control_panel(hwnd);
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
+        WM_LBUTTONDOWN => {
+            if let Some(app) = app {
+                let point = client_point(lparam);
+                app.clear_control_panel_focus();
+                if let Some(layout) = control_panel_layout(hwnd, current_dpi(hwnd)) {
+                    if let Some(control) = control_panel_control_at(&layout, point) {
+                        app.pressed_panel = Some(control);
+                        app.panel_keyboard_focus = Some(control);
+                        app.sync_control_panel();
+                        unsafe {
+                            SetForegroundWindow(hwnd);
+                            SetCapture(hwnd);
+                        }
+                        match control {
+                            ControlPanelControl::SeekTrack => {
+                                app.seek_from_control_panel(hwnd, point, false)
+                            }
+                            ControlPanelControl::VolumeTrack => {
+                                app.set_volume_from_control_panel(hwnd, point)
+                            }
+                            ControlPanelControl::EqualizerBand(index) => {
+                                app.set_equalizer_gain_from_pointer(hwnd, index, point)
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            0
+        }
+        WM_LBUTTONUP => {
+            if let Some(app) = app {
+                let point = client_point(lparam);
+                if let Some(pressed) = app.pressed_panel.take() {
+                    unsafe { ReleaseCapture() };
+                    app.last_seek_drag = None;
+                    let released = control_panel_layout(hwnd, current_dpi(hwnd))
+                        .and_then(|layout| control_panel_control_at(&layout, point));
+                    match pressed {
+                        ControlPanelControl::SeekTrack => {
+                            app.seek_from_control_panel(hwnd, point, true)
+                        }
+                        ControlPanelControl::VolumeTrack => {
+                            app.set_volume_from_control_panel(hwnd, point)
+                        }
+                        ControlPanelControl::EqualizerBand(index) => {
+                            app.set_equalizer_gain_from_pointer(hwnd, index, point)
+                        }
+                        _ if released == Some(pressed) => {
+                            app.activate_control_panel_control(hwnd, pressed, point)
+                        }
+                        _ => {}
+                    }
+                    app.sync_control_panel();
+                }
+            }
+            0
+        }
+        WM_MOUSEMOVE => {
+            if let Some(app) = app {
+                if !app.panel_tracking_mouse_leave {
+                    let mut tracking = TRACKMOUSEEVENT {
+                        cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                        dwFlags: TME_LEAVE,
+                        hwndTrack: hwnd,
+                        dwHoverTime: 0,
+                    };
+                    if unsafe { TrackMouseEvent(&mut tracking) } != 0 {
+                        app.panel_tracking_mouse_leave = true;
+                    }
+                }
+                let point = client_point(lparam);
+                match app.pressed_panel {
+                    Some(ControlPanelControl::SeekTrack) => {
+                        app.seek_from_control_panel(hwnd, point, false)
+                    }
+                    Some(ControlPanelControl::VolumeTrack) => {
+                        app.set_volume_from_control_panel(hwnd, point)
+                    }
+                    Some(ControlPanelControl::EqualizerBand(index)) => {
+                        app.set_equalizer_gain_from_pointer(hwnd, index, point)
+                    }
+                    _ => {}
+                }
+                let hovered = control_panel_layout(hwnd, current_dpi(hwnd))
+                    .and_then(|layout| control_panel_control_at(&layout, point));
+                app.set_hovered_panel(hovered);
+            }
+            0
+        }
+        WM_MOUSELEAVE => {
+            if let Some(app) = app {
+                app.panel_tracking_mouse_leave = false;
+                if app.pressed_panel.is_none() {
+                    app.set_hovered_panel(None);
+                }
+            }
+            0
+        }
+        WM_CAPTURECHANGED | WM_CANCELMODE => {
+            if let Some(app) = app {
+                app.pressed_panel = None;
+                app.last_seek_drag = None;
+                app.sync_control_panel();
+            }
+            0
+        }
+        WM_KEYDOWN => {
+            if let Some(app) = app {
+                handle_control_panel_key(app, hwnd, wparam as u16);
+            }
+            0
+        }
+        WM_TIMER if wparam == TIMER_CONTROL_PANEL_REFRESH => {
+            invalidate_control_panel(hwnd);
+            0
+        }
+        WM_CLOSE => {
+            if let Some(app) = app {
+                app.set_control_panel_visible(false);
+            } else {
+                unsafe { ShowWindow(hwnd, SW_HIDE) };
+            }
+            0
+        }
+        WM_DESTROY => 0,
+        _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
+    }
+}
+
+fn handle_control_panel_key(app: &mut App, hwnd: HWND, key: u16) {
+    let shift = unsafe { GetKeyState(VK_SHIFT as i32) } < 0;
+    match key {
+        VK_ESCAPE | 0x50 => app.set_control_panel_visible(false),
+        VK_TAB | VK_F6 => app.cycle_control_panel_focus(shift),
+        VK_SPACE | VK_RETURN => {
+            app.activate_control_panel_focus(hwnd);
+        }
+        VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN => {
+            app.handle_control_panel_direction(key, shift);
+        }
+        _ => {}
+    }
+}
+
 fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
     let control = unsafe { GetKeyState(VK_CONTROL as i32) } < 0;
     let alt = unsafe { GetKeyState(VK_MENU as i32) } < 0;
@@ -3026,28 +3430,11 @@ fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
         app.set_control_panel_visible(false);
         return;
     }
-    if app.control_panel_visible && matches!(key, VK_TAB | VK_F6) {
-        app.cycle_control_panel_focus(shift);
-        app.show_cursor();
-        return;
-    }
-    if app.control_panel_visible && matches!(key, VK_SPACE | VK_RETURN) {
-        if !app.activate_control_panel_focus(hwnd) && key == VK_SPACE {
-            app.binding("plainvideo/toggle-pause");
-        }
-        return;
-    }
-    if app.control_panel_visible
-        && matches!(key, VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN)
-        && app.handle_control_panel_direction(key, shift)
-    {
-        return;
-    }
     if key == VK_O && control {
         app.show_cursor();
         unsafe { KillTimer(hwnd, TIMER_HIDE_CURSOR) };
         if let Some(path) = pick_media_file(hwnd, app.locale.text()) {
-            app.open_file(&path);
+            app.open_picked_path(&path);
         }
         app.note_pointer_activity(hwnd);
         return;
@@ -3152,16 +3539,16 @@ fn client_size(hwnd: HWND) -> Option<(i32, i32)> {
     Some((rect.right - rect.left, rect.bottom - rect.top))
 }
 
-fn surface_double_click_action(width: i32, x: i32) -> SurfaceDoubleClick {
+fn surface_click_action(width: i32, x: i32) -> SurfaceClick {
     if width <= 0 {
-        return SurfaceDoubleClick::Fullscreen;
+        return SurfaceClick::PlayPause;
     }
-    if x < width / 3 {
-        SurfaceDoubleClick::SeekBack
-    } else if x >= width * 2 / 3 {
-        SurfaceDoubleClick::SeekForward
+    if x < width / 4 {
+        SurfaceClick::SeekBack
+    } else if x >= width * 3 / 4 {
+        SurfaceClick::SeekForward
     } else {
-        SurfaceDoubleClick::Fullscreen
+        SurfaceClick::PlayPause
     }
 }
 
@@ -3309,6 +3696,17 @@ fn playback_control_at(hwnd: HWND, point: POINT, dpi: u32) -> Option<PlaybackCon
     .find_map(|(control, rect)| rect_contains(rect, point).then_some(control))
 }
 
+fn playback_bar_contains_point(hwnd: HWND, point: POINT, dpi: u32) -> bool {
+    client_size(hwnd).is_some_and(|(width, height)| {
+        playback_bar_contains_point_for_size(width, height, point, dpi)
+    })
+}
+
+fn playback_bar_contains_point_for_size(width: i32, height: i32, point: POINT, dpi: u32) -> bool {
+    playback_layout_for_size(width, height, dpi)
+        .is_some_and(|layout| rect_contains(layout.bar, point))
+}
+
 fn hit_test_client(hwnd: HWND, point: POINT, app: &App) -> LRESULT {
     let Some((width, height)) = client_size(hwnd) else {
         return HTCLIENT as LRESULT;
@@ -3334,12 +3732,6 @@ fn hit_test_client(hwnd: HWND, point: POINT, app: &App) -> LRESULT {
     if app.window_controls_visible
         && (window_control_at_point(width, point, app.dpi).is_some()
             || playback_control_at(hwnd, point, app.dpi).is_some())
-    {
-        return HTCLIENT as LRESULT;
-    }
-    if app.control_panel_visible
-        && control_panel_layout_for_size(width, height, app.dpi)
-            .is_some_and(|layout| rect_contains(layout.panel, point))
     {
         return HTCLIENT as LRESULT;
     }
@@ -4190,35 +4582,44 @@ mod tests {
     }
 
     #[test]
-    fn surface_double_click_uses_seek_edges_and_fullscreen_center() {
-        assert_eq!(
-            surface_double_click_action(1200, 0),
-            SurfaceDoubleClick::SeekBack
-        );
-        assert_eq!(
-            surface_double_click_action(1200, 399),
-            SurfaceDoubleClick::SeekBack
-        );
-        assert_eq!(
-            surface_double_click_action(1200, 400),
-            SurfaceDoubleClick::Fullscreen
-        );
-        assert_eq!(
-            surface_double_click_action(1200, 799),
-            SurfaceDoubleClick::Fullscreen
-        );
-        assert_eq!(
-            surface_double_click_action(1200, 800),
-            SurfaceDoubleClick::SeekForward
-        );
-        assert_eq!(
-            surface_double_click_action(0, 0),
-            SurfaceDoubleClick::Fullscreen
-        );
+    fn surface_single_click_uses_seek_edges_and_play_pause_center() {
+        assert_eq!(surface_click_action(1200, 0), SurfaceClick::SeekBack);
+        assert_eq!(surface_click_action(1200, 299), SurfaceClick::SeekBack);
+        assert_eq!(surface_click_action(1200, 300), SurfaceClick::PlayPause);
+        assert_eq!(surface_click_action(1200, 899), SurfaceClick::PlayPause);
+        assert_eq!(surface_click_action(1200, 900), SurfaceClick::SeekForward);
+        assert_eq!(surface_click_action(0, 0), SurfaceClick::PlayPause);
 
         let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
-        assert!(lua.contains("\"seek-back-double\", function() seek(-10) end"));
-        assert!(lua.contains("\"seek-forward-double\", function() seek(10) end"));
+        assert!(lua.contains("\"seek-back-surface\", function() surface_seek(-10, \"back\") end"));
+        assert!(
+            lua.contains("\"seek-forward-surface\", function() surface_seek(10, \"forward\") end")
+        );
+    }
+
+    #[test]
+    fn edge_clicks_seek_without_scheduling_play_pause() {
+        let source = include_str!("windows_app.rs");
+        let button_up = source
+            .split_once("WM_LBUTTONUP =>")
+            .and_then(|(_, rest)| rest.split_once("WM_CAPTURECHANGED"))
+            .map(|(body, _)| body)
+            .expect("surface button-up handling");
+
+        let seek_back = button_up
+            .split_once("SurfaceClick::SeekBack =>")
+            .and_then(|(_, rest)| rest.split_once("SurfaceClick::PlayPause =>"))
+            .map(|(body, _)| body)
+            .expect("backward surface action");
+        let seek_forward = button_up
+            .split_once("SurfaceClick::SeekForward =>")
+            .map(|(_, body)| body)
+            .expect("forward surface action");
+
+        assert!(seek_back.contains("plainvideo/seek-back-surface"));
+        assert!(!seek_back.contains("TIMER_SINGLE_CLICK"));
+        assert!(seek_forward.contains("plainvideo/seek-forward-surface"));
+        assert!(!seek_forward.contains("TIMER_SINGLE_CLICK"));
     }
 
     #[test]
@@ -4267,6 +4668,113 @@ mod tests {
         assert!(layout.bar.left >= 0);
         assert!(layout.bar.right <= 560);
         assert!(layout.bar.bottom <= 480);
+    }
+
+    #[test]
+    fn playback_bar_background_never_counts_as_the_video_surface() {
+        let layout = playback_layout_for_size(1280, 720, 96).expect("playback layout");
+        let bar_background = POINT {
+            x: layout.bar.left + 2,
+            y: layout.bar.top + 2,
+        };
+        let video_surface = POINT {
+            x: layout.bar.left + 2,
+            y: layout.bar.top - 2,
+        };
+
+        assert!(playback_bar_contains_point_for_size(
+            1280,
+            720,
+            bar_background,
+            96
+        ));
+        assert!(!playback_bar_contains_point_for_size(
+            1280,
+            720,
+            video_surface,
+            96
+        ));
+
+        let source = include_str!("windows_app.rs");
+        let button_down = source
+            .split_once("WM_LBUTTONDOWN =>")
+            .and_then(|(_, rest)| rest.split_once("WM_LBUTTONUP =>"))
+            .map(|(body, _)| body)
+            .expect("button-down handling");
+        assert!(button_down.contains("playback_bar_was_visible"));
+        assert!(button_down.contains("playback_bar_contains_point"));
+
+        let double_click = source
+            .split_once("WM_LBUTTONDBLCLK =>")
+            .and_then(|(_, rest)| rest.split_once("WM_EXITSIZEMOVE"))
+            .map(|(body, _)| body)
+            .expect("double-click handling");
+        assert!(double_click.contains("!playback_bar_contains_point"));
+
+        let panel_keyboard_activation = source
+            .split_once("fn activate_control_panel_focus")
+            .and_then(|(_, rest)| rest.split_once("fn handle_control_panel_direction"))
+            .map(|(body, _)| body)
+            .expect("control-panel keyboard activation");
+        let seek_activation = panel_keyboard_activation
+            .split_once("ControlPanelControl::SeekTrack =>")
+            .and_then(|(_, rest)| rest.split_once("ControlPanelControl::VolumeTrack"))
+            .map(|(body, _)| body)
+            .expect("seek-track activation");
+        assert!(!seek_activation.contains("toggle-pause"));
+    }
+
+    #[test]
+    fn msix_video_association_name_is_localized() {
+        let manifest = include_str!("../packaging/msix/Package.appxmanifest");
+        let english = include_str!("../packaging/msix/Strings/en-US/Resources.resw");
+        let korean = include_str!("../packaging/msix/Strings/ko-KR/Resources.resw");
+        let pri_config = include_str!("../packaging/msix/priconfig.xml");
+        let packaging = include_str!("../scripts/build-msix.ps1");
+
+        assert!(manifest.contains("ms-resource:VideoFileAssociationDisplayName"));
+        assert!(english.contains("PlainVideo video"));
+        assert!(korean.contains("PlainVideo 동영상"));
+        assert!(!pri_config.contains("autoResourcePackage"));
+        assert!(packaging.contains("makepri.exe"));
+        assert!(packaging.contains("resources.pri"));
+        assert!(packaging.contains("DeveloperRevision"));
+        assert!(packaging.contains("Store-upload packages must use revision 0"));
+    }
+
+    #[test]
+    fn control_panel_is_an_opaque_independent_tool_window() {
+        let source = include_str!("windows_app.rs");
+        let native_panel = include_str!("control_panel_window.rs");
+        let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
+        let draw_surface = lua
+            .split_once("local function draw_surface()")
+            .and_then(|(_, rest)| rest.split_once("local function set_playback_status"))
+            .map(|(body, _)| body)
+            .expect("video overlay renderer");
+        let sync_panel = source
+            .split_once("fn sync_control_panel")
+            .and_then(|(_, rest)| rest.split_once("fn control_panel_visual_state"))
+            .map(|(body, _)| body)
+            .expect("native control-window synchronization");
+
+        assert!(source.contains("WS_EX_TOOLWINDOW"));
+        assert!(source.contains("control_panel_window_proc"));
+        assert!(source.contains("ShowWindow(self.control_panel_hwnd, SW_SHOWNOACTIVATE)"));
+        assert!(source.contains("HTCAPTION as LRESULT"));
+        assert!(native_panel.contains("fill(hdc, client, palette.window)"));
+        assert!(!sync_panel.contains("script-message"));
+        assert!(!draw_surface.contains("draw_control_panel(width, height)"));
+    }
+
+    #[test]
+    fn msix_shell_icon_has_explorer_target_sizes() {
+        let packaging = include_str!("../scripts/build-msix.ps1");
+
+        assert!(packaging.contains("$shellTargetSizes"));
+        assert!(packaging.contains("Square44x44Logo.targetsize-$targetSize.png"));
+        assert!(packaging.contains("_altform-unplated.png"));
+        assert!(packaging.contains("@(16, 20, 24, 30, 32, 40, 44, 48, 64, 96, 256)"));
     }
 
     #[test]
@@ -4432,12 +4940,11 @@ mod tests {
     fn media_info_stays_enabled_until_an_explicit_toggle() {
         let lua = include_str!("../assets/mpv/scripts/plainvideo.lua");
 
-        // One assignment initializes the state, one is the explicit
-        // script-message "hide" action, and one switches from the diagnostic
-        // view to the explicitly opened control panel. Playback lifecycle
-        // events must not silently clear a view the user pinned with Tab.
-        assert_eq!(lua.matches("media_info_visible = false").count(), 3);
-        assert!(lua.contains("if control_panel_visible then media_info_visible = false end"));
+        // One assignment initializes the state and one is the explicit
+        // script-message "hide" action. Opening the separate native control
+        // window must not silently clear a view the user pinned with Tab.
+        assert_eq!(lua.matches("media_info_visible = false").count(), 2);
+        assert!(!lua.contains("if control_panel_visible then media_info_visible = false end"));
         assert!(!lua.contains("if value then media_info_visible = false end"));
     }
 

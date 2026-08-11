@@ -3,7 +3,8 @@ param(
     [switch]$NoSign,
     [switch]$SkipBuild,
     [switch]$ForStoreUpload,
-    [switch]$IncludeRife24To48Candidate
+    [switch]$IncludeRife24To48Candidate,
+    [ValidateRange(0, 65535)][int]$DeveloperRevision = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,6 +24,8 @@ $runtimeManifestPath = if ($IncludeRife24To48Candidate) {
 }
 $releaseStatePath = Join-Path $repoRoot 'docs\STORE_RELEASE_STATE.json'
 $manifestTemplatePath = Join-Path $repoRoot 'packaging\msix\Package.appxmanifest'
+$resourceSourceRoot = Join-Path $repoRoot 'packaging\msix\Strings'
+$priConfigTemplatePath = Join-Path $repoRoot 'packaging\msix\priconfig.xml'
 $developerReadmePath = Join-Path $repoRoot 'packaging\msix\DEVELOPER_PACKAGE_README.txt'
 $packageLicenseRoot = Join-Path $repoRoot '.runtime\lgpl-libmpv\closure\material-runtime-closure-materialized-v3\package-licenses'
 $luaJitLicensePath = Join-Path $repoRoot 'third_party\licenses\LuaJIT-COPYRIGHT'
@@ -119,6 +122,10 @@ function Assert-StoreUploadAllowed {
         $rifeFeatureManifest = Get-Content -LiteralPath $rifeFeatureManifestPath -Raw | ConvertFrom-Json
         if ($rifeFeatureManifest.releaseEligible -ne $true) {
             throw 'Store upload is blocked: the 24-to-48 feature manifest is not release-eligible.'
+        }
+        if ($rifeFeatureManifest.feature.probe30To60Included -eq $true -and
+            $rifeFeatureManifest.feature.probe30To60.releaseApproved -ne $true) {
+            throw 'Store upload is blocked: the staged feature manifest includes 30-to-60 without approving that exact mode.'
         }
     }
     $expectedPackageVersion = "$(Get-CargoVersion).0"
@@ -230,6 +237,9 @@ function Find-SigningCertificate {
 
 $layoutRoot = Assert-ChildPath -Path $layoutRoot -Parent $outputRoot -Description 'MSIX layout root'
 if ($ForStoreUpload) {
+    if ($DeveloperRevision -ne 0) {
+        throw 'Store-upload packages must use revision 0.'
+    }
     Assert-StoreUploadAllowed
 }
 
@@ -242,7 +252,7 @@ if (-not $ForStoreUpload -and $runtimeManifest.releaseEligible -ne $true) {
 }
 
 $cargoVersion = Get-CargoVersion
-$msixVersion = "$cargoVersion.0"
+$msixVersion = "$cargoVersion.$DeveloperRevision"
 $packageKind = if ($ForStoreUpload) { 'store' } else { 'dev' }
 $packagePath = Join-Path $outputRoot "PlainVideo_${msixVersion}_x64-$packageKind.msix"
 $evidencePath = Join-Path $outputRoot "PlainVideo_${msixVersion}_x64-$packageKind.json"
@@ -320,7 +330,19 @@ if (Test-Path -LiteralPath $luaJitLicensePath -PathType Leaf) {
 
 Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging\icons\png\plainvideo-44.png') -Destination (Join-Path $layoutRoot 'Assets\Square44x44Logo.png')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging\icons\png\plainvideo-150.png') -Destination (Join-Path $layoutRoot 'Assets\Square150x150Logo.png')
+$shellTargetSizes = @(16, 20, 24, 30, 32, 40, 44, 48, 64, 96, 256)
+foreach ($targetSize in $shellTargetSizes) {
+    $source = Join-Path $repoRoot "packaging\icons\png\plainvideo-$targetSize.png"
+    $targetName = "Square44x44Logo.targetsize-$targetSize.png"
+    $unplatedName = "Square44x44Logo.targetsize-$($targetSize)_altform-unplated.png"
+    Copy-Item -LiteralPath $source -Destination (Join-Path $layoutRoot "Assets\$targetName")
+    Copy-Item -LiteralPath $source -Destination (Join-Path $layoutRoot "Assets\$unplatedName")
+}
 New-StoreLogo -Source (Join-Path $repoRoot 'packaging\icons\png\plainvideo-1024.png') -Destination (Join-Path $layoutRoot 'Assets\StoreLogo.png')
+if (-not (Test-Path -LiteralPath $resourceSourceRoot -PathType Container)) {
+    throw "MSIX language resources are missing: $resourceSourceRoot"
+}
+Copy-Item -LiteralPath $resourceSourceRoot -Destination $layoutRoot -Recurse
 
 $manifest = Get-Content -LiteralPath $manifestTemplatePath -Raw
 $identityVersionPattern = [regex]::new(
@@ -331,6 +353,19 @@ if ($identityVersionPattern.Matches($manifest).Count -ne 1) {
 }
 $manifest = $identityVersionPattern.Replace($manifest, "`${1}$msixVersion`${2}", 1)
 [System.IO.File]::WriteAllText((Join-Path $layoutRoot 'AppxManifest.xml'), $manifest, [System.Text.UTF8Encoding]::new($false))
+
+$makePri = Find-KitTool -Name 'makepri.exe'
+$priConfigPath = Join-Path $outputRoot 'priconfig.xml'
+$priOutputPath = Join-Path $layoutRoot 'resources.pri'
+if (-not (Test-Path -LiteralPath $priConfigTemplatePath -PathType Leaf)) {
+    throw "MakePri configuration is missing: $priConfigTemplatePath"
+}
+Copy-Item -LiteralPath $priConfigTemplatePath -Destination $priConfigPath -Force
+& $makePri new /pr $layoutRoot /cf $priConfigPath /of $priOutputPath /o
+if ($LASTEXITCODE -ne 0) { throw 'MakePri resource generation failed.' }
+if (-not (Test-Path -LiteralPath $priOutputPath -PathType Leaf)) {
+    throw "MakePri did not create the package resource index: $priOutputPath"
+}
 
 $makeAppx = Find-KitTool -Name 'makeappx.exe'
 & $makeAppx pack /d $layoutRoot /p $packagePath /o
