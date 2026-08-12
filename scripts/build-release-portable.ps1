@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [switch]$SkipBuild,
-    [switch]$IncludeRife24To48Candidate
+    [Alias('IncludeRifeCandidate')][switch]$IncludeRife24To48Candidate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -114,7 +114,12 @@ $manifest = [ordered]@{
     status = 'release-portable'
     version = $version
     sourceCommit = (& git -C $repoRoot rev-parse HEAD).Trim()
+    rifeRuntimeIncluded = [bool]$IncludeRife24To48Candidate
     rife24To48Included = [bool]$IncludeRife24To48Candidate
+    rife30To60ExperimentalIncluded = if ($IncludeRife24To48Candidate) {
+        $feature = Get-Content -LiteralPath (Join-Path $layoutRoot 'rife-feature-manifest.json') -Raw | ConvertFrom-Json
+        [bool]$feature.feature.probe30To60Included
+    } else { $false }
     files = $files
 }
 [System.IO.File]::WriteAllText(

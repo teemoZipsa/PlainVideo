@@ -22,8 +22,15 @@ struct MediaIdentity {
 struct ResumeEntry {
     media: MediaIdentity,
     position: Option<f64>,
-    subtitle: Option<PathBuf>,
+    subtitle: Option<SubtitleSelection>,
     updated_at: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SubtitleSelection {
+    Off,
+    Embedded(i64),
+    External(PathBuf),
 }
 
 pub struct ResumeStore {
@@ -60,13 +67,12 @@ impl ResumeStore {
             .and_then(|entry| entry.position)
     }
 
-    pub fn subtitle_path(&self, path: &Path) -> Option<PathBuf> {
+    pub fn subtitle_selection(&self, path: &Path) -> Option<SubtitleSelection> {
         let media = MediaIdentity::from_path(path)?;
         self.entries
             .iter()
             .find(|entry| entry.media == media)
             .and_then(|entry| entry.subtitle.as_ref())
-            .filter(|subtitle| subtitle.is_file())
             .cloned()
     }
 
@@ -116,30 +122,52 @@ impl ResumeStore {
         self.clear_position_identity(&media)
     }
 
-    pub fn record_subtitle(&mut self, path: &Path, subtitle: &Path) -> Result<(), String> {
+    pub fn record_subtitle_selection(
+        &mut self,
+        path: &Path,
+        selection: SubtitleSelection,
+    ) -> Result<(), String> {
         let Some(media) = MediaIdentity::from_path(path) else {
             return Ok(());
         };
-        if !subtitle.is_file() {
-            return Ok(());
-        }
-        let subtitle = fs::canonicalize(subtitle).unwrap_or_else(|_| subtitle.to_path_buf());
+        let selection = match selection {
+            SubtitleSelection::External(subtitle) => {
+                SubtitleSelection::External(fs::canonicalize(&subtitle).unwrap_or(subtitle))
+            }
+            selection => selection,
+        };
         if let Some(entry) = self.entries.iter_mut().find(|entry| entry.media == media) {
-            if entry.subtitle.as_ref() == Some(&subtitle) {
+            if entry.subtitle.as_ref() == Some(&selection) {
                 return Ok(());
             }
-            entry.subtitle = Some(subtitle);
+            entry.subtitle = Some(selection);
             entry.updated_at = unix_seconds();
         } else {
             self.entries.push(ResumeEntry {
                 media,
                 position: None,
-                subtitle: Some(subtitle),
+                subtitle: Some(selection),
                 updated_at: unix_seconds(),
             });
         }
         self.entries.sort_by_key(|entry| Reverse(entry.updated_at));
         self.entries.truncate(MAX_ENTRIES);
+        self.save()
+    }
+
+    pub fn clear_subtitle_selection(&mut self, path: &Path) -> Result<(), String> {
+        let Some(media) = MediaIdentity::from_path(path) else {
+            return Ok(());
+        };
+        let Some(index) = self.entries.iter().position(|entry| entry.media == media) else {
+            return Ok(());
+        };
+        if self.entries[index].subtitle.take().is_none() {
+            return Ok(());
+        }
+        if self.entries[index].position.is_none() {
+            self.entries.remove(index);
+        }
         self.save()
     }
 
@@ -168,25 +196,29 @@ impl ResumeStore {
                 )
             })?;
         }
-        let mut contents = String::from("version=2\n");
+        let mut contents = String::from("version=3\n");
         for entry in &self.entries {
             let position = entry
                 .position
                 .map(|position| format!("{position:.3}"))
                 .unwrap_or_default();
-            let subtitle = entry
-                .subtitle
-                .as_deref()
-                .map(encode_path)
-                .unwrap_or_default();
+            let (subtitle, subtitle_selection) = match entry.subtitle.as_ref() {
+                Some(SubtitleSelection::Off) => (String::new(), "off".to_string()),
+                Some(SubtitleSelection::Embedded(id)) => (String::new(), format!("embedded:{id}")),
+                Some(SubtitleSelection::External(path)) => {
+                    (encode_path(path), "external".to_string())
+                }
+                None => (String::new(), String::new()),
+            };
             contents.push_str(&format!(
-                "entry={}\t{}\t{}\t{}\t{}\t{}\n",
+                "entry={}\t{}\t{}\t{}\t{}\t{}\t{}\n",
                 encode_path(&entry.media.path),
                 entry.media.size,
                 entry.media.modified_nanos,
                 position,
                 entry.updated_at,
-                subtitle
+                subtitle,
+                subtitle_selection
             ));
         }
         fs::write(path, contents)
@@ -228,10 +260,21 @@ fn parse_entries(contents: &str) -> Vec<ResumeEntry> {
                 }
             };
             let updated_at = fields.next()?.parse().ok()?;
-            let subtitle = fields
+            let legacy_external = fields
                 .next()
                 .filter(|value| !value.is_empty())
                 .and_then(decode_path);
+            let subtitle = match fields.next() {
+                Some("off") => Some(SubtitleSelection::Off),
+                Some("external") => legacy_external.map(SubtitleSelection::External),
+                Some(value) if value.starts_with("embedded:") => value
+                    .strip_prefix("embedded:")
+                    .and_then(|id| id.parse::<i64>().ok())
+                    .filter(|id| *id > 0)
+                    .map(SubtitleSelection::Embedded),
+                Some("") | None => legacy_external.map(SubtitleSelection::External),
+                Some(_) => None,
+            };
             (position.is_some() || subtitle.is_some()).then_some(ResumeEntry {
                 media: MediaIdentity {
                     path,
@@ -308,6 +351,19 @@ mod tests {
         let entries = parse_entries(&row);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].position, None);
-        assert_eq!(entries[0].subtitle.as_deref(), Some(subtitle));
+        assert_eq!(
+            entries[0].subtitle,
+            Some(SubtitleSelection::External(subtitle.to_path_buf()))
+        );
+    }
+
+    #[test]
+    fn version_three_subtitle_states_round_trip_from_rows() {
+        let media = Path::new(r"C:\영상\movie.mkv");
+        let prefix = format!("entry={}\t12\t34\t\t67\t", encode_path(media));
+        let off = parse_entries(&format!("{prefix}\toff\n"));
+        let embedded = parse_entries(&format!("{prefix}\tembedded:4\n"));
+        assert_eq!(off[0].subtitle, Some(SubtitleSelection::Off));
+        assert_eq!(embedded[0].subtitle, Some(SubtitleSelection::Embedded(4)));
     }
 }

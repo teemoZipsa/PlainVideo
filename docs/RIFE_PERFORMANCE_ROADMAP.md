@@ -13,8 +13,8 @@ Nothing in this roadmap changes the current product policy:
 - the reliable source-frame path remains available at all times;
 - the normal portable and Store builds must not acquire the model or custom
   filter by accident;
-- 30-to-60 activation remains a development override until real playback,
-  quality, hardware, licensing, and distribution gates close;
+- 30-to-60 remains explicitly experimental and default-off in any approved
+  artifact because the conservative native timing gate is still unmet;
 - a performance target is not a capability claim until it passes on the exact
   artifact intended for distribution.
 

@@ -10,8 +10,8 @@ pub const EQUALIZER_PRESETS: [[i8; 5]; 4] = [
 pub const EQUALIZER_MIN_GAIN: i8 = -12;
 pub const EQUALIZER_MAX_GAIN: i8 = 12;
 
-const PANEL_WIDTH: f64 = 520.0;
-const PANEL_HEIGHT: f64 = 446.0;
+const PANEL_WIDTH: f64 = 560.0;
+const PANEL_HEIGHT: f64 = 548.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ControlPanelControl {
@@ -26,13 +26,16 @@ pub enum ControlPanelControl {
     LoopClear,
     Smooth24To48,
     Smooth30To60,
+    SubtitleSmaller,
+    SubtitleReset,
+    SubtitleLarger,
     Mute,
     VolumeTrack,
     EqualizerPreset(usize),
     EqualizerBand(usize),
 }
 
-pub const CONTROL_PANEL_FOCUS_ORDER: [ControlPanelControl; 27] = [
+pub const CONTROL_PANEL_FOCUS_ORDER: [ControlPanelControl; 30] = [
     ControlPanelControl::SeekBack,
     ControlPanelControl::PlayPause,
     ControlPanelControl::SeekForward,
@@ -48,6 +51,9 @@ pub const CONTROL_PANEL_FOCUS_ORDER: [ControlPanelControl; 27] = [
     ControlPanelControl::LoopClear,
     ControlPanelControl::Smooth24To48,
     ControlPanelControl::Smooth30To60,
+    ControlPanelControl::SubtitleSmaller,
+    ControlPanelControl::SubtitleReset,
+    ControlPanelControl::SubtitleLarger,
     ControlPanelControl::Mute,
     ControlPanelControl::VolumeTrack,
     ControlPanelControl::EqualizerPreset(0),
@@ -65,6 +71,9 @@ pub const CONTROL_PANEL_FOCUS_ORDER: [ControlPanelControl; 27] = [
 #[derive(Clone, Copy)]
 pub struct ControlPanelLayout {
     pub panel: RECT,
+    pub playback_card: RECT,
+    pub video_card: RECT,
+    pub sound_card: RECT,
     pub close: RECT,
     pub seek_back: RECT,
     pub play_pause: RECT,
@@ -74,6 +83,9 @@ pub struct ControlPanelLayout {
     pub loops: [RECT; 3],
     pub smooth_24_to_48: RECT,
     pub smooth_30_to_60: RECT,
+    pub subtitle_smaller: RECT,
+    pub subtitle_reset: RECT,
+    pub subtitle_larger: RECT,
     pub mute: RECT,
     pub volume_track: RECT,
     pub presets: [RECT; 4],
@@ -113,55 +125,55 @@ pub fn control_panel_layout_for_size(
         bottom: top + metric(y + h),
     };
 
-    let speed_left = 96.0;
-    let speed_right = 500.0;
+    let speed_left = 110.0;
+    let speed_right = 528.0;
     let speed_gap = 4.0;
     let speed_width = (speed_right - speed_left - speed_gap * 5.0) / 6.0;
     let speeds = std::array::from_fn(|index| {
         rect(
             speed_left + index as f64 * (speed_width + speed_gap),
-            116.0,
+            160.0,
             speed_width,
             30.0,
         )
     });
 
-    let loop_left = 96.0;
-    let loop_right = 500.0;
+    let loop_left = 110.0;
+    let loop_right = 528.0;
     let loop_gap = 8.0;
     let loop_width = (loop_right - loop_left - loop_gap * 2.0) / 3.0;
     let loops = std::array::from_fn(|index| {
         rect(
             loop_left + index as f64 * (loop_width + loop_gap),
-            156.0,
+            198.0,
             loop_width,
-            32.0,
+            30.0,
         )
     });
 
-    let preset_left = 96.0;
-    let preset_right = 500.0;
+    let preset_left = 110.0;
+    let preset_right = 528.0;
     let preset_gap = 6.0;
     let preset_width = (preset_right - preset_left - preset_gap * 3.0) / 4.0;
     let presets = std::array::from_fn(|index| {
         rect(
             preset_left + index as f64 * (preset_width + preset_gap),
-            278.0,
+            432.0,
             preset_width,
             32.0,
         )
     });
 
-    let equalizer_left = 92.0;
-    let equalizer_right = 500.0;
+    let equalizer_left = 108.0;
+    let equalizer_right = 528.0;
     let equalizer_gap = 12.0;
     let equalizer_width = (equalizer_right - equalizer_left - equalizer_gap * 4.0) / 5.0;
     let equalizer_bands = std::array::from_fn(|index| {
         rect(
             equalizer_left + index as f64 * (equalizer_width + equalizer_gap),
-            322.0,
+            466.0,
             equalizer_width,
-            104.0,
+            58.0,
         )
     });
 
@@ -172,21 +184,27 @@ pub fn control_panel_layout_for_size(
             right: left + panel_width,
             bottom: top + panel_height,
         },
-        close: rect(480.0, 10.0, 28.0, 28.0),
-        seek_back: rect(176.0, 46.0, 44.0, 38.0),
-        play_pause: rect(238.0, 46.0, 44.0, 38.0),
-        seek_forward: rect(300.0, 46.0, 44.0, 38.0),
-        seek_track: rect(28.0, 88.0, 464.0, 20.0),
+        playback_card: rect(16.0, 130.0, 528.0, 108.0),
+        video_card: rect(16.0, 246.0, 528.0, 112.0),
+        sound_card: rect(16.0, 366.0, 528.0, 166.0),
+        close: rect(516.0, 12.0, 30.0, 30.0),
+        seek_back: rect(194.0, 50.0, 50.0, 40.0),
+        play_pause: rect(255.0, 50.0, 50.0, 40.0),
+        seek_forward: rect(316.0, 50.0, 50.0, 40.0),
+        seek_track: rect(28.0, 98.0, 504.0, 22.0),
         speeds,
         loops,
-        smooth_24_to_48: rect(96.0, 198.0, 198.0, 32.0),
-        smooth_30_to_60: rect(302.0, 198.0, 198.0, 32.0),
-        mute: rect(96.0, 238.0, 44.0, 32.0),
-        volume_track: rect(148.0, 238.0, 352.0, 32.0),
+        smooth_24_to_48: rect(110.0, 274.0, 205.0, 30.0),
+        smooth_30_to_60: rect(323.0, 274.0, 205.0, 30.0),
+        subtitle_smaller: rect(350.0, 314.0, 52.0, 30.0),
+        subtitle_reset: rect(408.0, 314.0, 64.0, 30.0),
+        subtitle_larger: rect(478.0, 314.0, 50.0, 30.0),
+        mute: rect(110.0, 394.0, 44.0, 30.0),
+        volume_track: rect(162.0, 394.0, 366.0, 30.0),
         presets,
         equalizer_bands,
-        equalizer_track_top: top + metric(340.0),
-        equalizer_track_bottom: top + metric(406.0),
+        equalizer_track_top: top + metric(480.0),
+        equalizer_track_bottom: top + metric(510.0),
     })
 }
 
@@ -205,6 +223,12 @@ pub fn control_panel_control_at(
         (ControlPanelControl::LoopClear, layout.loops[2]),
         (ControlPanelControl::Smooth24To48, layout.smooth_24_to_48),
         (ControlPanelControl::Smooth30To60, layout.smooth_30_to_60),
+        (
+            ControlPanelControl::SubtitleSmaller,
+            layout.subtitle_smaller,
+        ),
+        (ControlPanelControl::SubtitleReset, layout.subtitle_reset),
+        (ControlPanelControl::SubtitleLarger, layout.subtitle_larger),
         (ControlPanelControl::Mute, layout.mute),
         (ControlPanelControl::VolumeTrack, layout.volume_track),
     ];
@@ -251,6 +275,9 @@ pub fn control_panel_control_rect(
         ControlPanelControl::LoopClear => layout.loops[2],
         ControlPanelControl::Smooth24To48 => layout.smooth_24_to_48,
         ControlPanelControl::Smooth30To60 => layout.smooth_30_to_60,
+        ControlPanelControl::SubtitleSmaller => layout.subtitle_smaller,
+        ControlPanelControl::SubtitleReset => layout.subtitle_reset,
+        ControlPanelControl::SubtitleLarger => layout.subtitle_larger,
         ControlPanelControl::Mute => layout.mute,
         ControlPanelControl::VolumeTrack => layout.volume_track,
         ControlPanelControl::EqualizerPreset(index) => {
@@ -342,5 +369,16 @@ mod tests {
         assert!(CONTROL_PANEL_FOCUS_ORDER.contains(&ControlPanelControl::VolumeTrack));
         assert!(CONTROL_PANEL_FOCUS_ORDER.contains(&ControlPanelControl::Smooth24To48));
         assert!(CONTROL_PANEL_FOCUS_ORDER.contains(&ControlPanelControl::Smooth30To60));
+        assert!(CONTROL_PANEL_FOCUS_ORDER.contains(&ControlPanelControl::SubtitleSmaller));
+        assert!(CONTROL_PANEL_FOCUS_ORDER.contains(&ControlPanelControl::SubtitleReset));
+        assert!(CONTROL_PANEL_FOCUS_ORDER.contains(&ControlPanelControl::SubtitleLarger));
+        let subtitle_reset = POINT {
+            x: (layout.subtitle_reset.left + layout.subtitle_reset.right) / 2,
+            y: (layout.subtitle_reset.top + layout.subtitle_reset.bottom) / 2,
+        };
+        assert_eq!(
+            control_panel_control_at(&layout, subtitle_reset),
+            Some(ControlPanelControl::SubtitleReset)
+        );
     }
 }

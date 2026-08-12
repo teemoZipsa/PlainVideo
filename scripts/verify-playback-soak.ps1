@@ -10,6 +10,8 @@ param(
     [string]$EvidencePath,
     [ValidateSet('auto-safe', 'no')]
     [string[]]$HwdecModes = @('auto-safe', 'no'),
+    [ValidateSet('off', '24-to-48', '30-to-60')]
+    [string]$RifeMode = 'off',
     [int]$SteadySeconds = 0,
     [int]$ChurnCycles = 0,
     [int]$ChurnSessionSeconds = 0,
@@ -477,6 +479,10 @@ function Get-LogAnalysis {
     if ($renderStallWarningCount -gt 1) {
         $fatalFindings += 'repeatedRenderStall'
     }
+    $rifeSessions = @([regex]::Matches(
+            $text,
+            'RIFE session: generated=(?<generated>\d+) scene=(?<scene>\d+) discontinuity=(?<discontinuity>\d+) cadence=(?<cadence>\d+) overload=(?<overload>\d+) error=(?<error>\d+)\.'
+        ))
     [ordered]@{
         present = -not [string]::IsNullOrWhiteSpace($text)
         configurationLoaded = $text -match 'Reading config file .*[/\\]mpv\.conf'
@@ -488,6 +494,16 @@ function Get-LogAnalysis {
         hardwarePaths = $hardwarePaths
         softwareDecodeMessages = $softwareCount
         renderStallWarningCount = $renderStallWarningCount
+        avSyncWarning = $text.Contains('Audio/Video desynchronisation detected')
+        rife = [ordered]@{
+            sessionCount = $rifeSessions.Count
+            generated = ($rifeSessions | ForEach-Object { [int]$_.Groups['generated'].Value } | Measure-Object -Sum).Sum
+            sceneFallback = ($rifeSessions | ForEach-Object { [int]$_.Groups['scene'].Value } | Measure-Object -Sum).Sum
+            discontinuityFallback = ($rifeSessions | ForEach-Object { [int]$_.Groups['discontinuity'].Value } | Measure-Object -Sum).Sum
+            cadenceFallback = ($rifeSessions | ForEach-Object { [int]$_.Groups['cadence'].Value } | Measure-Object -Sum).Sum
+            overloadFallback = ($rifeSessions | ForEach-Object { [int]$_.Groups['overload'].Value } | Measure-Object -Sum).Sum
+            processingErrors = ($rifeSessions | ForEach-Object { [int]$_.Groups['error'].Value } | Measure-Object -Sum).Sum
+        }
         fatalFindings = $fatalFindings
         appErrors = @($appErrors -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     }
@@ -520,6 +536,12 @@ function Invoke-SoakRun {
         [System.Globalization.CultureInfo]::InvariantCulture
     )
     $start.Environment['PLAINVIDEO_LOCALE'] = 'en-US'
+    if ($RifeMode -ne 'off') {
+        $start.Environment['PLAINVIDEO_RIFE'] = '1'
+        if ($RifeMode -eq '30-to-60') {
+            $start.Environment['PLAINVIDEO_RIFE_ALLOW_30FPS'] = '1'
+        }
+    }
     if (-not [string]::IsNullOrWhiteSpace($LibmpvPath)) {
         $start.Environment['PLAINVIDEO_LIBMPV_PATH'] = $LibmpvPath
     }
@@ -621,6 +643,10 @@ function Invoke-SoakRun {
         }
         noFatalLogFinding = $log.fatalFindings.Count -eq 0
         noAppErrorSidecar = $log.appErrors.Count -eq 0
+        rifeSessionsReported = if ($RifeMode -eq 'off') { $true } else { $log.rife.sessionCount -ge 1 }
+        rifeGeneratedFrames = if ($RifeMode -eq 'off') { $true } else { $log.rife.generated -ge 1 }
+        rifeProcessingErrorsZero = if ($RifeMode -eq 'off') { $true } else { $log.rife.processingErrors -eq 0 }
+        noAvSyncWarning = -not $log.avSyncWarning
         resourceSamplesPresent = $samples.Count -ge 2
         resizeWideExercised = $actionKinds -contains 'resize-wide'
         resizeCompactExercised = $actionKinds -contains 'resize-compact'
@@ -720,6 +746,7 @@ $evidence = [ordered]@{
         diagnosticReplacementDelayMs = 700
         sampleIntervalMs = $SampleIntervalMs
         hwdecModes = $HwdecModes
+        rifeMode = $RifeMode
     }
     inputs = [ordered]@{
         executable = Get-FileEvidence -Path $Executable
@@ -754,7 +781,7 @@ $evidence = [ordered]@{
         'hwdec=no proves an explicitly forced software-decode route, not automatic recovery from a hardware failure.',
         'Resource deltas are observations for bounded sessions and are not by themselves a leak proof.',
         'Each churn process performs one timed replacement; this validates repeated replacement and teardown, not hundreds of replacements inside one process.',
-        'This script does not judge picture corruption, dropped audio, A/V sync, HDR output, power use, or subjective smoothness.'
+        'This script rejects libmpv A/V desynchronisation warnings but does not judge picture corruption, subtle lip-sync error, HDR output, power use, or subjective smoothness.'
     )
 }
 $evidence | ConvertTo-Json -Depth 14 | Set-Content -LiteralPath $EvidencePath -Encoding UTF8

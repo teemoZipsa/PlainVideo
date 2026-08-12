@@ -10,6 +10,7 @@ pub struct Preferences {
     pub always_on_top: bool,
     pub volume: f64,
     pub muted: bool,
+    pub subtitle_scale: f64,
     pub smooth_24_to_48: bool,
     pub smooth_30_to_60: bool,
     pub last_window_bounds: Option<WindowBounds>,
@@ -22,6 +23,7 @@ impl Default for Preferences {
             always_on_top: false,
             volume: 100.0,
             muted: false,
+            subtitle_scale: 1.0,
             smooth_24_to_48: false,
             smooth_30_to_60: false,
             last_window_bounds: None,
@@ -67,7 +69,7 @@ impl PreferencesStore {
         fs::write(
             path,
             format!(
-                "version=5\ntheme={}\nalways_on_top={}\nvolume={:.2}\nmuted={}\nsmooth_24_to_48={}\nsmooth_30_to_60={}{}\n",
+                "version=6\ntheme={}\nalways_on_top={}\nvolume={:.2}\nmuted={}\nsubtitle_scale={:.2}\nsmooth_24_to_48={}\nsmooth_30_to_60={}{}\n",
                 if preferences.light_theme {
                     "light"
                 } else {
@@ -76,6 +78,7 @@ impl PreferencesStore {
                 preferences.always_on_top,
                 preferences.volume.clamp(0.0, 100.0),
                 preferences.muted,
+                preferences.subtitle_scale.clamp(0.5, 2.0),
                 preferences.smooth_24_to_48,
                 preferences.smooth_30_to_60,
                 preferences
@@ -114,6 +117,13 @@ impl Preferences {
                     }
                 }
                 "muted" => preferences.muted = value.trim() == "true",
+                "subtitle_scale" => {
+                    if let Ok(scale) = value.trim().parse::<f64>() {
+                        if scale.is_finite() {
+                            preferences.subtitle_scale = scale.clamp(0.5, 2.0);
+                        }
+                    }
+                }
                 "smooth_24_to_48" => preferences.smooth_24_to_48 = value.trim() == "true",
                 "smooth_30_to_60" => preferences.smooth_30_to_60 = value.trim() == "true",
                 "window_x" => window_x = value.trim().parse::<i32>().ok(),
@@ -152,6 +162,7 @@ mod tests {
                 always_on_top: true,
                 volume: 100.0,
                 muted: false,
+                subtitle_scale: 1.0,
                 smooth_24_to_48: false,
                 smooth_30_to_60: false,
                 last_window_bounds: Some(WindowBounds {
@@ -174,6 +185,7 @@ mod tests {
         assert_eq!(parsed.volume, 37.5);
         assert!(parsed.muted);
         assert!(!parsed.smooth_24_to_48);
+        assert_eq!(parsed.subtitle_scale, 1.0);
 
         let smooth = Preferences::parse("version=4\nsmooth_24_to_48=true\n");
         assert!(smooth.smooth_24_to_48);
@@ -185,11 +197,21 @@ mod tests {
         assert_eq!(Preferences::parse("volume=240\n").volume, 100.0);
         assert_eq!(Preferences::parse("volume=-4\n").volume, 0.0);
         assert_eq!(Preferences::parse("volume=NaN\n").volume, 100.0);
+        assert_eq!(
+            Preferences::parse("subtitle_scale=0.1\n").subtitle_scale,
+            0.5
+        );
+        assert_eq!(Preferences::parse("subtitle_scale=4\n").subtitle_scale, 2.0);
+        assert_eq!(
+            Preferences::parse("subtitle_scale=NaN\n").subtitle_scale,
+            1.0
+        );
 
         let legacy = Preferences::parse("version=2\ntheme=light\nalways_on_top=true\n");
         assert_eq!(legacy.volume, 100.0);
         assert!(!legacy.muted);
         assert!(!legacy.smooth_24_to_48);
         assert!(!legacy.smooth_30_to_60);
+        assert_eq!(legacy.subtitle_scale, 1.0);
     }
 }

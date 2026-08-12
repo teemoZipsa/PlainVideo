@@ -57,6 +57,8 @@ const RIFE_INTERNAL_WIDTH: u32 = 1_920;
 const RIFE_INTERNAL_HEIGHT: u32 = 1_080;
 const RIFE_COMPATIBILITY_MAX_WIDTH: u32 = 4_096;
 const RIFE_COMPATIBILITY_MAX_HEIGHT: u32 = 2_160;
+pub const RIFE_MEDIA_MISMATCH_ERROR: &str =
+    "The current video does not match this RIFE frame-doubling mode.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RifeMode {
@@ -990,6 +992,11 @@ impl Player {
         )
     }
 
+    pub fn set_subtitle_scale(&self, scale: f64) -> Result<(), String> {
+        let scale = format!("{:.2}", scale.clamp(0.5, 2.0));
+        command_with(self.api.command, self.handle, &["set", "sub-scale", &scale])
+    }
+
     pub fn current_audio_id(&self) -> Option<i64> {
         self.property_string("aid")?.parse::<i64>().ok()
     }
@@ -1050,7 +1057,13 @@ impl Player {
     }
 
     pub fn rife_source_eligible(&self, mode: RifeMode) -> Option<bool> {
-        Some(self.current_rife_source_plan(mode).is_some())
+        let (width, height) = self.video_dimensions()?;
+        let frame_rate = self
+            .property_string("container-fps")
+            .or_else(|| self.property_string("estimated-vf-fps"))?
+            .parse::<f64>()
+            .ok()?;
+        Some(rife_source_plan(mode, width, height, frame_rate, self.rife_capabilities).is_some())
     }
 
     fn current_rife_source_plan(&self, mode: RifeMode) -> Option<RifeSourcePlan> {
@@ -1193,9 +1206,9 @@ impl Player {
         if mode == RifeMode::Off {
             return Ok(());
         }
-        let plan = self.current_rife_source_plan(mode).ok_or_else(|| {
-            "The current video does not match this RIFE frame-doubling mode.".to_string()
-        })?;
+        let plan = self
+            .current_rife_source_plan(mode)
+            .ok_or_else(|| RIFE_MEDIA_MISMATCH_ERROR.to_string())?;
         self.add_rife_chain(mode, plan)
     }
 

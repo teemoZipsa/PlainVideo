@@ -6,6 +6,7 @@ param(
     [string]$SubtitlePath,
     [string]$EvidencePath,
     [switch]$SubtitleDropOnly,
+    [switch]$AllowExistingSubtitle,
     [switch]$DirectionalSeekOnly
 )
 
@@ -518,7 +519,13 @@ try {
             [void][PlainVideoInputProbe]::GlobalFree($dropHandle)
             throw 'PostMessageW failed for the cross-process file-drop probe.'
         }
-        $subAddAfter = Wait-PatternCount -Pattern $subAddPattern -Minimum ($subAddBefore + 1)
+        if ($AllowExistingSubtitle) {
+            Start-Sleep -Milliseconds 500
+            $subAddAfter = Get-PatternCount -Pattern $subAddPattern
+        }
+        else {
+            $subAddAfter = Wait-PatternCount -Pattern $subAddPattern -Minimum ($subAddBefore + 1)
+        }
         Start-Sleep -Milliseconds 180
         $playbackAfterDrop = Get-PatternCount -Pattern 'Starting playback'
         if ($playbackAfterDrop -ne $playbackBeforeDrop) {
@@ -723,6 +730,10 @@ try {
     $centerX = $client.x + [int]($client.width / 2)
     $centerY = $client.y + [int]($client.height / 2)
     $beforeMenuToggles = Get-PatternCount -Pattern $togglePattern
+    # Schedule the delayed center-click action, then open the context menu
+    # before that timer can fire. Opening the menu must cancel the pending
+    # playback action rather than pausing underneath the popup.
+    Send-MouseClick -Button Left -X $centerX -Y $centerY
     Send-MouseClick -Button Right -X $centerX -Y $centerY
     Start-Sleep -Milliseconds 180
     $threadProcessId = [uint32]0
@@ -744,10 +755,26 @@ try {
     if ($cursorInfo.hCursor -ne $arrowCursor) {
         throw 'The right-click context menu replaced the standard arrow cursor.'
     }
-    Send-Key -VirtualKey 0x1B
+    # Playback shortcuts must remain live while the popup owns the GUI thread.
+    # Two Space presses prove both delivery and state restoration without
+    # leaving later interaction checks paused.
+    $beforeMenuShortcutToggles = Get-PatternCount -Pattern $togglePattern
+    Send-Key -VirtualKey 0x20
+    [void](Wait-PatternCount -Pattern $togglePattern -Minimum ($beforeMenuShortcutToggles + 1))
+    Send-Key -VirtualKey 0x20
+    $afterMenuShortcutToggles = Wait-PatternCount `
+        -Pattern $togglePattern `
+        -Minimum ($beforeMenuShortcutToggles + 2)
+    Start-Sleep -Milliseconds 120
+    # Dismiss with a click on the video surface. The dismissal click itself
+    # must also be consumed instead of seeking or toggling playback.
+    Send-MouseClick `
+        -Button Left `
+        -X ($client.x + [Math]::Max(12, [int]($client.width / 12))) `
+        -Y ($client.y + $client.height - [Math]::Max(12, [int]($client.height / 12)))
     Start-Sleep -Milliseconds 180
     $afterMenuToggles = Get-PatternCount -Pattern $togglePattern
-    if ($afterMenuToggles -ne $beforeMenuToggles) {
+    if ($afterMenuToggles -ne ($beforeMenuToggles + 2)) {
         throw 'Opening or dismissing the right-click menu toggled playback.'
     }
 
@@ -832,6 +859,9 @@ try {
         contextMenu = [ordered]@{
             menuOwner = ('0x{0:x}' -f $threadInfo.hwndMenuOwner.ToInt64())
             standardArrow = $true
+            pendingSurfaceClickCancelled = $true
+            keyboardShortcutToggleDelta = $afterMenuShortcutToggles - $beforeMenuShortcutToggles
+            mouseDismissalConsumed = $true
             toggleDelta = $afterMenuToggles - $beforeMenuToggles
         }
         fullscreenDoubleClick = [ordered]@{

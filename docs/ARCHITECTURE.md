@@ -116,13 +116,15 @@ The follow-up buffer work removes duplicate host planar preparation, adds
 packed GPU pre/postprocessing and persistent staged Vulkan resources, and
 connects an isolated custom-mpv filter to a local experimental player. A
 two-entry worker queue passes actual 1080p 24-to-48 playback without A/V drift.
-The strict native 27 ms margin still rejects 30-to-60, but a development-only
-30 fps player probe now completes full eight-second playback on the tested RTX
-5070 at 236 generated midpoints, four overload fallbacks, and no A/V warning or
-processing error. Seek recovery and a hard-cut source fallback also pass. The
-normal filter ceiling remains 25.5 fps, the normal portable build does not
-contain this filter or model, and the option is off by default. Current
-integration and playback evidence are recorded in
+The strict native 27 ms margin still rejects 30-to-60 on the tested RTX 5070.
+PlainVideo therefore exposes it only as an explicitly experimental, default-off
+mode in artifacts whose feature manifest records the exact qualification
+evidence. Foreground playback, seek recovery, hard-cut fallback, repeated media
+replacement, teardown, and source-frame overload recovery pass on that machine;
+this does not turn the missed native timing margin into a pass. The packaged
+compatibility bridge also passes an actual 2160p 23.976 fps file through the
+qualified 24-to-48 path. Builds without the approved feature manifest do not
+expose either interpolation mode. Current integration and playback evidence are recorded in
 [`RIFE_PLAYER_INTEGRATION.md`](RIFE_PLAYER_INTEGRATION.md); historical buffer
 measurements and the staged host boundary are recorded in
 [`RIFE_SLICE_3A_BUFFER_OPTIMIZATION.md`](RIFE_SLICE_3A_BUFFER_OPTIMIZATION.md).

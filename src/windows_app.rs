@@ -4,6 +4,7 @@ use std::mem::{self, size_of};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 use std::ptr;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, SYSTEMTIME, WPARAM};
@@ -13,6 +14,7 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::Controls::Dialogs::{
     GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY, OFN_NOCHANGEDIR,
     OFN_PATHMUSTEXIST, OPENFILENAMEW,
@@ -31,25 +33,27 @@ use windows_sys::Win32::UI::Shell::{
     ShellExecuteW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CS_DBLCLKS, CS_OWNDC, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
-    DestroyMenu, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
-    GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT,
-    HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT,
-    HWND_NOTOPMOST, HWND_TOPMOST, IDC_ARROW, IDC_HAND, IDC_SIZEALL, IMAGE_ICON, IsZoomed,
-    KillTimer, LR_SHARED, LoadCursorW, LoadImageW, MB_ICONINFORMATION, MB_OK, MF_CHECKED,
-    MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MINMAXINFO, MSG, MessageBoxW, PostQuitMessage,
-    RegisterClassExW, SIZE_MINIMIZED, SM_CXICON, SM_CXSCREEN, SM_CXSMICON, SM_CYICON, SM_CYSCREEN,
-    SM_CYSMICON, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SW_SHOWNOACTIVATE,
-    SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
-    SWP_NOZORDER, SetCursor, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos,
-    SetWindowTextW, ShowCursor, ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
-    TranslateMessage, WM_APP, WM_CANCELMODE, WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU,
-    WM_DESTROY, WM_DPICHANGED, WM_DROPFILES, WM_DWMCOMPOSITIONCHANGED, WM_ENTERSIZEMOVE,
-    WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST,
-    WM_NCLBUTTONDOWN, WM_NCPAINT, WM_PAINT, WM_QUIT, WM_SETCURSOR, WM_SETTINGCHANGE, WM_SIZE,
-    WM_SYSKEYDOWN, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
-    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    AppendMenuW, CS_DBLCLKS, CS_OWNDC, CallNextHookEx, CreatePopupMenu, CreateWindowExW,
+    DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW, EndMenu, GWLP_USERDATA,
+    GetClientRect, GetCursorPos, GetMessageW, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect,
+    HHOOK, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTLEFT, HTRIGHT, HTTOP,
+    HTTOPLEFT, HTTOPRIGHT, HWND_NOTOPMOST, HWND_TOPMOST, IDC_ARROW, IDC_HAND, IDC_SIZEALL,
+    IMAGE_ICON, IsZoomed, KillTimer, LR_SHARED, LoadCursorW, LoadImageW, MB_ICONINFORMATION, MB_OK,
+    MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MINMAXINFO, MSG, MSGF_MENU,
+    MessageBoxW, PostQuitMessage, RegisterClassExW, SIZE_MINIMIZED, SM_CXICON, SM_CXSCREEN,
+    SM_CXSMICON, SM_CYICON, SM_CYSCREEN, SM_CYSMICON, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE,
+    SW_RESTORE, SW_SHOW, SW_SHOWNOACTIVATE, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SetCursor, SetForegroundWindow,
+    SetTimer, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, SetWindowsHookExW, ShowCursor,
+    ShowWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage,
+    UnhookWindowsHookEx, WH_MSGFILTER, WM_APP, WM_CANCELMODE, WM_CAPTURECHANGED, WM_CLOSE,
+    WM_CONTEXTMENU, WM_DESTROY, WM_DPICHANGED, WM_DROPFILES, WM_DWMCOMPOSITIONCHANGED,
+    WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_KEYDOWN,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE,
+    WM_NCCALCSIZE, WM_NCHITTEST, WM_NCLBUTTONDOWN, WM_NCPAINT, WM_PAINT, WM_QUIT, WM_SETCURSOR,
+    WM_SETTINGCHANGE, WM_SIZE, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES,
+    WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
+    WS_THICKFRAME,
 };
 
 use crate::control_panel::{
@@ -65,15 +69,18 @@ use crate::media_queue::{
     MEDIA_DIALOG_PATTERN, MediaQueue, SUBTITLE_DIALOG_PATTERN, is_subtitle_path,
 };
 use crate::mpv::{
-    AudioTrack, Player, RifeMode, SubtitleTrack, ThumbnailService, diagnostic_replacement,
+    AudioTrack, Player, RIFE_MEDIA_MISMATCH_ERROR, RifeMode, SubtitleTrack, ThumbnailService,
+    diagnostic_replacement,
 };
 use crate::preferences::{Preferences, PreferencesStore};
-use crate::resume::ResumeStore;
+use crate::resume::{ResumeStore, SubtitleSelection};
 use crate::seek_preview::SeekPreview;
+use crate::subtitle::{exact_companion, playback_path, same_path};
 use crate::windowing::{
-    BASE_DRAG_ZONE_HEIGHT, WindowBounds, apply_min_track_size, configure_frameless_shadow,
-    current_dpi, current_monitor_bounds, resize_window_to_media, restorable_window_bounds,
-    restore_window_bounds, scale_metric, text_scale_factor,
+    BASE_DRAG_ZONE_HEIGHT, ScreenRect, WindowBounds, apply_min_track_size,
+    configure_frameless_shadow, current_dpi, current_monitor_bounds, current_monitor_work_area,
+    resize_window_to_media, restorable_window_bounds, restore_window_bounds, scale_metric,
+    text_scale_factor,
 };
 
 const WM_APP_RENDER_ERROR: u32 = WM_APP + 1;
@@ -88,6 +95,73 @@ const TIMER_RESUME_PROGRESS: usize = 5;
 const TIMER_SEEK_PREVIEW: usize = 6;
 const TIMER_SAVE_PREFERENCES: usize = 7;
 const TIMER_CONTROL_PANEL_REFRESH: usize = 8;
+const CONTROL_PANEL_REFRESH_MS: u32 = 200;
+static CONTEXT_MENU_SHORTCUT_KEY: AtomicU32 = AtomicU32::new(0);
+
+struct ContextMenuKeyboardHook(HHOOK);
+
+impl ContextMenuKeyboardHook {
+    fn install() -> Option<Self> {
+        let hook = unsafe {
+            SetWindowsHookExW(
+                WH_MSGFILTER,
+                Some(context_menu_message_filter),
+                ptr::null_mut(),
+                GetCurrentThreadId(),
+            )
+        };
+        (!hook.is_null()).then_some(Self(hook))
+    }
+}
+
+impl Drop for ContextMenuKeyboardHook {
+    fn drop(&mut self) {
+        unsafe {
+            UnhookWindowsHookEx(self.0);
+        }
+    }
+}
+
+unsafe extern "system" fn context_menu_message_filter(
+    code: i32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if code == MSGF_MENU as i32 && lparam != 0 {
+        let message = unsafe { &*(lparam as *const MSG) };
+        if matches!(message.message, WM_KEYDOWN | WM_SYSKEYDOWN) {
+            let key = message.wParam as u16;
+            if context_menu_shortcut_key(key) {
+                CONTEXT_MENU_SHORTCUT_KEY.store(u32::from(key), Ordering::Release);
+                unsafe { EndMenu() };
+                return 1;
+            }
+        }
+    }
+    unsafe { CallNextHookEx(ptr::null_mut(), code, wparam, lparam) }
+}
+
+fn context_menu_shortcut_key(key: u16) -> bool {
+    matches!(
+        key,
+        VK_SPACE
+            | VK_TAB
+            | VK_F6
+            | VK_PRIOR
+            | VK_NEXT
+            | VK_OEM_4
+            | VK_OEM_5
+            | VK_OEM_6
+            | VK_F
+            | VK_S
+            | 0x41 // A
+            | 0x4D // M
+            | 0x50 // P
+            | 0x52 // R
+            | 0x54 // T
+            | 0x56 // V
+    ) || (key == VK_O && unsafe { GetKeyState(VK_CONTROL as i32) } < 0)
+}
 const SURFACE_CLICK_DELAY_MS: u32 = 100;
 const RESUME_SAVE_INTERVAL_MS: u32 = 10_000;
 const CURSOR_HIDE_DELAY_MS: u32 = 1_600;
@@ -130,6 +204,9 @@ const MENU_AUDIO_TIMING_RESET: usize = 302;
 const MENU_AUDIO_LATER: usize = 303;
 const SUBTITLE_DELAY_STEP: f64 = 0.1;
 const SUBTITLE_DELAY_LIMIT: f64 = 60.0;
+const SUBTITLE_SCALE_STEP: f64 = 0.1;
+const SUBTITLE_SCALE_MIN: f64 = 0.5;
+const SUBTITLE_SCALE_MAX: f64 = 2.0;
 const AUDIO_DELAY_STEP: f64 = 0.1;
 const AUDIO_DELAY_LIMIT: f64 = 60.0;
 const PLAYBACK_SPEEDS: [(usize, &str, f64); 6] = [
@@ -317,6 +394,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
     player.command(&["set", "background-color", surface_theme.background_color()])?;
     player.set_volume(preferences.volume)?;
     player.command(&["set", "mute", if preferences.muted { "yes" } else { "no" }])?;
+    player.set_subtitle_scale(preferences.subtitle_scale)?;
     if preferences.always_on_top {
         set_window_always_on_top(window.hwnd, true)?;
     }
@@ -340,6 +418,24 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
     } else {
         RifeMode::Off
     };
+    let control_panel_state = ControlPanelVisualState {
+        paused: player.is_paused(),
+        position: player.playback_position().unwrap_or(0.0),
+        duration: player.duration().unwrap_or(0.0),
+        seekable: player.is_seekable(),
+        speed: player.playback_speed(),
+        loop_a: player.ab_loop_a(),
+        loop_b: player.ab_loop_b(),
+        rife_available,
+        rife_30_available,
+        rife_requested_mode: requested_rife_mode,
+        rife_active_mode: player.rife_mode(),
+        rife_compatibility_bridge: player.rife_compatibility_bridge_active(),
+        muted: player.is_muted(),
+        volume: player.volume(),
+        subtitle_scale: preferences.subtitle_scale,
+        equalizer_gains: EQUALIZER_PRESETS[0],
+    };
     let mut app = Box::new(App {
         hwnd: window.hwnd,
         control_panel_hwnd: window.control_panel_hwnd,
@@ -354,6 +450,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         pending_surface_click: None,
         context_menu_open: false,
         cursor_hidden: false,
+        last_pointer_position: None,
         window_controls_visible: false,
         hovered_control: None,
         hovered_playback: None,
@@ -364,7 +461,9 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         hovered_panel: None,
         pressed_panel: None,
         panel_keyboard_focus: None,
+        control_panel_state,
         equalizer_gains: EQUALIZER_PRESETS[0],
+        subtitle_scale: preferences.subtitle_scale,
         dpi: current_dpi(window.hwnd),
         text_scale: text_scale_factor(),
         surface_theme,
@@ -372,7 +471,8 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         preferences_store,
         resume_store,
         pending_resume: None,
-        pending_external_subtitle: None,
+        pending_subtitle_selection: None,
+        active_external_subtitle: None,
         resume_error_reported: false,
         tracking_mouse_leave: false,
         panel_tracking_mouse_leave: false,
@@ -462,6 +562,7 @@ struct App {
     pending_surface_click: Option<PendingSurfaceClick>,
     context_menu_open: bool,
     cursor_hidden: bool,
+    last_pointer_position: Option<POINT>,
     window_controls_visible: bool,
     hovered_control: Option<WindowControl>,
     hovered_playback: Option<PlaybackControl>,
@@ -472,7 +573,9 @@ struct App {
     hovered_panel: Option<ControlPanelControl>,
     pressed_panel: Option<ControlPanelControl>,
     panel_keyboard_focus: Option<ControlPanelControl>,
+    control_panel_state: ControlPanelVisualState,
     equalizer_gains: [i8; 5],
+    subtitle_scale: f64,
     dpi: u32,
     text_scale: f64,
     surface_theme: SurfaceTheme,
@@ -480,7 +583,8 @@ struct App {
     preferences_store: PreferencesStore,
     resume_store: ResumeStore,
     pending_resume: Option<f64>,
-    pending_external_subtitle: Option<PathBuf>,
+    pending_subtitle_selection: Option<SubtitleSelection>,
+    active_external_subtitle: Option<(PathBuf, PathBuf)>,
     resume_error_reported: bool,
     tracking_mouse_leave: bool,
     panel_tracking_mouse_leave: bool,
@@ -579,11 +683,9 @@ impl App {
         self.pending_media_resize = true;
         self.active_path = Some(path.to_path_buf());
         self.last_subtitle_id = None;
+        self.active_external_subtitle = None;
         self.pending_resume = self.resume_store.position(path);
-        self.pending_external_subtitle = self
-            .resume_store
-            .subtitle_path(path)
-            .filter(|subtitle| is_subtitle_path(subtitle));
+        self.pending_subtitle_selection = self.resume_store.subtitle_selection(path);
         self.update_window_title();
         let _ = self.player.clear_ab_loop();
         let _ = self.player.set_subtitle_delay(0.0);
@@ -644,7 +746,8 @@ impl App {
         self.pending_media_resize = false;
         self.clear_keyboard_focus();
         self.pending_resume = None;
-        self.pending_external_subtitle = None;
+        self.pending_subtitle_selection = None;
+        self.active_external_subtitle = None;
         self.playback_error_visible = true;
         let text = self.locale.text();
         let _ = self.player.command(&[
@@ -683,6 +786,7 @@ impl App {
     fn show_cursor(&mut self) {
         if self.cursor_hidden {
             unsafe { ShowCursor(1) };
+            set_standard_cursor();
             self.cursor_hidden = false;
         }
     }
@@ -716,6 +820,7 @@ impl App {
             && point.y >= rect.top
             && point.y < rect.bottom
         {
+            self.last_pointer_position = Some(point);
             unsafe { ShowCursor(0) };
             self.cursor_hidden = true;
         }
@@ -796,10 +901,35 @@ impl App {
     }
 
     fn sync_control_panel(&mut self) {
+        if !self.control_panel_visible {
+            return;
+        }
+        self.control_panel_state = self.read_control_panel_visual_state();
         invalidate_control_panel(self.control_panel_hwnd);
     }
 
-    fn control_panel_visual_state(&self) -> ControlPanelVisualState {
+    fn redraw_control_panel(&self) {
+        if self.control_panel_visible {
+            invalidate_control_panel(self.control_panel_hwnd);
+        }
+    }
+
+    fn refresh_control_panel_progress(&mut self) {
+        if !self.control_panel_visible {
+            return;
+        }
+        let paused = self.player.is_paused();
+        let position = self.player.playback_position().unwrap_or(0.0);
+        if self.control_panel_state.paused != paused
+            || (self.control_panel_state.position - position).abs() >= 0.04
+        {
+            self.control_panel_state.paused = paused;
+            self.control_panel_state.position = position;
+            invalidate_control_panel(self.control_panel_hwnd);
+        }
+    }
+
+    fn read_control_panel_visual_state(&self) -> ControlPanelVisualState {
         ControlPanelVisualState {
             paused: self.player.is_paused(),
             position: self.player.playback_position().unwrap_or(0.0),
@@ -815,8 +945,13 @@ impl App {
             rife_compatibility_bridge: self.player.rife_compatibility_bridge_active(),
             muted: self.player.is_muted(),
             volume: self.player.volume(),
+            subtitle_scale: self.subtitle_scale,
             equalizer_gains: self.equalizer_gains,
         }
+    }
+
+    fn control_panel_visual_state(&self) -> ControlPanelVisualState {
+        self.control_panel_state
     }
 
     fn set_control_panel_visible(&mut self, visible: bool) {
@@ -842,7 +977,7 @@ impl App {
                 SetTimer(
                     self.control_panel_hwnd,
                     TIMER_CONTROL_PANEL_REFRESH,
-                    100,
+                    CONTROL_PANEL_REFRESH_MS,
                     None,
                 );
             }
@@ -862,7 +997,7 @@ impl App {
             return;
         }
         self.hovered_panel = control;
-        self.sync_control_panel();
+        self.redraw_control_panel();
     }
 
     fn cycle_control_panel_focus(&mut self, reverse: bool) {
@@ -879,12 +1014,12 @@ impl App {
             (Some(index), false) => (index + 1) % CONTROL_PANEL_FOCUS_ORDER.len(),
         };
         self.panel_keyboard_focus = Some(CONTROL_PANEL_FOCUS_ORDER[next]);
-        self.sync_control_panel();
+        self.redraw_control_panel();
     }
 
     fn clear_control_panel_focus(&mut self) {
         if self.panel_keyboard_focus.take().is_some() {
-            self.sync_control_panel();
+            self.redraw_control_panel();
         }
     }
 
@@ -902,7 +1037,12 @@ impl App {
     }
 
     fn pointer_moved(&mut self, hwnd: HWND, lparam: LPARAM) {
-        self.note_pointer_activity(hwnd);
+        let point = client_point(lparam);
+        let position_changed = pointer_position_changed(self.last_pointer_position, point);
+        self.last_pointer_position = Some(point);
+        if position_changed {
+            self.note_pointer_activity(hwnd);
+        }
         if !self.tracking_mouse_leave {
             let mut tracking = TRACKMOUSEEVENT {
                 cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
@@ -916,31 +1056,32 @@ impl App {
         }
 
         if self.pressed_panel == Some(ControlPanelControl::SeekTrack) {
-            self.seek_from_control_panel(hwnd, client_point(lparam), false);
+            self.seek_from_control_panel(hwnd, point, false);
         } else if self.pressed_panel == Some(ControlPanelControl::VolumeTrack) {
-            self.set_volume_from_control_panel(hwnd, client_point(lparam));
+            self.set_volume_from_control_panel(hwnd, point);
         } else if let Some(ControlPanelControl::EqualizerBand(index)) = self.pressed_panel {
-            self.set_equalizer_gain_from_pointer(hwnd, index, client_point(lparam));
+            self.set_equalizer_gain_from_pointer(hwnd, index, point);
         } else if self.pressed_control == Some(PressedControl::Playback(PlaybackControl::Seek)) {
-            self.seek_from_pointer(hwnd, client_point(lparam), false);
+            self.seek_from_pointer(hwnd, point, false);
         } else if self.pressed_control == Some(PressedControl::Playback(PlaybackControl::Volume))
             && self.volume_drag_active
         {
-            self.set_volume_from_pointer(hwnd, client_point(lparam));
+            self.set_volume_from_pointer(hwnd, point);
         }
         let hovered_control = window_control_at(hwnd, lparam, self.dpi);
         self.set_hovered_control(hovered_control);
         let hovered_playback = if self.window_controls_visible {
-            playback_control_at(hwnd, client_point(lparam), self.dpi)
+            playback_control_at(hwnd, point, self.dpi)
         } else {
             None
         };
         self.set_hovered_playback(hovered_playback);
-        self.update_seek_preview(hwnd, client_point(lparam));
+        self.update_seek_preview(hwnd, point);
     }
 
     fn pointer_left(&mut self, hwnd: HWND) {
         self.tracking_mouse_leave = false;
+        self.last_pointer_position = None;
         if self.pressed_control.is_some() || self.pressed_panel.is_some() {
             return;
         }
@@ -1139,18 +1280,110 @@ impl App {
         self.show_status(&self.locale.text().resumed_from.replace("{}", &time));
     }
 
-    fn restore_pending_external_subtitle(&mut self) {
-        let Some(path) = self.pending_external_subtitle.take() else {
+    fn restore_pending_subtitle_selection(&mut self) {
+        match self.pending_subtitle_selection.take() {
+            Some(SubtitleSelection::Off) => {
+                if let Err(error) = self.player.disable_subtitles() {
+                    self.record_error(&format!(
+                        "PlainVideo could not restore the subtitle-off state: {error}"
+                    ));
+                }
+            }
+            Some(SubtitleSelection::Embedded(id)) => {
+                let available = self
+                    .player
+                    .subtitle_tracks()
+                    .iter()
+                    .any(|track| track.id == id && track.external_filename.is_none());
+                if available {
+                    if let Err(error) = self.player.select_subtitle(id) {
+                        self.record_error(&format!(
+                            "PlainVideo could not restore embedded subtitle track {id}: {error}"
+                        ));
+                    } else {
+                        self.last_subtitle_id = Some(id);
+                    }
+                } else {
+                    self.clear_stale_subtitle_selection();
+                }
+            }
+            Some(SubtitleSelection::External(path)) => {
+                if !path.is_file() {
+                    self.record_error(&format!(
+                        "PlainVideo forgot a missing external subtitle: {}",
+                        path.display()
+                    ));
+                    self.clear_stale_subtitle_selection();
+                    self.attach_exact_companion();
+                } else if let Err(error) = self.attach_external_subtitle(&path, false) {
+                    self.record_error(&format!(
+                        "PlainVideo could not restore external subtitle {}: {error}",
+                        path.display()
+                    ));
+                }
+            }
+            None => self.attach_exact_companion(),
+        }
+    }
+
+    fn attach_exact_companion(&mut self) {
+        let Some(path) = self.active_path.as_deref().and_then(exact_companion) else {
             return;
         };
-        if let Err(error) = self.player.add_subtitle(&path) {
+        if let Err(error) = self.attach_external_subtitle(&path, false) {
             self.record_error(&format!(
-                "PlainVideo could not restore external subtitle {}: {error}",
+                "PlainVideo could not load companion subtitle {}: {error}",
                 path.display()
             ));
-        } else if let Some(id) = self.player.current_subtitle_id() {
+        }
+    }
+
+    fn clear_stale_subtitle_selection(&mut self) {
+        let Some(media) = self.active_path.clone() else {
+            return;
+        };
+        if let Err(error) = self.resume_store.clear_subtitle_selection(&media)
+            && !self.resume_error_reported
+        {
+            self.record_error(&error);
+            self.resume_error_reported = true;
+        }
+    }
+
+    fn remember_subtitle_selection(&mut self, selection: SubtitleSelection) {
+        let Some(media) = self.active_path.clone() else {
+            return;
+        };
+        if let Err(error) = self
+            .resume_store
+            .record_subtitle_selection(&media, selection)
+            && !self.resume_error_reported
+        {
+            self.record_error(&error);
+            self.resume_error_reported = true;
+        }
+    }
+
+    fn attach_external_subtitle(&mut self, original: &Path, remember: bool) -> Result<(), String> {
+        let prepared = playback_path(original)?;
+        let existing = self.player.subtitle_tracks().into_iter().find(|track| {
+            track.external_filename.as_deref().is_some_and(|path| {
+                same_path(Path::new(path), original) || same_path(Path::new(path), &prepared)
+            })
+        });
+        if let Some(track) = existing {
+            self.player.select_subtitle(track.id)?;
+        } else {
+            self.player.add_subtitle(&prepared)?;
+        }
+        self.active_external_subtitle = Some((original.to_path_buf(), prepared));
+        if let Some(id) = self.player.current_subtitle_id() {
             self.last_subtitle_id = Some(id);
         }
+        if remember {
+            self.remember_subtitle_selection(SubtitleSelection::External(original.to_path_buf()));
+        }
+        Ok(())
     }
 
     fn restart_video(&mut self) {
@@ -1222,6 +1455,15 @@ impl App {
 
     fn refresh_rife_mode_for_current_media(&mut self) {
         if let Err(error) = self.sync_rife_mode_for_current_media() {
+            if is_transient_rife_refresh_error(&error) {
+                // Removing the previous file's filter can emit a video-reconfig event before
+                // the replacement file has published its dimensions and cadence. Keep the
+                // user's requested mode and retry when the replacement becomes media-ready.
+                let _ = self.player.set_rife_mode(RifeMode::Off);
+                self.sync_rife_media_info();
+                self.sync_control_panel();
+                return;
+            }
             self.requested_rife_mode = RifeMode::Off;
             self.rife_available = false;
             let _ = self.player.set_rife_mode(RifeMode::Off);
@@ -1386,6 +1628,7 @@ impl App {
             always_on_top: self.always_on_top,
             volume: self.player.volume(),
             muted: self.player.is_muted(),
+            subtitle_scale: self.subtitle_scale,
             smooth_24_to_48: self.requested_rife_mode == RifeMode::Fps24To48,
             smooth_30_to_60: self.requested_rife_mode == RifeMode::Fps30To60,
             last_window_bounds: self.last_window_bounds,
@@ -1598,6 +1841,25 @@ impl App {
         }
     }
 
+    fn set_subtitle_scale(&mut self, scale: f64) {
+        let scale = scale.clamp(SUBTITLE_SCALE_MIN, SUBTITLE_SCALE_MAX);
+        if (self.subtitle_scale - scale).abs() < 0.001 {
+            return;
+        }
+        if let Err(error) = self.player.set_subtitle_scale(scale) {
+            self.operation_error(error);
+            return;
+        }
+        self.subtitle_scale = scale;
+        self.queue_preferences_save();
+        self.sync_control_panel();
+    }
+
+    fn adjust_subtitle_scale(&mut self, direction: i32) {
+        let steps = (self.subtitle_scale * 10.0).round() as i32 + direction.signum();
+        self.set_subtitle_scale(f64::from(steps) * SUBTITLE_SCALE_STEP);
+    }
+
     fn adjust_playback_speed(&mut self, direction: i32) {
         let speed = adjacent_playback_speed(self.player.playback_speed(), direction);
         self.set_playback_speed(speed);
@@ -1745,6 +2007,9 @@ impl App {
             ControlPanelControl::Smooth30To60 => {
                 self.toggle_rife_interpolation(RifeMode::Fps30To60)
             }
+            ControlPanelControl::SubtitleSmaller => self.adjust_subtitle_scale(-1),
+            ControlPanelControl::SubtitleReset => self.set_subtitle_scale(1.0),
+            ControlPanelControl::SubtitleLarger => self.adjust_subtitle_scale(1),
             ControlPanelControl::Mute => {
                 self.toggle_mute();
                 self.sync_control_panel();
@@ -1831,6 +2096,17 @@ impl App {
                 self.sync_control_panel();
                 true
             }
+            ControlPanelControl::SubtitleSmaller
+            | ControlPanelControl::SubtitleReset
+            | ControlPanelControl::SubtitleLarger => {
+                let amount = if matches!(direction, VK_RIGHT | VK_UP) {
+                    1
+                } else {
+                    -1
+                };
+                self.adjust_subtitle_scale(amount);
+                true
+            }
             ControlPanelControl::SeekTrack => {
                 let binding = match (direction, shift) {
                     (VK_LEFT, true) => "plainvideo/seek-back-large",
@@ -1853,24 +2129,15 @@ impl App {
         if let Err(error) = self.player.disable_subtitles() {
             self.operation_error(error);
         } else {
+            self.remember_subtitle_selection(SubtitleSelection::Off);
             self.show_status(self.locale.text().subtitles_off);
         }
     }
 
     fn add_subtitle_ui(&mut self, path: &Path) {
-        if let Err(error) = self.player.add_subtitle(path) {
+        if let Err(error) = self.attach_external_subtitle(path, true) {
             self.operation_error(error);
         } else {
-            if let Some(media) = self.active_path.as_deref()
-                && let Err(error) = self.resume_store.record_subtitle(media, path)
-                && !self.resume_error_reported
-            {
-                self.record_error(&error);
-                self.resume_error_reported = true;
-            }
-            if let Some(id) = self.player.current_subtitle_id() {
-                self.last_subtitle_id = Some(id);
-            }
             let label = path
                 .file_name()
                 .and_then(OsStr::to_str)
@@ -1932,10 +2199,31 @@ impl App {
     }
 
     fn select_subtitle_ui(&mut self, id: i64, label: &str) {
+        let selection = self
+            .player
+            .subtitle_tracks()
+            .into_iter()
+            .find(|track| track.id == id)
+            .map(|track| {
+                if let Some(external) = track.external_filename {
+                    let external = PathBuf::from(external);
+                    let original = self
+                        .active_external_subtitle
+                        .as_ref()
+                        .filter(|(_, prepared)| same_path(prepared, &external))
+                        .map(|(original, _)| original.clone())
+                        .unwrap_or(external);
+                    SubtitleSelection::External(original)
+                } else {
+                    SubtitleSelection::Embedded(id)
+                }
+            })
+            .unwrap_or(SubtitleSelection::Embedded(id));
         if let Err(error) = self.player.select_subtitle(id) {
             self.operation_error(error);
         } else {
             self.last_subtitle_id = Some(id);
+            self.remember_subtitle_selection(selection);
             self.show_status(&format!("{}: {label}", self.locale.text().subtitles));
         }
     }
@@ -2017,7 +2305,23 @@ impl App {
         }
     }
 
+    fn suspend_playback_input_for_context_menu(&mut self, hwnd: HWND) {
+        unsafe {
+            KillTimer(hwnd, TIMER_SINGLE_CLICK);
+            ReleaseCapture();
+        }
+        self.pending_surface_click = None;
+        self.pressed_control = None;
+        self.volume_drag_active = false;
+        self.last_seek_drag = None;
+        self.suppress_click = true;
+        self.ignore_unpaired_button_up = true;
+        self.hide_seek_preview(hwnd);
+        self.sync_window_controls();
+    }
+
     fn show_context_menu(&mut self, hwnd: HWND) {
+        self.suspend_playback_input_for_context_menu(hwnd);
         self.set_window_controls_visible(false);
         self.show_cursor();
         set_standard_cursor();
@@ -2334,6 +2638,13 @@ impl App {
             GetCursorPos(&mut point);
             self.context_menu_open = true;
             set_standard_cursor();
+            CONTEXT_MENU_SHORTCUT_KEY.store(0, Ordering::Release);
+            let keyboard_hook = ContextMenuKeyboardHook::install();
+            if keyboard_hook.is_none() {
+                self.record_error(
+                    "PlainVideo could not install the context-menu keyboard shortcut hook.",
+                );
+            }
             let selected = TrackPopupMenu(
                 menu,
                 TPM_RETURNCMD | TPM_RIGHTBUTTON,
@@ -2343,6 +2654,8 @@ impl App {
                 hwnd,
                 ptr::null(),
             ) as usize;
+            drop(keyboard_hook);
+            let shortcut_key = CONTEXT_MENU_SHORTCUT_KEY.swap(0, Ordering::AcqRel) as u16;
             self.context_menu_open = false;
             if !has_playable_media {
                 DestroyMenu(subtitle_menu);
@@ -2446,6 +2759,9 @@ impl App {
                     }
                 }
             }
+            if shortcut_key != 0 {
+                handle_key(self, hwnd, shortcut_key);
+            }
         }
         self.note_pointer_activity(hwnd);
     }
@@ -2487,6 +2803,52 @@ impl App {
 struct Window {
     hwnd: HWND,
     control_panel_hwnd: HWND,
+}
+
+fn control_panel_placement(
+    owner: RECT,
+    monitor: ScreenRect,
+    preferred_width: i32,
+    preferred_height: i32,
+    gap: i32,
+) -> (i32, i32, i32, i32) {
+    let monitor_width = i32::try_from(monitor.width).unwrap_or(i32::MAX).max(1);
+    let monitor_height = i32::try_from(monitor.height).unwrap_or(i32::MAX).max(1);
+    let horizontal_gap = gap.max(0).min(monitor_width.saturating_sub(1) / 2);
+    let vertical_gap = gap.max(0).min(monitor_height.saturating_sub(1) / 2);
+    let panel_width = preferred_width
+        .max(1)
+        .min(monitor_width.saturating_sub(horizontal_gap * 2).max(1));
+    let panel_height = preferred_height
+        .max(1)
+        .min(monitor_height.saturating_sub(vertical_gap * 2).max(1));
+    let monitor_right = monitor.x.saturating_add(monitor_width);
+    let right_candidate = owner.right.saturating_add(horizontal_gap);
+    let left_candidate = owner
+        .left
+        .saturating_sub(horizontal_gap)
+        .saturating_sub(panel_width);
+    let panel_x = if right_candidate.saturating_add(panel_width) <= monitor_right {
+        right_candidate
+    } else if left_candidate >= monitor.x {
+        left_candidate
+    } else {
+        monitor_right
+            .saturating_sub(panel_width)
+            .saturating_sub(horizontal_gap)
+            .max(monitor.x.saturating_add(horizontal_gap))
+    };
+    let minimum_y = monitor.y.saturating_add(vertical_gap);
+    let maximum_y = monitor
+        .y
+        .saturating_add(monitor_height)
+        .saturating_sub(panel_height)
+        .saturating_sub(vertical_gap);
+    let panel_y = owner
+        .top
+        .saturating_add(vertical_gap)
+        .clamp(minimum_y, maximum_y.max(minimum_y));
+    (panel_x, panel_y, panel_width, panel_height)
 }
 
 impl Window {
@@ -2585,8 +2947,8 @@ impl Window {
         }
 
         let panel_dpi = current_dpi(hwnd);
-        let panel_width = scale_metric(544, panel_dpi);
-        let panel_height = scale_metric(470, panel_dpi);
+        let preferred_panel_width = scale_metric(584, panel_dpi);
+        let preferred_panel_height = scale_metric(572, panel_dpi);
         let mut owner_rect = RECT {
             left: 0,
             top: 0,
@@ -2595,25 +2957,22 @@ impl Window {
         };
         unsafe { GetWindowRect(hwnd, &mut owner_rect) };
         let gap = scale_metric(16, panel_dpi);
-        let monitor = current_monitor_bounds(hwnd);
-        let (panel_x, panel_y) = if let Some(monitor) = monitor {
-            let monitor_right = monitor.x + monitor.width as i32;
-            let right_candidate = owner_rect.right + gap;
-            let left_candidate = owner_rect.left - gap - panel_width;
-            let panel_x = if right_candidate + panel_width <= monitor_right {
-                right_candidate
-            } else if left_candidate >= monitor.x {
-                left_candidate
-            } else {
-                (monitor_right - panel_width - gap).max(monitor.x + gap)
-            };
-            let panel_y = (owner_rect.top + gap).clamp(
-                monitor.y + gap,
-                monitor.y + monitor.height as i32 - panel_height - gap,
-            );
-            (panel_x, panel_y)
+        let monitor = current_monitor_work_area(hwnd);
+        let (panel_x, panel_y, panel_width, panel_height) = if let Some(monitor) = monitor {
+            control_panel_placement(
+                owner_rect,
+                monitor,
+                preferred_panel_width,
+                preferred_panel_height,
+                gap,
+            )
         } else {
-            (owner_rect.right + gap, owner_rect.top + gap)
+            (
+                owner_rect.right + gap,
+                owner_rect.top + gap,
+                preferred_panel_width,
+                preferred_panel_height,
+            )
         };
         let panel_title = wide(match locale {
             Locale::Korean => "PlainVideo 재생 제어",
@@ -2737,7 +3096,7 @@ unsafe extern "system" fn window_proc(
                     app.show_playback_error(error);
                 } else {
                     if events.file_loaded {
-                        app.restore_pending_external_subtitle();
+                        app.restore_pending_subtitle_selection();
                         app.apply_pending_resume();
                     }
                     if events.media_ready && app.has_media {
@@ -2796,7 +3155,6 @@ unsafe extern "system" fn window_proc(
             if let Some(point) = point {
                 if let Some(app) = app {
                     if point.y >= 0 && point.y < scale_metric(BASE_DRAG_ZONE_HEIGHT, app.dpi) {
-                        app.note_pointer_activity(hwnd);
                         app.set_hovered_control(window_control_at_point(
                             client_size(hwnd).map(|size| size.0).unwrap_or(0),
                             point,
@@ -2811,6 +3169,12 @@ unsafe extern "system" fn window_proc(
         WM_SETCURSOR => {
             if app.as_ref().is_some_and(|app| app.context_menu_open) {
                 set_standard_cursor();
+                return 1;
+            }
+            if app.as_ref().is_some_and(|app| app.cursor_hidden)
+                && loword(lparam as usize) as u32 == HTCLIENT
+            {
+                unsafe { SetCursor(ptr::null_mut()) };
                 return 1;
             }
             if loword(lparam as usize) as u32 == HTCAPTION {
@@ -2856,6 +3220,9 @@ unsafe extern "system" fn window_proc(
         }
         WM_LBUTTONDOWN => {
             if let Some(app) = app {
+                if app.context_menu_open {
+                    return 0;
+                }
                 unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
                 app.pending_surface_click = None;
                 app.ignore_unpaired_button_up = false;
@@ -2902,6 +3269,9 @@ unsafe extern "system" fn window_proc(
         }
         WM_LBUTTONUP => {
             if let Some(app) = app {
+                if app.context_menu_open {
+                    return 0;
+                }
                 if app.ignore_unpaired_button_up {
                     app.ignore_unpaired_button_up = false;
                     app.suppress_click = false;
@@ -3003,6 +3373,10 @@ unsafe extern "system" fn window_proc(
         WM_LBUTTONDBLCLK => {
             unsafe { KillTimer(hwnd, TIMER_SINGLE_CLICK) };
             if let Some(app) = app {
+                if app.context_menu_open {
+                    app.pending_surface_click = None;
+                    return 0;
+                }
                 app.suppress_click = true;
                 let point = client_point(lparam);
                 if window_control_at_point(
@@ -3093,7 +3467,8 @@ unsafe extern "system" fn window_proc(
             match wparam {
                 TIMER_SINGLE_CLICK => {
                     if let Some(app) = app {
-                        let should_toggle = !app.ignore_unpaired_button_up
+                        let should_toggle = !app.context_menu_open
+                            && !app.ignore_unpaired_button_up
                             && app
                                 .pending_surface_click
                                 .as_mut()
@@ -3146,6 +3521,9 @@ unsafe extern "system" fn window_proc(
         }
         WM_MOUSEWHEEL => {
             if let Some(app) = app {
+                if app.context_menu_open {
+                    return 0;
+                }
                 let delta = wheel_delta(wparam);
                 if delta != 0 {
                     app.adjust_volume(f64::from(delta) / 120.0 * 2.0);
@@ -3391,7 +3769,9 @@ unsafe extern "system" fn control_panel_window_proc(
             0
         }
         WM_TIMER if wparam == TIMER_CONTROL_PANEL_REFRESH => {
-            invalidate_control_panel(hwnd);
+            if let Some(app) = app {
+                app.refresh_control_panel_progress();
+            }
             0
         }
         WM_CLOSE => {
@@ -3780,6 +4160,10 @@ fn pointer_over_interactive_chrome(hwnd: HWND, controls_visible: bool, dpi: u32)
                 .is_some_and(|layout| rect_contains(layout.bar, point)))
 }
 
+fn pointer_position_changed(previous: Option<POINT>, current: POINT) -> bool {
+    previous.is_none_or(|point| point.x != current.x || point.y != current.y)
+}
+
 const fn rect_from_xywh(x: i32, y: i32, width: i32, height: i32) -> RECT {
     RECT {
         left: x,
@@ -4017,6 +4401,10 @@ fn rife_runtime_available(root: &Path) -> bool {
     root.join("rife").join("plainvideo_rife.dll").is_file()
         && model.join("flownet.param").is_file()
         && model.join("flownet.bin").is_file()
+}
+
+fn is_transient_rife_refresh_error(error: &str) -> bool {
+    error == RIFE_MEDIA_MISMATCH_ERROR
 }
 
 fn message_loop() -> i32 {
@@ -4278,6 +4666,14 @@ mod tests {
     }
 
     #[test]
+    fn media_transition_mismatch_keeps_the_requested_rife_mode_for_retry() {
+        assert!(is_transient_rife_refresh_error(RIFE_MEDIA_MISMATCH_ERROR));
+        assert!(!is_transient_rife_refresh_error(
+            "The smooth-playback runtime failed to load."
+        ));
+    }
+
+    #[test]
     fn screenshot_names_are_readable_and_never_overwrite() {
         let root = env::temp_dir().join(format!(
             "plainvideo-screenshot-name-test-{}",
@@ -4341,6 +4737,71 @@ mod tests {
             .expect("cursor handler");
         assert!(cursor_handler.contains("app.context_menu_open"));
         assert!(cursor_handler.contains("set_standard_cursor();"));
+    }
+
+    #[test]
+    fn context_menu_blocks_surface_mouse_actions_but_keeps_keyboard_shortcuts() {
+        let source = include_str!("windows_app.rs");
+        let suspend = source
+            .split_once("fn suspend_playback_input_for_context_menu")
+            .and_then(|(_, rest)| rest.split_once("fn show_context_menu"))
+            .map(|(body, _)| body)
+            .expect("context-menu input suspension");
+        assert!(suspend.contains("KillTimer(hwnd, TIMER_SINGLE_CLICK)"));
+        assert!(suspend.contains("pending_surface_click = None"));
+        assert!(suspend.contains("ignore_unpaired_button_up = true"));
+
+        for (start, end) in [
+            ("WM_LBUTTONDOWN =>", "WM_LBUTTONUP =>"),
+            ("WM_LBUTTONUP =>", "WM_CAPTURECHANGED"),
+            ("WM_LBUTTONDBLCLK =>", "WM_EXITSIZEMOVE"),
+            ("WM_MOUSEWHEEL =>", "WM_MOUSELEAVE"),
+        ] {
+            let handler = source
+                .split_once(start)
+                .and_then(|(_, rest)| rest.split_once(end))
+                .map(|(body, _)| body)
+                .expect("surface mouse handler");
+            assert!(handler.contains("context_menu_open"));
+        }
+
+        let keyboard = source
+            .split_once("WM_KEYDOWN =>")
+            .and_then(|(_, rest)| rest.split_once("WM_SYSKEYDOWN =>"))
+            .map(|(body, _)| body)
+            .expect("keyboard handler");
+        assert!(keyboard.contains("handle_key(app, hwnd"));
+        assert!(!keyboard.contains("context_menu_open"));
+    }
+
+    #[test]
+    fn cursor_shape_refresh_at_the_same_position_is_not_pointer_activity() {
+        let point = POINT { x: 640, y: 360 };
+        assert!(pointer_position_changed(None, point));
+        assert!(!pointer_position_changed(Some(point), point));
+        assert!(pointer_position_changed(
+            Some(point),
+            POINT { x: 641, y: 360 }
+        ));
+    }
+
+    #[test]
+    fn hidden_cursor_refresh_never_wakes_transient_chrome() {
+        let source = include_str!("windows_app.rs");
+        let hit_test_handler = source
+            .split_once("WM_NCHITTEST =>")
+            .and_then(|(_, rest)| rest.split_once("WM_SETCURSOR =>"))
+            .map(|(body, _)| body)
+            .expect("main-window hit-test handler");
+        assert!(!hit_test_handler.contains("note_pointer_activity"));
+
+        let cursor_handler = source
+            .split_once("WM_SETCURSOR =>")
+            .and_then(|(_, rest)| rest.split_once("WM_DPICHANGED"))
+            .map(|(body, _)| body)
+            .expect("main-window cursor handler");
+        assert!(cursor_handler.contains("app.cursor_hidden"));
+        assert!(cursor_handler.contains("SetCursor(ptr::null_mut())"));
     }
 
     #[test]
@@ -4765,6 +5226,53 @@ mod tests {
         assert!(native_panel.contains("fill(hdc, client, palette.window)"));
         assert!(!sync_panel.contains("script-message"));
         assert!(!draw_surface.contains("draw_control_panel(width, height)"));
+    }
+
+    #[test]
+    fn oversized_high_dpi_control_panel_is_fitted_without_an_inverted_clamp() {
+        let owner = RECT {
+            left: 200,
+            top: 120,
+            right: 1480,
+            bottom: 840,
+        };
+        let monitor = ScreenRect {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1040,
+        };
+        let gap = scale_metric(16, 384);
+        let (x, y, width, height) = control_panel_placement(
+            owner,
+            monitor,
+            scale_metric(584, 384),
+            scale_metric(572, 384),
+            gap,
+        );
+        assert!(x >= monitor.x && y >= monitor.y);
+        assert!(x + width <= monitor.x + monitor.width as i32);
+        assert!(y + height <= monitor.y + monitor.height as i32);
+    }
+
+    #[test]
+    fn control_panel_paint_uses_cached_state_and_timer_reads_only_progress() {
+        let source = include_str!("windows_app.rs");
+        let visual_state = source
+            .split_once("fn control_panel_visual_state")
+            .and_then(|(_, rest)| rest.split_once("fn set_control_panel_visible"))
+            .map(|(body, _)| body)
+            .expect("control-panel visual state");
+        let progress = source
+            .split_once("fn refresh_control_panel_progress")
+            .and_then(|(_, rest)| rest.split_once("fn read_control_panel_visual_state"))
+            .map(|(body, _)| body)
+            .expect("control-panel progress refresh");
+        assert!(visual_state.contains("self.control_panel_state"));
+        assert!(!visual_state.contains("self.player"));
+        assert!(progress.contains("playback_position"));
+        assert!(!progress.contains("subtitle_tracks"));
+        assert!(!progress.contains("ab_loop_a"));
     }
 
     #[test]

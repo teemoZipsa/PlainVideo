@@ -3,7 +3,7 @@ param(
     [switch]$NoSign,
     [switch]$SkipBuild,
     [switch]$ForStoreUpload,
-    [switch]$IncludeRife24To48Candidate,
+    [Alias('IncludeRifeCandidate')][switch]$IncludeRife24To48Candidate,
     [ValidateRange(0, 65535)][int]$DeveloperRevision = 0
 )
 
@@ -117,11 +117,11 @@ function Assert-StoreUploadAllowed {
     }
     if ($IncludeRife24To48Candidate) {
         if (-not (Test-Path -LiteralPath $rifeFeatureManifestPath -PathType Leaf)) {
-            throw "Store upload is blocked: the 24-to-48 feature manifest is missing: $rifeFeatureManifestPath"
+            throw "Store upload is blocked: the smooth-playback feature manifest is missing: $rifeFeatureManifestPath"
         }
         $rifeFeatureManifest = Get-Content -LiteralPath $rifeFeatureManifestPath -Raw | ConvertFrom-Json
         if ($rifeFeatureManifest.releaseEligible -ne $true) {
-            throw 'Store upload is blocked: the 24-to-48 feature manifest is not release-eligible.'
+            throw 'Store upload is blocked: the smooth-playback feature manifest is not release-eligible.'
         }
         if ($rifeFeatureManifest.feature.probe30To60Included -eq $true -and
             $rifeFeatureManifest.feature.probe30To60.releaseApproved -ne $true) {
@@ -293,7 +293,7 @@ if ($IncludeRife24To48Candidate) {
     foreach ($required in @('rife', 'licenses\rife', 'RIFE_24_TO_48_NOTICE.md', 'experimental-manifest.json')) {
         $source = Join-Path $rifeCandidateRoot $required
         if (-not (Test-Path -LiteralPath $source)) {
-            throw "The staged 24-to-48 candidate is missing: $source"
+            throw "The staged smooth-playback candidate is missing: $source"
         }
     }
     Copy-Item -LiteralPath (Join-Path $rifeCandidateRoot 'rife') -Destination $layoutRoot -Recurse
@@ -403,7 +403,12 @@ $evidence = [ordered]@{
     sourceChanges = $changes
     runtimeManifestSha256 = (Get-FileHash -LiteralPath $runtimeManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
     runtimeReleaseEligible = $runtimeManifest.releaseEligible
+    rifeRuntimeIncluded = [bool]$IncludeRife24To48Candidate
     rife24To48Included = [bool]$IncludeRife24To48Candidate
+    rife30To60ExperimentalIncluded = if ($IncludeRife24To48Candidate) {
+        $includedFeature = Get-Content -LiteralPath $rifeFeatureManifestPath -Raw | ConvertFrom-Json
+        [bool]$includedFeature.feature.probe30To60Included
+    } else { $false }
     rifeFeatureManifestSha256 = if ($IncludeRife24To48Candidate) {
         (Get-FileHash -LiteralPath $rifeFeatureManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
     } else { $null }

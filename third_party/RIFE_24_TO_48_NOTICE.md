@@ -1,15 +1,20 @@
-# PlainVideo 24-to-48 playback component notice
+# PlainVideo smooth-playback component notice
 
-PlainVideo's optional 24-to-48 smooth-playback path uses motion-estimated RIFE
-frame interpolation. It is distinct from mpv display resampling. The original
+PlainVideo's optional 24-to-48 and experimental 30-to-60 smooth-playback paths
+use motion-estimated RIFE frame interpolation. They are distinct from mpv
+display resampling. Both modes are disabled by default. The original
 source-frame path remains available and is selected automatically when the
 media, GPU, timing, scene boundary, seek state, or runtime does not satisfy the
 interpolation contract.
 
-The next-update candidate is limited to Windows x64, Vulkan, 1920x1080 BGRA8
-SDR input, and 23.0-to-25.5 fps source video. It generates one midpoint frame
-between each supported pair. It does not enable the separate 30-to-60
-development probe.
+The release runtime accepts Windows x64 and Vulkan. Its native interpolation
+boundary is 1920x1080 BGRA8 SDR; higher-resolution input uses the explicitly
+tested compatibility bridge before returning to the original output path. The
+24-to-48 mode accepts 23.0-to-25.5 fps source video. The 30-to-60 mode accepts
+29.0-to-31.0 fps source video and remains visibly labelled experimental because
+its conservative native 27 ms timing margin was not met on the qualification
+machine. It generates one midpoint frame between each supported pair, falling
+back to source frames under overload.
 
 ## Redistributed components
 

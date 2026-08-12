@@ -41,31 +41,39 @@ $summaryPath = Join-Path $evidenceRoot 'summary.json'
 Remove-Item -LiteralPath $firstRunEvidence, $settingsPath, $resumePath, $secondRunLog, `
     $secondRunErrors, $summaryPath -Force -ErrorAction SilentlyContinue
 
+$isExactCompanion = [System.IO.Path]::GetFileNameWithoutExtension($mediaFile).Equals(
+    [System.IO.Path]::GetFileNameWithoutExtension($subtitleFile),
+    [System.StringComparison]::OrdinalIgnoreCase
+)
 & (Join-Path $PSScriptRoot 'verify-input-interactions.ps1') `
     -Executable $executablePath `
     -AppRoot $appRootPath `
     -MediaPath $mediaFile `
     -SubtitlePath $subtitleFile `
     -EvidencePath $firstRunEvidence `
-    -SubtitleDropOnly
+    -SubtitleDropOnly `
+    -AllowExistingSubtitle:$isExactCompanion
 
 $firstRun = Get-Content -LiteralPath $firstRunEvidence -Raw | ConvertFrom-Json
+$expectedDropSubAddDelta = if ($isExactCompanion) { 0 } else { 1 }
 if ($firstRun.status -ne 'passed' -or
-    $firstRun.subtitleDrop.subAddCommandDelta -ne 1 -or
+    $firstRun.subtitleDrop.subAddCommandDelta -ne $expectedDropSubAddDelta -or
     $firstRun.subtitleDrop.playbackRestartDelta -ne 0) {
-    throw 'The first run did not attach exactly one subtitle without restarting playback.'
+    throw "The first run did not select the subtitle without duplication or playback restart. Expected sub-add delta $expectedDropSubAddDelta."
 }
 if (-not (Test-Path -LiteralPath $resumePath -PathType Leaf)) {
     throw 'The first run did not create resume.ini.'
 }
 $resumeLines = @(Get-Content -LiteralPath $resumePath)
 $resumeEntry = @($resumeLines | Where-Object { $_ -like 'entry=*' } | Select-Object -First 1)
-if ($resumeLines[0] -ne 'version=2' -or $resumeEntry.Count -ne 1) {
-    throw 'The subtitle association was not written with the version 2 resume format.'
+if ($resumeLines[0] -ne 'version=3' -or $resumeEntry.Count -ne 1) {
+    throw 'The subtitle association was not written with the version 3 resume format.'
 }
 $resumeFields = $resumeEntry[0].Substring(6).Split("`t")
-if ($resumeFields.Count -ne 6 -or [string]::IsNullOrWhiteSpace($resumeFields[5])) {
-    throw 'The saved resume entry has no external-subtitle field.'
+if ($resumeFields.Count -ne 7 -or
+    [string]::IsNullOrWhiteSpace($resumeFields[5]) -or
+    $resumeFields[6] -ne 'external') {
+    throw 'The saved resume entry has no explicit external-subtitle state.'
 }
 
 $start = [System.Diagnostics.ProcessStartInfo]::new()
@@ -92,14 +100,18 @@ if ($process.ExitCode -ne 0) {
 
 $subAddCount = @(Select-String -LiteralPath $secondRunLog -Pattern 'Run command:\s*sub-add').Count
 $playbackStartCount = @(Select-String -LiteralPath $secondRunLog -Pattern 'Starting playback').Count
+$subtitleDecodeErrorCount = @(Select-String -LiteralPath $secondRunLog -Pattern 'Error decoding subtitle').Count
 $restoreErrorCount = if (Test-Path -LiteralPath $secondRunErrors -PathType Leaf) {
     @(Select-String -LiteralPath $secondRunErrors -Pattern 'could not restore external subtitle').Count
 }
 else {
     0
 }
-if ($subAddCount -ne 1 -or $playbackStartCount -ne 1 -or $restoreErrorCount -ne 0) {
-    throw "Subtitle restore failed: sub-add=$subAddCount playback-start=$playbackStartCount restore-errors=$restoreErrorCount"
+if ($subAddCount -ne 1 -or
+    $playbackStartCount -ne 1 -or
+    $restoreErrorCount -ne 0 -or
+    $subtitleDecodeErrorCount -ne 0) {
+    throw "Subtitle restore failed: sub-add=$subAddCount playback-start=$playbackStartCount restore-errors=$restoreErrorCount subtitle-decode-errors=$subtitleDecodeErrorCount"
 }
 
 $summary = [ordered]@{
@@ -111,16 +123,20 @@ $summary = [ordered]@{
     subtitle = $subtitleFile
     firstRun = [ordered]@{
         subAddCommandDelta = [int]$firstRun.subtitleDrop.subAddCommandDelta
+        expectedSubAddCommandDelta = $expectedDropSubAddDelta
+        exactCompanion = $isExactCompanion
         playbackRestartDelta = [int]$firstRun.subtitleDrop.playbackRestartDelta
     }
     persistedAssociation = [ordered]@{
-        resumeVersion = 2
+        resumeVersion = 3
         subtitleFieldPresent = $true
+        selection = 'external'
     }
     secondRun = [ordered]@{
         subAddCommandCount = $subAddCount
         playbackStartCount = $playbackStartCount
         restoreErrorCount = $restoreErrorCount
+        subtitleDecodeErrorCount = $subtitleDecodeErrorCount
     }
     evidence = [ordered]@{
         firstRun = $firstRunEvidence

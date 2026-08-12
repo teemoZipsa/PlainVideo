@@ -186,16 +186,18 @@ function Invoke-RifePlaybackCase {
         $log,
         'RIFE session: generated=(?<generated>\d+) scene=(?<scene>\d+) discontinuity=(?<discontinuity>\d+) cadence=(?<cadence>\d+) overload=(?<overload>\d+) error=(?<error>\d+)\.'
     )
-    if (-not $session.Success) {
+    $sourceFrameBypass = -not $ExpectGenerated -and -not $session.Success -and
+        $log.Contains('args="plainvideo-rife-status", args="24-to-48", args="off"')
+    if (-not $session.Success -and -not $sourceFrameBypass) {
         throw "$Name did not report a RIFE session summary."
     }
 
-    $generated = [int]$session.Groups['generated'].Value
-    $scene = [int]$session.Groups['scene'].Value
-    $discontinuity = [int]$session.Groups['discontinuity'].Value
-    $cadence = [int]$session.Groups['cadence'].Value
-    $overload = [int]$session.Groups['overload'].Value
-    $errors = [int]$session.Groups['error'].Value
+    $generated = if ($session.Success) { [int]$session.Groups['generated'].Value } else { 0 }
+    $scene = if ($session.Success) { [int]$session.Groups['scene'].Value } else { 0 }
+    $discontinuity = if ($session.Success) { [int]$session.Groups['discontinuity'].Value } else { 0 }
+    $cadence = if ($session.Success) { [int]$session.Groups['cadence'].Value } else { 0 }
+    $overload = if ($session.Success) { [int]$session.Groups['overload'].Value } else { 0 }
+    $errors = if ($session.Success) { [int]$session.Groups['error'].Value } else { 0 }
     $observedPairs = $generated + $scene + $discontinuity + $cadence + $overload + $errors
     $generatedRatio = if ($observedPairs -gt 0) { $generated / $observedPairs } else { 0.0 }
     $firstFrame = $log.Contains('first video frame after restart shown')
@@ -244,7 +246,7 @@ function Invoke-RifePlaybackCase {
     $generationThresholdPassed = if ($ExpectSceneFallback) {
         $scene -ge 1
     }
-    elseif ($ReleaseQualification) {
+    elseif ($Seek -or $ReleaseQualification) {
         $generatedRatio -ge 0.60
     }
     else {
@@ -254,7 +256,8 @@ function Invoke-RifePlaybackCase {
         $generated -ge 80 -and $cadence -eq 0 -and $timingReported -and
             $generationThresholdPassed
     } else {
-        $generated -eq 0 -and $cadence -ge 80 -and -not $timingReported
+        $generated -eq 0 -and -not $timingReported -and
+            ($cadence -ge 80 -or $sourceFrameBypass)
     }
     $passed = $process.ExitCode -eq 0 -and $firstFrame -and
         -not $avSyncWarning -and $errors -eq 0 -and $modePassed -and $seekPassed
@@ -275,6 +278,8 @@ function Invoke-RifePlaybackCase {
         cadenceFallback = $cadence
         overloadFallback = $overload
         processingErrors = $errors
+        sessionReported = $session.Success
+        sourceFrameBypass = $sourceFrameBypass
         timingReported = $timingReported
         attempts = $attempts
         meanAttemptUs = $meanAttemptUs
@@ -354,7 +359,8 @@ elseif ($SceneCutProbe) {
 elseif ($Probe30To60) {
     @(
         Invoke-RifePlaybackCase -Name '30-to-60-generated-probe' `
-            -Fixture $fixture30 -ExpectGenerated $true -SourceFps 30
+            -Fixture $fixture30 -ExpectGenerated $true -SourceFps 30 `
+            -Seek $SeekDuringProbe
     )
 }
 else {

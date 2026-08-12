@@ -1,18 +1,18 @@
-# PlainVideo 0.2.4 corresponding source offer
+# PlainVideo 0.2.5 corresponding source offer
 
-PlainVideo 0.2.4 uses dynamically loaded mpv, FFmpeg, libplacebo, GLib,
+PlainVideo 0.2.5 uses dynamically loaded mpv, FFmpeg, libplacebo, GLib,
 FriBidi, Graphite2, libiconv, and other open-source projects. Its optional,
-user-enabled 24-to-48 engine also includes the custom mpv filter,
+user-enabled 24-to-48 and experimental 30-to-60 engine also includes the custom mpv filter,
 VapourSynth-RIFE-ncnn-Vulkan, ncnn, glslang, and the selected converted model.
 The complete retained source and build material for the distributed package is
 available at:
 
-https://github.com/teemoZipsa/PlainVideo/releases/download/v0.2.4/PlainVideo-0.2.4-corresponding-source.tar.zst
+https://github.com/teemoZipsa/PlainVideo/releases/download/v0.2.5/PlainVideo-0.2.5-corresponding-source.tar.zst
 
-The PlainVideo application source corresponding to version 0.2.4 is available
+The PlainVideo application source corresponding to version 0.2.5 is available
 at:
 
-https://github.com/teemoZipsa/PlainVideo/tree/v0.2.4
+https://github.com/teemoZipsa/PlainVideo/tree/v0.2.5
 
 The bundle contains the four direct source archives and pinned submodules,
 the exact official MSYS2 source-only packages for all 14 transitive runtime
@@ -23,7 +23,7 @@ PlainVideo loads the libraries as replaceable side-by-side DLLs and does not
 rename or conceal them.
 
 SeonkyuIM will keep this corresponding source available for at least three
-years after the last distribution of PlainVideo 0.2.4. If the download becomes
+years after the last distribution of PlainVideo 0.2.5. If the download becomes
 unavailable, request an equivalent machine-readable copy through
 https://github.com/teemoZipsa/PlainVideo/issues. Any physical-media charge will
 not exceed the reasonable cost of performing that distribution.

@@ -113,8 +113,8 @@ commit, including the custom mpv filter and reproducible build scripts.
 
 rife-ncnn-runtime-source contains the pinned VapourSynth-RIFE-ncnn-Vulkan,
 ncnn, glslang, and selected rife-v4.25-lite_ensembleFalse model material used
-by the optional 24-to-48 engine. Unused model variants and Git object databases
-are intentionally excluded.
+by the optional 24-to-48 and experimental default-off 30-to-60 modes. Unused
+model variants and Git object databases are intentionally excluded.
 "@
 [System.IO.File]::WriteAllText(
     (Join-Path $outputRoot 'README.txt'),

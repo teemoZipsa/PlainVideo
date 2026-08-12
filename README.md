@@ -33,15 +33,15 @@ Display synchronization and AI frame generation are intentionally treated as dif
 
 - A Rust-owned native Windows shell around a pinned libmpv developer runtime
 - In-process render-API playback in a titleless, borderless window
-- Click to play/pause, double-click fullscreen, five-second arrow-key seek, 30-second `Shift`+arrow seek, arrow-key or mouse-wheel volume, and `Esc` to return
+- Single-click the left or right video region for ten-second directional seek, center click to play/pause, center double-click fullscreen, five-second arrow-key seek, 30-second `Shift`+arrow seek, arrow-key or mouse-wheel volume, and `Esc` to return
 - Translucent feedback and a compact playback bar that appear only after pointer/input activity; no permanent toolbar
 - A pointer that hides after 1.6 seconds during playback and returns on mouse movement
 - A full-width invisible 56 px top move zone with a move cursor and no visible handle
 - PlainView-style top-right theme, always-on-top, minimize, fullscreen, and close controls, plus transient play, seek, volume-slider/mute, and subtitle controls
 - An on-demand control panel opened from `Playback controls…` in the right-click menu or with `P`, providing 10-second seek, playback speed, A–B repeat, mute/volume, four sound presets, and a five-band equalizer; it is operable with `Tab`/`Shift+Tab`, arrow keys, and `Enter`/`Space`
-- A next-update `Smooth playback 24→48` candidate that remembers the opt-in when its engine is present, applies to 1080p SDR 24/25 fps video, and automatically preserves source frames during seeks, scene changes, overload, or errors
+- Default-off `Smooth playback 24→48` for 23.976/24/25 fps video and explicitly experimental, default-off `30→60`, both available only when the packaged engine is present and both preserving source frames during seeks, scene changes, overload, or errors
 - Physical-pixel window placement across monitors, DPI-scaled 280×240 minimum sizing, and DWM border suppression with the native shadow retained
-- Automatic discovery of same-name external SRT subtitles, plus contextual subtitle and audio-track selection, subtitle-file drop attachment, external subtitle loading, and 0.1-second subtitle/audio timing correction
+- Automatic discovery and per-video restoration of exact companion subtitles, including normalized SMI playback, subtitle-file drop attachment, 50–200% subtitle sizing, contextual subtitle and audio-track selection, and 0.1-second subtitle/audio timing correction
 - A localized empty state with no Korean/English mixing and a `Ctrl+O` open path
 - `PageUp`/`PageDown` previous-next navigation, `A` audio-track cycling, `V` subtitle cycling, `M` mute, `Ctrl+[`/`Ctrl+]`/`Ctrl+\` subtitle timing, and `Alt+[`/`Alt+]`/`Alt+\` audio timing
 - `Tab` toggles an unobscured, left-aligned media-information overlay without interrupting playback
@@ -78,6 +78,6 @@ See [Product definition](docs/PRODUCT.md) and [Architecture notes](docs/ARCHITEC
 
 ## License
 
-Original PlainVideo code is released under the [MIT License](LICENSE). Bundled playback engines, codecs, and runtimes retain their own licenses; release packages include the locked runtime profile, notices, license material, and corresponding-source offer. Experimental interpolation runtimes and models are not included in the 0.2.2 release.
+Original PlainVideo code is released under the [MIT License](LICENSE). Bundled playback engines, codecs, and runtimes retain their own licenses; release packages include the locked runtime profile, notices, license material, and corresponding-source offer. The exact included interpolation modes are recorded in each release artifact's feature manifest and remain disabled by default.
 
 See the [privacy policy](PRIVACY.md) and [support guide](SUPPORT.md) for the Microsoft Store and portable releases.

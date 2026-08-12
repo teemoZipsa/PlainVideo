@@ -24,6 +24,8 @@ mod resume;
 #[cfg(target_os = "windows")]
 mod seek_preview;
 #[cfg(target_os = "windows")]
+mod subtitle;
+#[cfg(target_os = "windows")]
 mod windowing;
 #[cfg(target_os = "windows")]
 mod windows_app;
