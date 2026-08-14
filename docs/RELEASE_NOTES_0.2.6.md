@@ -1,7 +1,8 @@
 # PlainVideo 0.2.6 release notes
 
-Status: local release candidate. Microsoft Store upload, certification,
-publication, and delivery remain separate states until directly verified.
+Status: GitHub prerelease published and Partner Center Submission 5 submitted.
+Microsoft Store certification is in pre-processing; publication and delivery
+remain separate states until directly verified.
 
 ## 한국어
 

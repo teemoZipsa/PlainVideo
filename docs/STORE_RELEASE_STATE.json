@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "observedAt": "2026-08-15T02:15:00+09:00",
-  "status": "submission-4-0.2.3-live-0.2.6-local-release-candidate",
+  "observedAt": "2026-08-15T04:17:59+09:00",
+  "status": "submission-5-0.2.6-pre-processing-submission-4-0.2.3-live",
   "repository": {
     "nameWithOwner": "teemoZipsa/PlainVideo",
     "visibility": "public",
     "defaultBranch": "master",
     "baselineCommit": "7161997b6be94d8d4f4b208d5ab6bd123a938606",
-    "releaseCommit": "v0.2.6-tag-target-after-final-source-commit",
+    "releaseCommit": "523560e1166e8dedea00ebd2b1bf0239f42dd1fd",
     "githubActionsRepositoryPermission": "enabled",
     "localWorkflowCount": 0,
     "workflowPolicy": "Do not add, dispatch, rerun, or broaden workflows without explicit user approval."
@@ -31,7 +31,7 @@
     "telemetry": false
   },
   "partnerCenter": {
-    "status": "submission-4-0.2.3-available-in-microsoft-store",
+    "status": "submission-5-0.2.6-in-certification-pre-processing",
     "productNameReserved": true,
     "productName": "PlainVideo",
     "storeId": "9PDKQ88FKG1L",
@@ -40,14 +40,14 @@
     "publisher": "CN=8958BE04-B1E7-4AE6-84E9-592921EBB405",
     "publisherDisplayName": "SeonkyuIM",
     "packageFamilyName": "SeonkyuIM.PlainVideo_9c7j90kvgvwr0",
-    "publishedSubmissionId": "1152921505701493629",
-    "submissionId": "1152921505701552228",
+    "publishedSubmissionId": "1152921505701552228",
+    "submissionId": "1152921505701627822",
     "pricingAndAvailability": "complete-worldwide-free",
     "properties": "complete-photo-and-video-public-privacy-policy",
     "ageRatings": "complete-iarc-3-plus",
-    "packages": "submission-4-plainvideo-0.2.3.0-validated",
+    "packages": "submission-5-plainvideo-0.2.6.0-uploaded-validated-saved",
     "storeListings": {
-      "status": "submission-4-bilingual-0.2.3-release-notes-saved",
+      "status": "submission-5-existing-bilingual-listing-retained",
       "locales": [
         "en-US",
         "ko-KR"
@@ -78,10 +78,10 @@
         ]
       }
     },
-    "submissionOptions": "submission-4-manual-publish-hold-retained",
+    "submissionOptions": "submission-5-manual-publish-hold-retained",
     "certificationNotes": "existing-product-additional-testing-information-retained",
-    "certificationStatus": "submission-4-completed",
-    "publicationStatus": "submission-4-latest-product-available-in-microsoft-store"
+    "certificationStatus": "submission-5-step-2-of-4-pre-processing-in-progress",
+    "publicationStatus": "submission-4-0.2.3-remains-available-in-microsoft-store"
   },
   "localPackageEvidence": {
     "status": "published-0.1.0-package-evidence",
@@ -145,41 +145,49 @@
   "releaseCandidateValidation": {
     "version": "0.2.6",
     "scopeBaseCommit": "d2ad7392b4068c3847f88539a781951df5abb882",
-    "releaseCommit": "v0.2.6-tag-target-after-final-source-commit",
+    "releaseCommit": "523560e1166e8dedea00ebd2b1bf0239f42dd1fd",
     "frameInterpolation": "default-off-24-to-48-plus-explicitly-experimental-default-off-30-to-60-with-source-frame-fallback-and-tested-4k-compatibility-bridge",
     "rust": "79-passed-1-explicit-local-media-test-ignored-clippy-passed",
     "nativeRife": {
       "status": "24-to-48-passed-30-to-60-native-27ms-margin-unmet-product-fallback-qualified",
-      "summary": "pending-clean-0.2.6-native-evidence",
-      "persistentVulkanGpuRoundTripP95Ms": "pending-clean-evidence",
+      "summary": ".runtime/rife-spike/evidence/20260815-032534-224/summary.json",
+      "experimental30Summary": ".runtime/rife-spike/evidence/20260815-032951-853/summary.json",
+      "persistentVulkanGpuRoundTripP95Ms": {
+        "24-to-48": 26.826,
+        "30-to-60": 26.292
+      },
       "fixedLimitsMs": {
         "24-to-48": 33.0,
         "30-to-60": 27.0
       }
     },
     "playbackRife": {
-      "status": "pending-clean-0.2.6-exact-build-qualification",
-      "summary": "pending-clean-0.2.6-playback-evidence",
+      "status": "passed-clean-0.2.6-exact-build-qualification",
+      "summary": ".runtime/rife-player/evidence/20260815-033815-312/summary.json",
       "cases": "24-to-48-generated-seek-scene-cut-actual-4k-and-experimental-30-to-60-generated-seek-scene-cut-replacement-teardown"
     },
     "packageEvidence": {
-      "status": "pending-0.2.6-artifact-build",
-      "sourceCommit": "v0.2.6-tag-target-after-final-source-commit"
+      "status": "built-validated-installed-uploaded-and-submitted",
+      "sourceCommit": "523560e1166e8dedea00ebd2b1bf0239f42dd1fd",
+      "packageSha256": "4c38c718f094ed49c8cde25186baeebd12334c48a68a85d8e72cc956ccc359bb",
+      "packageSizeBytes": 30719651,
+      "payloadFileCount": 100,
+      "fullIntegratedValidation": ".runtime/validation/integrated/20260815-024343-453/summary.json"
     }
   },
   "release": {
     "eligible": true,
     "publisherRiskDecision": "accepted-free-worldwide-distribution-2026-07-21",
     "packageVersion": "0.2.6.0",
-    "packageSha256": "pending",
-    "portableSha256": "pending",
+    "packageSha256": "4c38c718f094ed49c8cde25186baeebd12334c48a68a85d8e72cc956ccc359bb",
+    "portableSha256": "517a1301babbdcb02292ac7231295a44f51be3c8b5d359c5b40182dd7a95219a",
     "githubRelease": "https://github.com/teemoZipsa/PlainVideo/releases/tag/v0.2.6",
-    "githubReleaseState": "planned-prerelease-with-portable-and-corresponding-source-assets",
-    "partnerCenterSubmissionId": "pending",
-    "nextMilestone": "build-verify-install-and-submit-0.2.6"
+    "githubReleaseState": "published-prerelease-with-portable-and-corresponding-source-assets",
+    "partnerCenterSubmissionId": "1152921505701627822",
+    "nextMilestone": "complete-certification-then-manually-publish-0.2.6"
   },
   "blockingGates": [
-    "PlainVideo 0.2.6 has not yet been uploaded, certified, published, or delivered by Microsoft Store.",
+    "PlainVideo 0.2.6 is in Partner Center pre-processing and has not yet been certified, published, or delivered by Microsoft Store.",
     "The selected Windows 10 minimum-image proof remains open."
   ]
 }

@@ -36,6 +36,19 @@ being intercepted by the window drag area after hidden controls appeared.
 
 ## State boundary
 
-Partner Center currently confirms Submission 4 / 0.2.3 as available in the
-Microsoft Store. The 0.2.6 package has not yet been uploaded, certified, or
-published. Update this section only from direct evidence.
+Partner Center accepted and validated
+`PlainVideo_0.2.6.0_x64-store.msix` in Submission 5
+(`1152921505701627822`). The package was saved and submitted for certification
+on 2026-08-15. Partner Center currently shows step 2 of 4, **Pre-processing in
+progress**; certification and publishing have not started.
+
+Submission 4 / 0.2.3 remains available in the Microsoft Store. Submission 5
+retains the manual publish hold, so a separate **Publish now** action will be
+required after certification succeeds.
+
+- Store MSIX SHA-256:
+  `4c38c718f094ed49c8cde25186baeebd12334c48a68a85d8e72cc956ccc359bb`
+- Store MSIX size: `30,719,651` bytes
+- Source commit: `523560e1166e8dedea00ebd2b1bf0239f42dd1fd`
+- Full validation:
+  `.runtime/validation/integrated/20260815-024343-453/summary.json`
