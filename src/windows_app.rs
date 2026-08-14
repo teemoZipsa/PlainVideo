@@ -4109,10 +4109,7 @@ fn hit_test_client(hwnd: HWND, point: POINT, app: &App) -> LRESULT {
             _ => {}
         }
     }
-    if app.window_controls_visible
-        && (window_control_at_point(width, point, app.dpi).is_some()
-            || playback_control_at(hwnd, point, app.dpi).is_some())
-    {
+    if client_control_contains_point(hwnd, width, point, app.dpi, app.window_controls_visible) {
         return HTCLIENT as LRESULT;
     }
     let idle_surface = !app.has_media && !app.playback_error_visible;
@@ -4123,6 +4120,20 @@ fn hit_test_client(hwnd: HWND, point: POINT, app: &App) -> LRESULT {
     } else {
         HTCLIENT as LRESULT
     }
+}
+
+fn client_control_contains_point(
+    hwnd: HWND,
+    client_width: i32,
+    point: POINT,
+    dpi: u32,
+    controls_visible: bool,
+) -> bool {
+    // Keep the progressively disclosed top-right controls reachable even
+    // while hidden. Returning HTCLIENT here lets the first real pointer move
+    // reveal them instead of trapping the pointer in the HTCAPTION move zone.
+    window_control_at_point(client_width, point, dpi).is_some()
+        || (controls_visible && playback_control_at(hwnd, point, dpi).is_some())
 }
 
 fn draggable_surface_contains_point(
@@ -4966,6 +4977,28 @@ mod tests {
         assert!(move_zone_contains_point(1280, POINT { x: 1279, y: 55 }, 96));
         assert!(!move_zone_contains_point(1280, POINT { x: 640, y: 56 }, 96));
         assert!(move_zone_contains_point(2560, POINT { x: 10, y: 111 }, 192));
+    }
+
+    #[test]
+    fn hidden_close_control_never_becomes_a_caption_drag_target() {
+        let width = 1280;
+        let dpi = 96;
+        let point = POINT {
+            x: width - WINDOW_CONTROL_MARGIN - WINDOW_CONTROL_SIZE / 2,
+            y: WINDOW_CONTROL_MARGIN + WINDOW_CONTROL_SIZE / 2,
+        };
+        assert_eq!(
+            window_control_at_point(width, point, dpi),
+            Some(WindowControl::Close)
+        );
+        assert!(move_zone_contains_point(width, point, dpi));
+        assert!(client_control_contains_point(
+            ptr::null_mut(),
+            width,
+            point,
+            dpi,
+            false
+        ));
     }
 
     #[test]

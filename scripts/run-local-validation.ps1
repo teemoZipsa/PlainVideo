@@ -14,12 +14,14 @@ $evidenceRoot = Join-Path $runtimeRoot "validation\integrated\$runId"
 $portableRoot = Join-Path $runtimeRoot 'portable\PlainVideo'
 $windowEvidence = Join-Path $evidenceRoot 'window-behavior.json'
 $interactionEvidence = Join-Path $evidenceRoot 'input-interactions.json'
+$subtitleRestoreEvidence = Join-Path $evidenceRoot 'subtitle-restore'
 $matrixEvidence = Join-Path $evidenceRoot 'format-matrix'
 $soakEvidence = Join-Path $evidenceRoot 'playback-soak.json'
 $summaryPath = Join-Path $evidenceRoot 'summary.json'
 New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
 
 $steps = [System.Collections.Generic.List[object]]::new()
+$validationCompleted = $false
 
 function Invoke-ValidationStep {
     param(
@@ -110,6 +112,14 @@ try {
             -AppRoot $portableRoot `
             -EvidencePath $interactionEvidence
     }
+    Invoke-ValidationStep 'SMI normalization and subtitle restore' {
+        & (Join-Path $PSScriptRoot 'verify-subtitle-restore.ps1') `
+            -Executable (Join-Path $portableRoot 'plainvideo.exe') `
+            -AppRoot $portableRoot `
+            -MediaPath (Join-Path $runtimeRoot 'fixtures\plainvideo-smoke.mp4') `
+            -SubtitlePath (Join-Path $runtimeRoot 'fixtures\plainvideo-smoke-restore.smi') `
+            -EvidenceDirectory $subtitleRestoreEvidence
+    }
     Invoke-ValidationStep 'Format fixture generation' {
         & (Join-Path $PSScriptRoot 'generate-format-fixtures.ps1')
     }
@@ -127,6 +137,7 @@ try {
             -LibmpvPath (Join-Path $portableRoot 'libmpv-2.dll') `
             -EvidencePath $soakEvidence
     }
+    $validationCompleted = $true
 }
 finally {
     $failed = @($steps | Where-Object status -eq 'failed')
@@ -134,7 +145,7 @@ finally {
         schemaVersion = 1
         generatedAt = [DateTimeOffset]::Now.ToString('o')
         profile = $Profile
-        status = if ($failed.Count -eq 0 -and $steps.Count -eq 14) { 'passed' } else { 'failed' }
+        status = if ($failed.Count -eq 0 -and $validationCompleted) { 'passed' } else { 'failed' }
         source = [ordered]@{
             revision = (& git -C $repoRoot rev-parse HEAD 2>$null | Select-Object -First 1)
             dirty = @(& git -C $repoRoot status --short 2>$null).Count -gt 0
@@ -143,6 +154,7 @@ finally {
             root = $evidenceRoot
             windowBehavior = $windowEvidence
             inputInteractions = $interactionEvidence
+            subtitleRestore = Join-Path $subtitleRestoreEvidence 'summary.json'
             playbackRecovery = Join-Path $evidenceRoot 'playback-recovery.json'
             formatMatrix = Join-Path $matrixEvidence 'playback-matrix.json'
             playbackSoak = $soakEvidence

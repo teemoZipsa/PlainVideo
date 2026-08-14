@@ -46,12 +46,40 @@ if (-not (Test-Path -LiteralPath $SmallMediaPath -PathType Leaf)) {
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 
 public static class PlainVideoWindowProbe
 {
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X, Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct INPUT
+    {
+        public uint type;
+        public INPUTUNION data;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct INPUTUNION
+    {
+        [FieldOffset(0)] public MOUSEINPUT mouse;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint flags;
+        public uint time;
+        public UIntPtr extraInfo;
+    }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct MONITORINFO
@@ -86,6 +114,18 @@ public static class PlainVideoWindowProbe
     public static extern bool IsZoomed(IntPtr hwnd);
     [DllImport("user32.dll")]
     public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")]
+    public static extern bool ClientToScreen(IntPtr hwnd, ref POINT point);
+    [DllImport("user32.dll")]
+    public static extern bool GetCursorPos(out POINT point);
+    [DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(POINT point);
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll")]
+    public static extern uint SendInput(uint inputCount, INPUT[] inputs, int inputSize);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     public static extern IntPtr GetWindowLongPtrW(IntPtr hwnd, int index);
     [DllImport("user32.dll")]
@@ -100,6 +140,36 @@ public static class PlainVideoWindowProbe
     public static IntPtr MakeLParam(int x, int y)
     {
         return new IntPtr((y << 16) | (x & 0xffff));
+    }
+
+    public static POINT ClientPointToScreen(IntPtr hwnd, int x, int y)
+    {
+        var point = new POINT { X = x, Y = y };
+        if (!ClientToScreen(hwnd, ref point)) throw new Win32Exception();
+        return point;
+    }
+
+    public static POINT CursorPosition()
+    {
+        POINT point;
+        if (!GetCursorPos(out point)) throw new Win32Exception();
+        return point;
+    }
+
+    public static IntPtr RootWindowAt(POINT point)
+    {
+        var window = WindowFromPoint(point);
+        return window == IntPtr.Zero ? IntPtr.Zero : GetAncestor(window, 2);
+    }
+
+    public static uint ClickLeft()
+    {
+        var inputs = new INPUT[2];
+        inputs[0].type = 0;
+        inputs[0].data.mouse.flags = 0x0002;
+        inputs[1].type = 0;
+        inputs[1].data.mouse.flags = 0x0004;
+        return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
     }
 
     public static RECT[] Monitors()
@@ -294,6 +364,23 @@ try {
     ).ToInt64()
     if ($dragHit -ne 2) { throw "The top move zone did not return HTCAPTION (actual $dragHit)." }
 
+    # Reproduce the hidden-control state that previously turned the close
+    # button's reserved area into HTCAPTION and showed IDC_SIZEALL forever.
+    [void][PlainVideoWindowProbe]::SendMessageW(
+        $hwnd, 0x02A3, [UIntPtr]::Zero, [IntPtr]::Zero
+    )
+    $controlSize = [int][Math]::Round(34 * $initialDpi / 96)
+    $controlMargin = [int][Math]::Round(10 * $initialDpi / 96)
+    $closeScreenX = $initialRect.x + $client.width - $controlMargin - [int]($controlSize / 2)
+    $closeScreenY = $initialRect.y + $controlMargin + [int]($controlSize / 2)
+    $hiddenCloseHit = [PlainVideoWindowProbe]::SendMessageW(
+        $hwnd, 0x0084, [UIntPtr]::Zero,
+        [PlainVideoWindowProbe]::MakeLParam($closeScreenX, $closeScreenY)
+    ).ToInt64()
+    if ($hiddenCloseHit -ne 1) {
+        throw "The hidden close-control area did not return HTCLIENT (actual $hiddenCloseHit)."
+    }
+
     $seekX = [int]($client.width * 0.54)
     $seekY = $client.height - [int](40 * $initialDpi / 96)
     $seekPoint = [PlainVideoWindowProbe]::MakeLParam($seekX, $seekY)
@@ -390,6 +477,56 @@ try {
     Save-WindowCapture -Hwnd $hwnd -Path $mutedCapture
     [void][PlainVideoWindowProbe]::SendMessageW($hwnd, 0x0100, [UIntPtr]0x4d, [IntPtr]::Zero)
     [void][PlainVideoWindowProbe]::SendMessageW($hwnd, 0x0101, [UIntPtr]0x4d, [IntPtr]::Zero)
+
+    $closeClient = Get-ClientSize -Hwnd $hwnd
+    $closeClientX = $closeClient.width - $controlMargin - [int]($controlSize / 2)
+    $closeClientY = $controlMargin + [int]($controlSize / 2)
+    $closeScreen = [PlainVideoWindowProbe]::ClientPointToScreen(
+        $hwnd,
+        $closeClientX,
+        $closeClientY
+    )
+    # Isolate this real click from unrelated user windows that may already be
+    # topmost. The test window exits immediately after the click.
+    if (-not [PlainVideoWindowProbe]::SetWindowPos(
+        $hwnd,
+        [IntPtr](-1),
+        0,
+        0,
+        0,
+        0,
+        0x0043
+    )) {
+        throw 'Could not bring PlainVideo to the front for the real close-click test.'
+    }
+    [void][PlainVideoWindowProbe]::SetForegroundWindow($hwnd)
+    if (-not [PlainVideoWindowProbe]::SetCursorPos($closeScreen.X, $closeScreen.Y)) {
+        throw 'Could not position the pointer over the close control.'
+    }
+    Start-Sleep -Milliseconds 250
+    $closeCursor = [PlainVideoWindowProbe]::CursorPosition()
+    $closeRootWindow = [PlainVideoWindowProbe]::RootWindowAt($closeCursor)
+    $closeHit = [PlainVideoWindowProbe]::SendMessageW(
+        $hwnd,
+        0x0084,
+        [UIntPtr]::Zero,
+        [PlainVideoWindowProbe]::MakeLParam($closeScreen.X, $closeScreen.Y)
+    ).ToInt64()
+    if ($closeRootWindow -ne $hwnd -or $closeHit -ne 1) {
+        throw "The real close click target was not PlainVideo HTCLIENT (root=$closeRootWindow hwnd=$hwnd hit=$closeHit cursor=$($closeCursor.X),$($closeCursor.Y))."
+    }
+    $closeHoverCapture = Join-Path $evidenceDirectory 'window-close-hover.png'
+    Save-WindowCapture -Hwnd $hwnd -Path $closeHoverCapture
+    # Route the click through Windows hit testing and mouse dispatch instead of
+    # sending client messages directly to the application window.
+    $injectedInputCount = [PlainVideoWindowProbe]::ClickLeft()
+    if ($injectedInputCount -ne 2) {
+        throw "SendInput inserted $injectedInputCount of 2 close-click events."
+    }
+    $closeControlActivated = $run.Process.WaitForExit(5000)
+    if (-not $closeControlActivated) {
+        throw 'The top-right close control did not close PlainVideo.'
+    }
 }
 finally {
     Stop-PlainVideo -Run $run
@@ -469,6 +606,11 @@ $evidence = [ordered]@{
     smallVideoRect = $smallRect
     textScale = 2.0
     topMoveHitTest = $dragHit
+    hiddenCloseHitTest = $hiddenCloseHit
+    closeControlActivated = $closeControlActivated
+    closeControlInput = 'system-send-input'
+    closeControlHitTest = $closeHit
+    closeControlRootWindowMatched = $closeRootWindow -eq $hwnd
     seekCommandRecorded = $seekRecorded
     dwm = [ordered]@{
         compositionEnabled = $composition
@@ -478,7 +620,7 @@ $evidence = [ordered]@{
         thickFrame = (($style -band 0x00040000) -ne 0)
         layeredWindow = (($exStyle -band 0x00080000) -ne 0)
     }
-    captures = @($mainCapture, $mutedCapture, $smallCapture)
+    captures = @($mainCapture, $mutedCapture, $closeHoverCapture, $smallCapture)
 }
 $evidence | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $EvidencePath -Encoding UTF8
 $evidence | ConvertTo-Json -Depth 8

@@ -38,18 +38,43 @@ $resumePath = Join-Path $evidenceRoot 'resume.ini'
 $secondRunLog = Join-Path $evidenceRoot 'second-run.log'
 $secondRunErrors = [System.IO.Path]::ChangeExtension($secondRunLog, 'app-errors.log')
 $summaryPath = Join-Path $evidenceRoot 'summary.json'
+$subtitleCache = Join-Path $evidenceRoot 'subtitle-cache'
+$isolatedInputRoot = Join-Path $evidenceRoot 'isolated-input'
 Remove-Item -LiteralPath $firstRunEvidence, $settingsPath, $resumePath, $secondRunLog, `
     $secondRunErrors, $summaryPath -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $subtitleCache -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $isolatedInputRoot -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Path $isolatedInputRoot -Force | Out-Null
 
-$isExactCompanion = [System.IO.Path]::GetFileNameWithoutExtension($mediaFile).Equals(
+$sourceIsExactCompanion = [System.IO.Path]::GetFileNameWithoutExtension($mediaFile).Equals(
     [System.IO.Path]::GetFileNameWithoutExtension($subtitleFile),
     [System.StringComparison]::OrdinalIgnoreCase
 )
+$stagedMediaStem = 'plainvideo-subtitle-test'
+$stagedSubtitleStem = if ($sourceIsExactCompanion) {
+    $stagedMediaStem
+}
+else {
+    'plainvideo-subtitle-external'
+}
+$stagedMedia = Join-Path $isolatedInputRoot (
+    $stagedMediaStem + [System.IO.Path]::GetExtension($mediaFile)
+)
+$stagedSubtitle = Join-Path $isolatedInputRoot (
+    $stagedSubtitleStem + [System.IO.Path]::GetExtension($subtitleFile)
+)
+Copy-Item -LiteralPath $mediaFile -Destination $stagedMedia
+Copy-Item -LiteralPath $subtitleFile -Destination $stagedSubtitle
+$isExactCompanion = $stagedMediaStem.Equals(
+    $stagedSubtitleStem,
+    [System.StringComparison]::OrdinalIgnoreCase
+)
+
 & (Join-Path $PSScriptRoot 'verify-input-interactions.ps1') `
     -Executable $executablePath `
     -AppRoot $appRootPath `
-    -MediaPath $mediaFile `
-    -SubtitlePath $subtitleFile `
+    -MediaPath $stagedMedia `
+    -SubtitlePath $stagedSubtitle `
     -EvidencePath $firstRunEvidence `
     -SubtitleDropOnly `
     -AllowExistingSubtitle:$isExactCompanion
@@ -87,7 +112,7 @@ $start.Environment['PLAINVIDEO_DIAGNOSTIC_LOG'] = $secondRunLog
 $start.Environment['PLAINVIDEO_DIAGNOSTIC_SINGLE_FILE'] = '1'
 $start.Environment['PLAINVIDEO_DIAGNOSTIC_IGNORE_INPUT'] = '1'
 $start.Environment['PLAINVIDEO_DIAGNOSTIC_EXIT_MS'] = '8000'
-[void]$start.ArgumentList.Add($mediaFile)
+[void]$start.ArgumentList.Add($stagedMedia)
 
 $process = [System.Diagnostics.Process]::Start($start)
 if (-not $process.WaitForExit(20000)) {
@@ -114,6 +139,39 @@ if ($subAddCount -ne 1 -or
     throw "Subtitle restore failed: sub-add=$subAddCount playback-start=$playbackStartCount restore-errors=$restoreErrorCount subtitle-decode-errors=$subtitleDecodeErrorCount"
 }
 
+$cacheFiles = @(Get-ChildItem -LiteralPath $subtitleCache -Filter 'sami-*.smi' -File -ErrorAction SilentlyContinue)
+if ($cacheFiles.Count -lt 1) {
+    throw 'No normalized SAMI cache file was created.'
+}
+$normalizedCaches = @(
+    foreach ($cacheFile in $cacheFiles) {
+        $cacheText = [System.IO.File]::ReadAllText($cacheFile.FullName)
+        $literalNumericEntityCount = [regex]::Matches(
+            $cacheText,
+            [regex]::Escape('&#8203;')
+        ).Count
+        $remainingNbspEntityCount = [regex]::Matches(
+            $cacheText,
+            '(?i)&nbsp;|&#0*160;|&#x0*a0;'
+        ).Count
+        $zeroWidthSpaceCount = @(
+            $cacheText.ToCharArray() | Where-Object { [int]$_ -eq 0x200B }
+        ).Count
+        if ($literalNumericEntityCount -ne 0 -or
+            $remainingNbspEntityCount -ne 0 -or
+            $zeroWidthSpaceCount -lt 1) {
+            throw "Normalized SAMI cache mismatch in $($cacheFile.FullName): literal-8203=$literalNumericEntityCount remaining-nbsp=$remainingNbspEntityCount zero-width=$zeroWidthSpaceCount"
+        }
+        [ordered]@{
+            path = $cacheFile.FullName
+            sha256 = (Get-FileHash -LiteralPath $cacheFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            literalNumericEntityCount = $literalNumericEntityCount
+            remainingNbspEntityCount = $remainingNbspEntityCount
+            zeroWidthSpaceCount = $zeroWidthSpaceCount
+        }
+    }
+)
+
 $summary = [ordered]@{
     schemaVersion = 1
     generatedAt = [DateTimeOffset]::Now.ToString('o')
@@ -121,6 +179,11 @@ $summary = [ordered]@{
     executable = $executablePath
     media = $mediaFile
     subtitle = $subtitleFile
+    stagedInputs = [ordered]@{
+        media = $stagedMedia
+        subtitle = $stagedSubtitle
+        isolated = $true
+    }
     firstRun = [ordered]@{
         subAddCommandDelta = [int]$firstRun.subtitleDrop.subAddCommandDelta
         expectedSubAddCommandDelta = $expectedDropSubAddDelta
@@ -138,6 +201,7 @@ $summary = [ordered]@{
         restoreErrorCount = $restoreErrorCount
         subtitleDecodeErrorCount = $subtitleDecodeErrorCount
     }
+    normalizedCaches = $normalizedCaches
     evidence = [ordered]@{
         firstRun = $firstRunEvidence
         resume = $resumePath

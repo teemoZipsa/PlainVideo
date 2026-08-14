@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
-  "observedAt": "2026-08-13T01:25:00+09:00",
-  "status": "submission-4-0.2.3-live-0.2.5-local-release-candidate",
+  "observedAt": "2026-08-15T02:15:00+09:00",
+  "status": "submission-4-0.2.3-live-0.2.6-local-release-candidate",
   "repository": {
     "nameWithOwner": "teemoZipsa/PlainVideo",
     "visibility": "public",
     "defaultBranch": "master",
     "baselineCommit": "7161997b6be94d8d4f4b208d5ab6bd123a938606",
-    "releaseCommit": "v0.2.5-tag-target-after-final-source-commit",
+    "releaseCommit": "v0.2.6-tag-target-after-final-source-commit",
     "githubActionsRepositoryPermission": "enabled",
     "localWorkflowCount": 0,
     "workflowPolicy": "Do not add, dispatch, rerun, or broaden workflows without explicit user approval."
   },
   "product": {
-    "cargoVersion": "0.2.5",
+    "cargoVersion": "0.2.6",
     "stage": "pre-alpha",
     "storeTarget": true,
     "distributionModel": "packaged Win32 MSIX",
@@ -143,14 +143,14 @@
     "wackReportSha256": "dce565aa522f7e0b8ec630af3ddfa9765f121de9e47e7a4da55b8ebe0efc172f"
   },
   "releaseCandidateValidation": {
-    "version": "0.2.5",
-    "scopeBaseCommit": "7161997b6be94d8d4f4b208d5ab6bd123a938606",
-    "releaseCommit": "v0.2.5-tag-target-after-final-source-commit",
+    "version": "0.2.6",
+    "scopeBaseCommit": "d2ad7392b4068c3847f88539a781951df5abb882",
+    "releaseCommit": "v0.2.6-tag-target-after-final-source-commit",
     "frameInterpolation": "default-off-24-to-48-plus-explicitly-experimental-default-off-30-to-60-with-source-frame-fallback-and-tested-4k-compatibility-bridge",
-    "rust": "71-passed-1-explicit-local-media-test-ignored-clippy-passed",
+    "rust": "79-passed-1-explicit-local-media-test-ignored-clippy-passed",
     "nativeRife": {
       "status": "24-to-48-passed-30-to-60-native-27ms-margin-unmet-product-fallback-qualified",
-      "summary": "pending-clean-0.2.5-native-evidence",
+      "summary": "pending-clean-0.2.6-native-evidence",
       "persistentVulkanGpuRoundTripP95Ms": "pending-clean-evidence",
       "fixedLimitsMs": {
         "24-to-48": 33.0,
@@ -158,28 +158,28 @@
       }
     },
     "playbackRife": {
-      "status": "pending-clean-0.2.5-exact-build-qualification",
-      "summary": "pending-clean-0.2.5-playback-evidence",
+      "status": "pending-clean-0.2.6-exact-build-qualification",
+      "summary": "pending-clean-0.2.6-playback-evidence",
       "cases": "24-to-48-generated-seek-scene-cut-actual-4k-and-experimental-30-to-60-generated-seek-scene-cut-replacement-teardown"
     },
     "packageEvidence": {
-      "status": "pending-0.2.5-artifact-build",
-      "sourceCommit": "v0.2.5-tag-target-after-final-source-commit"
+      "status": "pending-0.2.6-artifact-build",
+      "sourceCommit": "v0.2.6-tag-target-after-final-source-commit"
     }
   },
   "release": {
     "eligible": true,
     "publisherRiskDecision": "accepted-free-worldwide-distribution-2026-07-21",
-    "packageVersion": "0.2.5.0",
+    "packageVersion": "0.2.6.0",
     "packageSha256": "pending",
     "portableSha256": "pending",
-    "githubRelease": "https://github.com/teemoZipsa/PlainVideo/releases/tag/v0.2.5",
+    "githubRelease": "https://github.com/teemoZipsa/PlainVideo/releases/tag/v0.2.6",
     "githubReleaseState": "planned-prerelease-with-portable-and-corresponding-source-assets",
     "partnerCenterSubmissionId": "pending",
-    "nextMilestone": "build-verify-install-and-submit-0.2.5"
+    "nextMilestone": "build-verify-install-and-submit-0.2.6"
   },
   "blockingGates": [
-    "PlainVideo 0.2.5 has not yet been uploaded, certified, published, or delivered by Microsoft Store.",
+    "PlainVideo 0.2.6 has not yet been uploaded, certified, published, or delivered by Microsoft Store.",
     "The selected Windows 10 minimum-image proof remains open."
   ]
 }

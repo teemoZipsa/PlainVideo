@@ -74,6 +74,41 @@ public static class PlainVideoInputProbe
     public struct RECT { public int Left, Top, Right, Bottom; }
 
     [StructLayout(LayoutKind.Sequential)]
+    public struct INPUT
+    {
+        public uint type;
+        public INPUTUNION data;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct INPUTUNION
+    {
+        [FieldOffset(0)] public MOUSEINPUT mouse;
+        [FieldOffset(0)] public KEYBDINPUT keyboard;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint flags;
+        public uint time;
+        public UIntPtr extraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KEYBDINPUT
+    {
+        public ushort virtualKey;
+        public ushort scanCode;
+        public uint flags;
+        public uint time;
+        public UIntPtr extraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     public struct CURSORINFO
     {
         public int cbSize;
@@ -117,9 +152,7 @@ public static class PlainVideoInputProbe
     [DllImport("user32.dll")]
     public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")]
-    public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
-    [DllImport("user32.dll")]
-    public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+    public static extern uint SendInput(uint inputCount, INPUT[] inputs, int inputSize);
     [DllImport("user32.dll")]
     public static extern bool GetCursorInfo(ref CURSORINFO cursorInfo);
     [DllImport("user32.dll")]
@@ -152,6 +185,23 @@ public static class PlainVideoInputProbe
     public static IntPtr MakeLParam(int x, int y)
     {
         return new IntPtr((y << 16) | (x & 0xffff));
+    }
+
+    public static uint SendMouse(uint flags)
+    {
+        var inputs = new INPUT[1];
+        inputs[0].type = 0;
+        inputs[0].data.mouse.flags = flags;
+        return SendInput(1, inputs, Marshal.SizeOf<INPUT>());
+    }
+
+    public static uint SendKey(ushort virtualKey, uint flags)
+    {
+        var inputs = new INPUT[1];
+        inputs[0].type = 1;
+        inputs[0].data.keyboard.virtualKey = virtualKey;
+        inputs[0].data.keyboard.flags = flags;
+        return SendInput(1, inputs, Marshal.SizeOf<INPUT>());
     }
 
     public static IntPtr CreateDropFile(string path)
@@ -336,6 +386,24 @@ function Set-Pointer {
     Start-Sleep -Milliseconds 45
 }
 
+function Send-MouseEvent {
+    param([Parameter(Mandatory)][uint32]$Flags)
+    if ([PlainVideoInputProbe]::SendMouse($Flags) -ne 1) {
+        throw "SendInput did not insert mouse event 0x$($Flags.ToString('x'))."
+    }
+}
+
+function Send-KeyEvent {
+    param(
+        [Parameter(Mandatory)][byte]$VirtualKey,
+        [switch]$KeyUp
+    )
+    $flags = if ($KeyUp) { 0x0002 } else { 0 }
+    if ([PlainVideoInputProbe]::SendKey($VirtualKey, $flags) -ne 1) {
+        throw "SendInput did not insert keyboard event 0x$($VirtualKey.ToString('x'))."
+    }
+}
+
 function Send-MouseClick {
     param(
         [Parameter(Mandatory)][ValidateSet('Left', 'Right')][string]$Button,
@@ -345,41 +413,43 @@ function Send-MouseClick {
     Set-Pointer -X $X -Y $Y
     $down = if ($Button -eq 'Left') { 0x0002 } else { 0x0008 }
     $up = if ($Button -eq 'Left') { 0x0004 } else { 0x0010 }
-    [PlainVideoInputProbe]::mouse_event($down, 0, 0, 0, [UIntPtr]::Zero)
+    Send-MouseEvent -Flags $down
     Start-Sleep -Milliseconds 25
-    [PlainVideoInputProbe]::mouse_event($up, 0, 0, 0, [UIntPtr]::Zero)
+    Send-MouseEvent -Flags $up
 }
 
 function Send-DoubleClick {
     param([Parameter(Mandatory)][int]$X, [Parameter(Mandatory)][int]$Y)
     Set-Pointer -X $X -Y $Y
     foreach ($index in 1..2) {
-        [PlainVideoInputProbe]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        Send-MouseEvent -Flags 0x0002
         Start-Sleep -Milliseconds 20
-        [PlainVideoInputProbe]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        Send-MouseEvent -Flags 0x0004
         if ($index -eq 1) { Start-Sleep -Milliseconds 35 }
     }
 }
 
 function Send-Key {
     param([Parameter(Mandatory)][byte]$VirtualKey)
-    [PlainVideoInputProbe]::keybd_event($VirtualKey, 0, 0, [UIntPtr]::Zero)
+    Send-KeyEvent -VirtualKey $VirtualKey
     Start-Sleep -Milliseconds 20
-    [PlainVideoInputProbe]::keybd_event($VirtualKey, 0, 0x0002, [UIntPtr]::Zero)
+    Send-KeyEvent -VirtualKey $VirtualKey -KeyUp
 }
 
 function Send-KeyChord {
     param(
+        [Parameter(Mandatory)][IntPtr]$TargetHwnd,
         [Parameter(Mandatory)][byte]$Modifier,
         [Parameter(Mandatory)][byte]$VirtualKey
     )
-    [PlainVideoInputProbe]::keybd_event($Modifier, 0, 0, [UIntPtr]::Zero)
+    Focus-Window -Hwnd $TargetHwnd
+    Send-KeyEvent -VirtualKey $Modifier
     Start-Sleep -Milliseconds 50
-    [PlainVideoInputProbe]::keybd_event($VirtualKey, 0, 0, [UIntPtr]::Zero)
+    Send-KeyEvent -VirtualKey $VirtualKey
     Start-Sleep -Milliseconds 80
-    [PlainVideoInputProbe]::keybd_event($VirtualKey, 0, 0x0002, [UIntPtr]::Zero)
+    Send-KeyEvent -VirtualKey $VirtualKey -KeyUp
     Start-Sleep -Milliseconds 40
-    [PlainVideoInputProbe]::keybd_event($Modifier, 0, 0x0002, [UIntPtr]::Zero)
+    Send-KeyEvent -VirtualKey $Modifier -KeyUp
     Start-Sleep -Milliseconds 40
 }
 
@@ -631,29 +701,29 @@ try {
     Focus-Window -Hwnd $hwnd
     $subDelayPattern = 'Set property:\s*sub-delay=|name="sub-delay"'
     $subDelayCount = Get-PatternCount -Pattern $subDelayPattern
-    Send-KeyChord -Modifier 0x11 -VirtualKey 0xDB
+    Send-KeyChord -TargetHwnd $hwnd -Modifier 0x11 -VirtualKey 0xDB
     $subDelayCount = Wait-PatternCount -Pattern $subDelayPattern -Minimum ($subDelayCount + 1)
     $earlierDelay = Assert-SubtitleDelay -Expected -0.1
-    Send-KeyChord -Modifier 0x11 -VirtualKey 0xDD
+    Send-KeyChord -TargetHwnd $hwnd -Modifier 0x11 -VirtualKey 0xDD
     $subDelayCount = Wait-PatternCount -Pattern $subDelayPattern -Minimum ($subDelayCount + 1)
-    Send-KeyChord -Modifier 0x11 -VirtualKey 0xDD
+    Send-KeyChord -TargetHwnd $hwnd -Modifier 0x11 -VirtualKey 0xDD
     $subDelayCount = Wait-PatternCount -Pattern $subDelayPattern -Minimum ($subDelayCount + 1)
     $laterDelay = Assert-SubtitleDelay -Expected 0.1
-    Send-KeyChord -Modifier 0x11 -VirtualKey 0xDC
+    Send-KeyChord -TargetHwnd $hwnd -Modifier 0x11 -VirtualKey 0xDC
     [void](Wait-PatternCount -Pattern $subDelayPattern -Minimum ($subDelayCount + 1))
     $resetDelay = Assert-SubtitleDelay -Expected 0.0
 
     $audioDelayPattern = 'Set property:\s*audio-delay=|name="audio-delay"'
     $audioDelayCount = Get-PatternCount -Pattern $audioDelayPattern
-    Send-KeyChord -Modifier 0x12 -VirtualKey 0xDB
+    Send-KeyChord -TargetHwnd $hwnd -Modifier 0x12 -VirtualKey 0xDB
     $audioDelayCount = Wait-PatternCount -Pattern $audioDelayPattern -Minimum ($audioDelayCount + 1)
     $earlierAudioDelay = Assert-AudioDelay -Expected -0.1
-    Send-KeyChord -Modifier 0x12 -VirtualKey 0xDD
+    Send-KeyChord -TargetHwnd $hwnd -Modifier 0x12 -VirtualKey 0xDD
     $audioDelayCount = Wait-PatternCount -Pattern $audioDelayPattern -Minimum ($audioDelayCount + 1)
-    Send-KeyChord -Modifier 0x12 -VirtualKey 0xDD
+    Send-KeyChord -TargetHwnd $hwnd -Modifier 0x12 -VirtualKey 0xDD
     $audioDelayCount = Wait-PatternCount -Pattern $audioDelayPattern -Minimum ($audioDelayCount + 1)
     $laterAudioDelay = Assert-AudioDelay -Expected 0.1
-    Send-KeyChord -Modifier 0x12 -VirtualKey 0xDC
+    Send-KeyChord -TargetHwnd $hwnd -Modifier 0x12 -VirtualKey 0xDC
     [void](Wait-PatternCount -Pattern $audioDelayPattern -Minimum ($audioDelayCount + 1))
     $resetAudioDelay = Assert-AudioDelay -Expected 0.0
 
@@ -778,6 +848,7 @@ try {
         throw 'Opening or dismissing the right-click menu toggled playback.'
     }
 
+    Focus-Window -Hwnd $hwnd
     $windowedRect = Get-WindowRect -Hwnd $hwnd
     $client = Get-ClientScreenRect -Hwnd $hwnd
     $centerX = $client.x + [int]($client.width / 2)
@@ -803,6 +874,7 @@ try {
         throw 'Escape did not restore the pre-fullscreen window bounds.'
     }
 
+    Focus-Window -Hwnd $hwnd
     $client = Get-ClientScreenRect -Hwnd $hwnd
     $edgeY = $client.y + [int]($client.height / 2)
     $backPattern = 'name="plainvideo/seek-back-surface"'

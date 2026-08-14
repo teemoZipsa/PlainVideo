@@ -8,6 +8,7 @@ $fixtureRoot = Join-Path $repoRoot '.runtime\fixtures'
 $mp4Path = Join-Path $fixtureRoot 'plainvideo-smoke.mp4'
 $mkvPath = Join-Path $fixtureRoot 'plainvideo-smoke.mkv'
 $subtitlePath = Join-Path $fixtureRoot 'plainvideo-smoke.srt'
+$samiPath = Join-Path $fixtureRoot 'plainvideo-smoke-restore.smi'
 $metadataPath = Join-Path $fixtureRoot 'fixture-metadata.json'
 
 $ffmpeg = (Get-Command ffmpeg -ErrorAction Stop).Source
@@ -42,12 +43,28 @@ PlainVideo 자막 자동 탐색
 Local subtitle discovery
 '@ | Set-Content -LiteralPath $subtitlePath -Encoding UTF8
 
+@'
+<SAMI>
+<HEAD>
+<STYLE TYPE="text/css">
+<!--
+.KRCC { Name:Korean; lang:ko-KR; SAMIType:CC; }
+-->
+</STYLE>
+</HEAD>
+<BODY>
+<SYNC Start=0><P Class=KRCC>PlainVideo SMI restore test
+<SYNC Start=1500><P Class=KRCC>&nbsp;
+</BODY>
+</SAMI>
+'@ | Set-Content -LiteralPath $samiPath -Encoding UTF8
+
 & $ffprobe -v error -show_entries format=filename,format_name,duration,size -show_streams -of json $mp4Path |
     Set-Content -LiteralPath $metadataPath -Encoding UTF8
 if ($LASTEXITCODE -ne 0) {
     throw "ffprobe failed to inspect the fixture (exit code $LASTEXITCODE)."
 }
 
-Get-Item -LiteralPath $mp4Path, $mkvPath, $subtitlePath, $metadataPath |
+Get-Item -LiteralPath $mp4Path, $mkvPath, $subtitlePath, $samiPath, $metadataPath |
     Select-Object Name, Length, LastWriteTime |
     Format-Table -AutoSize
