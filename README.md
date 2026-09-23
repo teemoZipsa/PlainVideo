@@ -8,6 +8,8 @@ PlainVideo is available as a free Microsoft Store app and as a matching portable
 
 [Get PlainVideo from Microsoft Store](https://apps.microsoft.com/detail/9PDKQ88FKG1L)
 
+[Website](https://teemozipsa.github.io/PlainVideo/) · [Help](https://teemozipsa.github.io/PlainVideo/support.html) · [Privacy](https://teemozipsa.github.io/PlainVideo/privacy.html)
+
 [한국어 README](README.ko.md)
 
 ## Principles

@@ -6,7 +6,7 @@ The Microsoft Store and portable releases currently target x64 desktop devices.
 ## Basic controls
 
 - Open a video: drag it onto the window or press `Ctrl+O`.
-- Play or pause: click the video or press `Space`.
+- Play or pause: click the center of the video or press `Space`.
 - Fullscreen: double-click the center of the video or press `F`.
 - Seek: use Left/Right, double-click the left or right side, or hover over the seek bar for a thumbnail preview. Hold `Shift` with Left/Right for a larger step.
 - Volume: use Up/Down or the mouse wheel; press `M` or the speaker button to mute or restore sound.
