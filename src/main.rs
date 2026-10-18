@@ -12,11 +12,15 @@ mod control_panel;
 #[cfg(target_os = "windows")]
 mod control_panel_window;
 #[cfg(target_os = "windows")]
+mod loading_notice;
+#[cfg(target_os = "windows")]
 mod locale;
 #[cfg(target_os = "windows")]
 mod media_queue;
 #[cfg(target_os = "windows")]
 mod mpv;
+#[cfg(target_os = "windows")]
+mod playback_start;
 #[cfg(target_os = "windows")]
 mod preferences;
 #[cfg(target_os = "windows")]

@@ -1,6 +1,6 @@
 # PlainVideo privacy policy
 
-Effective date: 2026-07-21
+Effective date: 2026-09-22
 
 PlainVideo is a local video player. It does not require an account and does not
 contain advertising, analytics, telemetry, or tracking.
@@ -15,6 +15,12 @@ the contents, names, paths, metadata, or viewing history of those files.
 Preferences and resume history are stored only in the current Windows user
 profile. Uninstalling or clearing the app's local data may remove this
 information.
+
+The app also keeps bounded startup diagnostic logs locally under
+`%LOCALAPPDATA%\PlainVideo\diagnostics`. They record playback startup stages and
+elapsed times, without media filenames or paths. These logs are not uploaded.
+Each log is limited to approximately 256 KiB; older startup logs are pruned to
+keep approximately 16 files.
 
 ## Network access
 

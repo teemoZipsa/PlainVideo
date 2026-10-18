@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::ffi::{CStr, CString, c_char, c_double, c_int, c_void};
 use std::fs;
@@ -31,6 +31,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 const MPV_EVENT_NONE: c_int = 0;
 const MPV_EVENT_SHUTDOWN: c_int = 1;
+const MPV_EVENT_COMMAND_REPLY: c_int = 5;
+const MPV_EVENT_START_FILE: c_int = 6;
 const MPV_EVENT_END_FILE: c_int = 7;
 const MPV_EVENT_FILE_LOADED: c_int = 8;
 const MPV_EVENT_VIDEO_RECONFIG: c_int = 17;
@@ -270,6 +272,7 @@ type MpvTerminateDestroy = unsafe extern "C" fn(*mut MpvHandle);
 type MpvSetOptionString =
     unsafe extern "C" fn(*mut MpvHandle, *const c_char, *const c_char) -> c_int;
 type MpvCommand = unsafe extern "C" fn(*mut MpvHandle, *const *const c_char) -> c_int;
+type MpvCommandAsync = unsafe extern "C" fn(*mut MpvHandle, u64, *const *const c_char) -> c_int;
 type MpvGetPropertyString = unsafe extern "C" fn(*mut MpvHandle, *const c_char) -> *mut c_char;
 type MpvFree = unsafe extern "C" fn(*mut c_void);
 type MpvSetWakeupCallback =
@@ -296,6 +299,7 @@ struct Api {
     terminate_destroy: MpvTerminateDestroy,
     set_option_string: MpvSetOptionString,
     command: MpvCommand,
+    command_async: MpvCommandAsync,
     get_property_string: MpvGetPropertyString,
     free: MpvFree,
     set_wakeup_callback: MpvSetWakeupCallback,
@@ -342,6 +346,7 @@ impl Api {
                 terminate_destroy: load_symbol(&library, b"mpv_terminate_destroy\0")?,
                 set_option_string: load_symbol(&library, b"mpv_set_option_string\0")?,
                 command: load_symbol(&library, b"mpv_command\0")?,
+                command_async: load_symbol(&library, b"mpv_command_async\0")?,
                 get_property_string: load_symbol(&library, b"mpv_get_property_string\0")?,
                 free: load_symbol(&library, b"mpv_free\0")?,
                 set_wakeup_callback: load_symbol(&library, b"mpv_set_wakeup_callback\0")?,
@@ -572,6 +577,38 @@ pub struct Player {
     rife_mode: Cell<RifeMode>,
     rife_compatibility_bridge: Cell<bool>,
     rife_capabilities: RifeCapabilities,
+    operation: RefCell<Option<CoreOperation>>,
+    next_command_id: Cell<u64>,
+    opening: Cell<bool>,
+    property_cache: RefCell<HashMap<String, String>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OperationKind {
+    Load,
+    Rife(RifeMode, bool),
+}
+
+struct CoreOperation {
+    kind: OperationKind,
+    commands: VecDeque<Vec<String>>,
+    waiting_id: u64,
+    error: Option<String>,
+    cleaning_up: bool,
+}
+
+fn owned_command(arguments: &[&str]) -> Vec<String> {
+    arguments.iter().map(|value| (*value).to_string()).collect()
+}
+
+fn rife_cleanup_commands() -> VecDeque<Vec<String>> {
+    [
+        RIFE_OUTPUT_FILTER_LABEL,
+        "@plainvideo-rife",
+        RIFE_INPUT_FILTER_LABEL,
+    ]
+    .map(|label| owned_command(&["vf", "remove", label]))
+    .into()
 }
 
 #[derive(Clone, Debug)]
@@ -696,6 +733,10 @@ pub struct EventSummary {
     pub media_ready: bool,
     pub reached_end: bool,
     pub playback_error: Option<String>,
+    pub file_started: bool,
+    pub playback_restarted: bool,
+    pub operation_completed: bool,
+    pub rife_error: Option<String>,
 }
 
 impl Player {
@@ -837,6 +878,10 @@ impl Player {
             rife_mode: Cell::new(initial_rife_mode),
             rife_compatibility_bridge: Cell::new(false),
             rife_capabilities,
+            operation: RefCell::new(None),
+            next_command_id: Cell::new(1),
+            opening: Cell::new(false),
+            property_cache: RefCell::new(HashMap::new()),
         })
     }
 
@@ -892,12 +937,135 @@ impl Player {
     }
 
     pub fn command(&self, arguments: &[&str]) -> Result<(), String> {
+        // Never wait on the playback core from the window thread while it is
+        // opening media or rebuilding a filter. These independent UI commands
+        // do not participate in the ordered filter/load transaction below.
+        if self.is_busy() || self.opening.get() {
+            return self.command_async(0, arguments);
+        }
         command_with(self.api.command, self.handle, arguments)
     }
 
     pub fn load_file(&self, path: &Path) -> Result<(), String> {
         let path = utf8_path(path)?;
-        self.command(&["loadfile", &path, "replace"])
+        self.opening.set(true);
+        let result = self.begin_operation(
+            OperationKind::Load,
+            vec![owned_command(&["loadfile", &path, "replace"])],
+        );
+        if result.is_err() {
+            self.opening.set(false);
+        }
+        result
+    }
+
+    pub fn is_busy(&self) -> bool {
+        self.operation.borrow().is_some()
+    }
+
+    pub fn rife_preparing(&self) -> bool {
+        self.operation.borrow().as_ref().is_some_and(|operation| matches!(operation.kind, OperationKind::Rife(mode, _) if mode != RifeMode::Off))
+    }
+
+    fn command_async(&self, id: u64, arguments: &[&str]) -> Result<(), String> {
+        let strings: Result<Vec<_>, _> =
+            arguments.iter().map(|value| CString::new(*value)).collect();
+        let strings =
+            strings.map_err(|_| "A libmpv command contained an embedded NUL.".to_string())?;
+        let mut pointers: Vec<_> = strings.iter().map(|value| value.as_ptr()).collect();
+        pointers.push(ptr::null());
+        let code = unsafe { (self.api.command_async)(self.handle, id, pointers.as_ptr()) };
+        if code < 0 {
+            Err(self.api.error(code))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn begin_operation(
+        &self,
+        kind: OperationKind,
+        commands: Vec<Vec<String>>,
+    ) -> Result<(), String> {
+        if self.is_busy() {
+            return Err("A playback transition is already in progress.".to_string());
+        }
+        let mut operation = CoreOperation {
+            kind,
+            commands: commands.into(),
+            waiting_id: 0,
+            error: None,
+            cleaning_up: false,
+        };
+        self.submit_operation_command(&mut operation)?;
+        *self.operation.borrow_mut() = Some(operation);
+        Ok(())
+    }
+
+    fn submit_operation_command(&self, operation: &mut CoreOperation) -> Result<(), String> {
+        let arguments = operation
+            .commands
+            .pop_front()
+            .expect("nonempty core operation");
+        let id = self.next_command_id.get();
+        self.next_command_id.set(id.wrapping_add(1).max(1));
+        operation.waiting_id = id;
+        self.command_async(
+            id,
+            &arguments.iter().map(String::as_str).collect::<Vec<_>>(),
+        )
+    }
+
+    fn finish_operation_command(&self, id: u64, error: c_int, summary: &mut EventSummary) {
+        let Some(mut operation) = self.operation.borrow_mut().take() else {
+            return;
+        };
+        if id != operation.waiting_id {
+            *self.operation.borrow_mut() = Some(operation);
+            return;
+        }
+        let mut failure = (error < 0).then(|| self.api.error(error));
+        loop {
+            if let Some(error) = failure.take() {
+                if !operation.cleaning_up {
+                    operation.error = Some(error);
+                    operation.commands.clear();
+                    if matches!(operation.kind, OperationKind::Rife(..)) {
+                        operation.cleaning_up = true;
+                        operation.commands = rife_cleanup_commands();
+                    }
+                }
+            }
+            if operation.commands.is_empty() {
+                break;
+            }
+            match self.submit_operation_command(&mut operation) {
+                Ok(()) => {
+                    *self.operation.borrow_mut() = Some(operation);
+                    return;
+                }
+                Err(error) => failure = Some(error),
+            }
+        }
+        summary.operation_completed = true;
+        match operation.kind {
+            OperationKind::Load => {
+                if let Some(error) = operation.error {
+                    self.opening.set(false);
+                    summary.playback_error = Some(error);
+                }
+            }
+            OperationKind::Rife(mode, compatibility) => {
+                self.rife_mode.set(if operation.error.is_some() {
+                    RifeMode::Off
+                } else {
+                    mode
+                });
+                self.rife_compatibility_bridge
+                    .set(operation.error.is_none() && compatibility);
+                summary.rife_error = operation.error;
+            }
+        }
     }
 
     pub fn save_screenshot(&self, path: &Path) -> Result<(), String> {
@@ -1141,75 +1309,51 @@ impl Player {
         self.rife_compatibility_bridge.get()
     }
 
-    fn remove_active_rife_chain(&self) -> Result<(), String> {
-        let compatibility = self.rife_compatibility_bridge_active();
-        let mut first_error = None;
-        if compatibility {
-            if let Err(error) = self.command(&["vf", "remove", RIFE_OUTPUT_FILTER_LABEL]) {
-                first_error = Some(error);
-            }
-        }
-        if let Err(error) = self.command(&["vf", "remove", "@plainvideo-rife"])
-            && first_error.is_none()
-        {
-            first_error = Some(error);
-        }
-        if compatibility
-            && let Err(error) = self.command(&["vf", "remove", RIFE_INPUT_FILTER_LABEL])
-            && first_error.is_none()
-        {
-            first_error = Some(error);
-        }
-        self.rife_mode.set(RifeMode::Off);
-        self.rife_compatibility_bridge.set(false);
-        match first_error {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
-    }
-
-    fn add_rife_chain(&self, mode: RifeMode, plan: RifeSourcePlan) -> Result<(), String> {
-        let filter = rife_filter_spec(mode)
-            .ok_or_else(|| "PlainVideo cannot add an inactive RIFE mode.".to_string())?;
-        match plan {
-            RifeSourcePlan::Direct => {
-                self.command(&["vf", "add", filter])?;
-                self.rife_compatibility_bridge.set(false);
-            }
-            RifeSourcePlan::Compatibility(plan) => {
-                let (input_filter, output_filter) = rife_compatibility_filter_specs(plan);
-                self.command(&["vf", "add", &input_filter])?;
-                if let Err(error) = self.command(&["vf", "add", filter]) {
-                    let _ = self.command(&["vf", "remove", RIFE_INPUT_FILTER_LABEL]);
-                    return Err(error);
-                }
-                if let Err(error) = self.command(&["vf", "add", &output_filter]) {
-                    let _ = self.command(&["vf", "remove", "@plainvideo-rife"]);
-                    let _ = self.command(&["vf", "remove", RIFE_INPUT_FILTER_LABEL]);
-                    return Err(error);
-                }
-                self.rife_compatibility_bridge.set(true);
-            }
-        }
-        self.rife_mode.set(mode);
-        Ok(())
-    }
-
     pub fn set_rife_mode(&self, mode: RifeMode) -> Result<(), String> {
+        if self.is_busy() {
+            return Ok(()); // The shell retries its latest intent after completion.
+        }
         let current = self.rife_mode();
         if mode == current {
             return Ok(());
         }
+        let plan = if mode == RifeMode::Off {
+            None
+        } else {
+            Some(
+                self.current_rife_source_plan(mode)
+                    .ok_or_else(|| RIFE_MEDIA_MISMATCH_ERROR.to_string())?,
+            )
+        };
+        let mut commands = Vec::new();
         if current != RifeMode::Off {
-            self.remove_active_rife_chain()?;
+            if self.rife_compatibility_bridge_active() {
+                commands.push(owned_command(&["vf", "remove", RIFE_OUTPUT_FILTER_LABEL]));
+            }
+            commands.push(owned_command(&["vf", "remove", "@plainvideo-rife"]));
+            if self.rife_compatibility_bridge_active() {
+                commands.push(owned_command(&["vf", "remove", RIFE_INPUT_FILTER_LABEL]));
+            }
         }
-        if mode == RifeMode::Off {
-            return Ok(());
+        if let Some(plan) = plan {
+            if let RifeSourcePlan::Compatibility(plan) = plan {
+                let (input, _) = rife_compatibility_filter_specs(plan);
+                commands.push(owned_command(&["vf", "add", &input]));
+            }
+            commands.push(owned_command(&[
+                "vf",
+                "add",
+                rife_filter_spec(mode).expect("active mode"),
+            ]));
+            if let RifeSourcePlan::Compatibility(plan) = plan {
+                let (_, output) = rife_compatibility_filter_specs(plan);
+                commands.push(owned_command(&["vf", "add", &output]));
+            }
         }
-        let plan = self
-            .current_rife_source_plan(mode)
-            .ok_or_else(|| RIFE_MEDIA_MISMATCH_ERROR.to_string())?;
-        self.add_rife_chain(mode, plan)
+        self.begin_operation(
+            OperationKind::Rife(mode, matches!(plan, Some(RifeSourcePlan::Compatibility(_)))),
+            commands,
+        )
     }
 
     pub fn playback_position(&self) -> Option<f64> {
@@ -1236,15 +1380,23 @@ impl Player {
     }
 
     fn property_string(&self, name: &str) -> Option<String> {
+        if self.is_busy() || self.opening.get() {
+            return self.property_cache.borrow().get(name).cloned();
+        }
+        let property_name = name;
         let name = CString::new(name).ok()?;
         let value = unsafe { (self.api.get_property_string)(self.handle, name.as_ptr()) };
         if value.is_null() {
+            self.property_cache.borrow_mut().remove(property_name);
             return None;
         }
         let result = unsafe { CStr::from_ptr(value) }
             .to_string_lossy()
             .into_owned();
         unsafe { (self.api.free)(value.cast()) };
+        self.property_cache
+            .borrow_mut()
+            .insert(property_name.to_string(), result.clone());
         Some(result)
     }
 
@@ -1263,10 +1415,7 @@ impl Player {
         self.event_wake.clear();
         let mut summary = EventSummary {
             keep_running: true,
-            file_loaded: false,
-            media_ready: false,
-            reached_end: false,
-            playback_error: None,
+            ..EventSummary::default()
         };
         loop {
             let event = unsafe { (self.api.wait_event)(self.handle, 0.0) };
@@ -1276,13 +1425,34 @@ impl Player {
             match unsafe { (*event).event_id } {
                 MPV_EVENT_NONE => return summary,
                 MPV_EVENT_SHUTDOWN => {
+                    self.operation.borrow_mut().take();
+                    self.opening.set(false);
                     summary.keep_running = false;
                     return summary;
+                }
+                MPV_EVENT_COMMAND_REPLY => {
+                    let event = unsafe { &*event };
+                    if event.reply_userdata != 0 {
+                        self.finish_operation_command(
+                            event.reply_userdata,
+                            event.error,
+                            &mut summary,
+                        );
+                    }
+                }
+                MPV_EVENT_START_FILE => {
+                    summary.file_started = true;
+                    summary.file_loaded = false;
+                    summary.playback_restarted = false;
+                    summary.media_ready = false;
+                    summary.reached_end = false;
+                    summary.playback_error = None;
                 }
                 MPV_EVENT_END_FILE => {
                     let data = unsafe { (*event).data.cast::<MpvEventEndFile>().as_ref() };
                     if let Some(data) = data {
                         if data.reason == MPV_END_FILE_REASON_ERROR {
+                            self.opening.set(false);
                             summary.playback_error =
                                 Some(format!("Playback stopped: {}", self.api.error(data.error)));
                         } else if data.reason == MPV_END_FILE_REASON_EOF {
@@ -1291,12 +1461,14 @@ impl Player {
                     }
                 }
                 MPV_EVENT_FILE_LOADED => {
+                    self.opening.set(false);
                     summary.file_loaded = true;
                     summary.media_ready = true;
                     summary.reached_end = false;
                     summary.playback_error = None;
                 }
                 MPV_EVENT_VIDEO_RECONFIG => summary.media_ready = true,
+                MPV_EVENT_PLAYBACK_RESTART => summary.playback_restarted = true,
                 _ => {}
             }
         }
@@ -1313,6 +1485,13 @@ fn non_empty(value: Option<String>) -> Option<String> {
 impl Drop for Player {
     fn drop(&mut self) {
         diagnostic_shutdown_marker("player drop starting");
+        // Finish the one outstanding ordered transaction before tearing down
+        // the VO. Otherwise a queued vf-add could run after the stop command.
+        // The render thread remains alive while the core completes its work.
+        while self.is_busy() {
+            let _ = self.drain_events();
+            thread::sleep(Duration::from_millis(2));
+        }
         let render_failed = self
             .render_error
             .lock()

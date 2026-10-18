@@ -33,6 +33,7 @@ pub struct ControlPanelVisualState {
     pub rife_30_available: bool,
     pub rife_requested_mode: RifeMode,
     pub rife_active_mode: RifeMode,
+    pub rife_preparing: bool,
     pub rife_compatibility_bridge: bool,
     pub muted: bool,
     pub volume: f64,
@@ -106,6 +107,7 @@ struct Copy {
     smooth_24_48: &'static str,
     smooth_30_60: &'static str,
     enabled: &'static str,
+    preparing: &'static str,
     disabled: &'static str,
     unavailable: &'static str,
     source_fallback: &'static str,
@@ -137,6 +139,7 @@ fn copy(locale: Locale) -> Copy {
             smooth_24_48: "24→48 부드럽게",
             smooth_30_60: "30→60 실험",
             enabled: "켬",
+            preparing: "준비 중",
             disabled: "끔",
             unavailable: "엔진 없음",
             source_fallback: "원본",
@@ -165,6 +168,7 @@ fn copy(locale: Locale) -> Copy {
             smooth_24_48: "Smooth 24→48",
             smooth_30_60: "Experimental 30→60",
             enabled: "On",
+            preparing: "Preparing",
             disabled: "Off",
             unavailable: "Engine unavailable",
             source_fallback: "Source",
@@ -428,6 +432,8 @@ fn paint_control_panel_contents(
             copy.unavailable
         } else if state.rife_requested_mode != mode {
             copy.disabled
+        } else if state.rife_preparing {
+            copy.preparing
         } else if state.rife_active_mode == mode {
             if state.rife_compatibility_bridge {
                 copy.compatibility

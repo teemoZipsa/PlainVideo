@@ -22,6 +22,7 @@ local media_queue_count = 1
 local rife_requested_mode = "off"
 local rife_active_mode = "off"
 local rife_compatibility_bridge = false
+local rife_preparing = false
 local control_panel_visible = false
 local control_panel_hover = "none"
 local control_panel_pressed = "none"
@@ -424,6 +425,9 @@ local function first_nonempty(...)
 end
 
 local function frame_rate_label()
+    if rife_preparing then
+        return copy.rife_preparing, "preparing"
+    end
     local source_fps = mp.get_property_number("container-fps", 0)
     local filtered_fps = mp.get_property_number("estimated-vf-fps", 0)
     local filters = mp.get_property("vf", "")
@@ -1643,10 +1647,11 @@ local function set_media_info(action, position, count)
     draw_surface()
 end
 
-local function set_rife_status(requested, active, compatibility)
+local function set_rife_status(requested, active, compatibility, preparing)
     rife_requested_mode = requested or "off"
     rife_active_mode = active or "off"
     rife_compatibility_bridge = compatibility == "yes"
+    rife_preparing = preparing == "yes"
     if media_info_visible then draw_surface() end
 end
 

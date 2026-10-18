@@ -51,9 +51,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_KEYDOWN,
     WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE,
     WM_NCCALCSIZE, WM_NCHITTEST, WM_NCLBUTTONDOWN, WM_NCPAINT, WM_PAINT, WM_QUIT, WM_SETCURSOR,
-    WM_SETTINGCHANGE, WM_SIZE, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSEXW, WS_EX_ACCEPTFILES,
-    WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
-    WS_THICKFRAME,
+    WM_SETTINGCHANGE, WM_SIZE, WM_SYSKEYDOWN, WM_TIMER, WNDCLASSEXW, WS_CLIPCHILDREN,
+    WS_EX_ACCEPTFILES, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP,
+    WS_SYSMENU, WS_THICKFRAME,
 };
 
 use crate::control_panel::{
@@ -64,6 +64,7 @@ use crate::control_panel::{
 use crate::control_panel_window::{
     ControlPanelVisualState, invalidate_control_panel, paint_control_panel,
 };
+use crate::loading_notice::LoadingNotice;
 use crate::locale::{Locale, UiText};
 use crate::media_queue::{
     MEDIA_DIALOG_PATTERN, MediaQueue, SUBTITLE_DIALOG_PATTERN, is_subtitle_path,
@@ -72,6 +73,7 @@ use crate::mpv::{
     AudioTrack, Player, RIFE_MEDIA_MISMATCH_ERROR, RifeMode, SubtitleTrack, ThumbnailService,
     diagnostic_replacement,
 };
+use crate::playback_start::{Notice, PlaybackStart};
 use crate::preferences::{Preferences, PreferencesStore};
 use crate::resume::{ResumeStore, SubtitleSelection};
 use crate::seek_preview::SeekPreview;
@@ -95,6 +97,7 @@ const TIMER_RESUME_PROGRESS: usize = 5;
 const TIMER_SEEK_PREVIEW: usize = 6;
 const TIMER_SAVE_PREFERENCES: usize = 7;
 const TIMER_CONTROL_PANEL_REFRESH: usize = 8;
+const TIMER_PLAYBACK_START: usize = 9;
 const CONTROL_PANEL_REFRESH_MS: u32 = 200;
 static CONTEXT_MENU_SHORTCUT_KEY: AtomicU32 = AtomicU32::new(0);
 
@@ -430,6 +433,7 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         rife_30_available,
         rife_requested_mode: requested_rife_mode,
         rife_active_mode: player.rife_mode(),
+        rife_preparing: player.rife_preparing(),
         rife_compatibility_bridge: player.rife_compatibility_bridge_active(),
         muted: player.is_muted(),
         volume: player.volume(),
@@ -495,6 +499,15 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
         diagnostic_single_file,
         diagnostic_input_locked,
         last_error: None,
+        playback_start: PlaybackStart::new(),
+        loading_notice: LoadingNotice::create(window.hwnd),
+        pending_load: None,
+        deferred_loaded: false,
+        deferred_ready: false,
+        deferred_restart: false,
+        deferred_end: false,
+        rife_refresh_due: None,
+        rife_failed_for_file: false,
     });
 
     unsafe {
@@ -527,6 +540,12 @@ pub fn run(root: PathBuf, libmpv: PathBuf, media: Vec<PathBuf>) -> Result<(), St
     }
 
     let exit_code = message_loop();
+
+    // Hide immediately; GPU resources can then finish their safe teardown.
+    unsafe {
+        ShowWindow(window.control_panel_hwnd, SW_HIDE);
+        ShowWindow(window.hwnd, SW_HIDE);
+    }
 
     app.save_window_bounds_if_restorable(window.hwnd);
     unsafe {
@@ -607,6 +626,15 @@ struct App {
     diagnostic_single_file: bool,
     diagnostic_input_locked: bool,
     last_error: Option<String>,
+    playback_start: PlaybackStart,
+    loading_notice: Option<LoadingNotice>,
+    pending_load: Option<PathBuf>,
+    deferred_loaded: bool,
+    deferred_ready: bool,
+    deferred_restart: bool,
+    deferred_end: bool,
+    rife_refresh_due: Option<Instant>,
+    rife_failed_for_file: bool,
 }
 
 impl App {
@@ -673,11 +701,24 @@ impl App {
 
     fn load_path(&mut self, path: &Path) {
         self.hide_seek_preview(self.hwnd);
-        if let Err(error) = self.player.set_rife_mode(RifeMode::Off) {
-            self.operation_error(error);
-            return;
-        }
         self.save_resume_progress();
+        self.playback_start.begin();
+        self.pending_load = Some(path.to_path_buf());
+        self.rife_refresh_due = None;
+        self.deferred_loaded = false;
+        self.deferred_ready = false;
+        self.deferred_restart = false;
+        self.deferred_end = false;
+        self.poll_playback_start();
+    }
+
+    fn begin_load_path(&mut self, path: &Path) {
+        self.playback_start.file_started = false;
+        self.deferred_loaded = false;
+        self.deferred_ready = false;
+        self.deferred_restart = false;
+        self.deferred_end = false;
+        self.rife_failed_for_file = false;
         self.clear_playback_error();
         self.has_media = true;
         self.pending_media_resize = true;
@@ -690,8 +731,52 @@ impl App {
         let _ = self.player.clear_ab_loop();
         let _ = self.player.set_subtitle_delay(0.0);
         let _ = self.player.set_audio_delay(0.0);
+        self.playback_start.mark("load-submitted");
         if let Err(error) = self.player.load_file(path) {
             self.show_playback_error(error);
+        }
+    }
+
+    fn update_loading_notice(&mut self) {
+        if let Some(notice) = &mut self.loading_notice {
+            notice.update(
+                self.playback_start.notice(),
+                self.locale,
+                self.surface_theme == SurfaceTheme::Light,
+                self.dpi,
+                self.text_scale,
+            );
+        }
+    }
+
+    fn poll_playback_start(&mut self) {
+        if !self.player.is_busy() && self.pending_load.is_some() {
+            if self.player.rife_mode() != RifeMode::Off {
+                self.playback_start.mark("rife-removal-started");
+                if let Err(error) = self.player.set_rife_mode(RifeMode::Off) {
+                    self.pending_load = None;
+                    self.show_playback_error(error);
+                }
+            } else if let Some(path) = self.pending_load.take() {
+                self.begin_load_path(&path);
+            }
+        }
+        if !self.player.is_busy()
+            && self.pending_load.is_none()
+            && self
+                .rife_refresh_due
+                .is_some_and(|due| Instant::now() >= due)
+        {
+            self.rife_refresh_due = None;
+            self.refresh_rife_mode_for_current_media();
+        }
+        self.update_loading_notice();
+        if self.playback_start.is_opening()
+            || self.pending_load.is_some()
+            || self.rife_refresh_due.is_some()
+            || self.player.is_busy()
+        {
+            unsafe { SetTimer(self.hwnd, TIMER_PLAYBACK_START, 100, None) };
         }
     }
 
@@ -740,6 +825,10 @@ impl App {
     }
 
     fn show_playback_error(&mut self, error: String) {
+        self.playback_start.finish("playback-error");
+        self.pending_load = None;
+        self.rife_refresh_due = None;
+        self.update_loading_notice();
         self.hide_seek_preview(self.hwnd);
         self.has_media = false;
         self.set_control_panel_visible(false);
@@ -942,6 +1031,7 @@ impl App {
             rife_30_available: self.rife_30_available,
             rife_requested_mode: self.requested_rife_mode,
             rife_active_mode: self.player.rife_mode(),
+            rife_preparing: self.player.rife_preparing(),
             rife_compatibility_bridge: self.player.rife_compatibility_bridge_active(),
             muted: self.player.is_muted(),
             volume: self.player.volume(),
@@ -1250,7 +1340,11 @@ impl App {
     }
 
     fn save_resume_progress(&mut self) {
-        if !self.has_media || self.playback_error_visible {
+        if !self.has_media
+            || self.playback_error_visible
+            || self.playback_start.is_opening()
+            || self.player.is_busy()
+        {
             return;
         }
         let (Some(path), Some(position), Some(duration)) = (
@@ -1435,13 +1529,22 @@ impl App {
             requested,
             active,
             compatibility,
+            if self.player.rife_preparing() {
+                "yes"
+            } else {
+                "no"
+            },
         ]);
     }
 
     fn sync_rife_mode_for_current_media(&self) -> Result<(), String> {
+        if self.player.is_busy() || !self.playback_start.is_ready() || self.pending_load.is_some() {
+            return Ok(());
+        }
         let requested_available =
             self.requested_rife_mode != RifeMode::Fps30To60 || self.rife_30_available;
         let active_mode = if self.rife_available
+            && !self.rife_failed_for_file
             && requested_available
             && self.requested_rife_mode != RifeMode::Off
             && self.player.rife_source_eligible(self.requested_rife_mode) == Some(true)
@@ -1454,6 +1557,7 @@ impl App {
     }
 
     fn refresh_rife_mode_for_current_media(&mut self) {
+        let before = self.player.rife_mode();
         if let Err(error) = self.sync_rife_mode_for_current_media() {
             if is_transient_rife_refresh_error(&error) {
                 // Removing the previous file's filter can emit a video-reconfig event before
@@ -1470,6 +1574,9 @@ impl App {
             self.save_preferences();
             self.record_error(&format!("The smooth-playback engine was disabled: {error}"));
         }
+        if self.player.rife_preparing() && before != self.requested_rife_mode {
+            self.playback_start.mark("rife-preparation-started");
+        }
         self.sync_rife_media_info();
         self.sync_control_panel();
     }
@@ -1481,6 +1588,7 @@ impl App {
             return;
         }
         let previous = self.requested_rife_mode;
+        self.rife_failed_for_file = false;
         self.requested_rife_mode = if previous == mode {
             RifeMode::Off
         } else {
@@ -1491,16 +1599,23 @@ impl App {
                 self.queue_preferences_save();
                 self.sync_control_panel();
                 let text = self.locale.text();
-                let mut status = match self.requested_rife_mode {
-                    RifeMode::Off => text.rife_disabled.to_string(),
-                    RifeMode::Fps24To48 if self.player.rife_mode() == RifeMode::Fps24To48 => {
-                        text.rife_enabled.to_string()
+                let mut status = if self.player.rife_preparing() {
+                    match self.locale {
+                        Locale::Korean => "부드러운 재생을 준비 중입니다".to_string(),
+                        Locale::English => "Preparing smooth playback".to_string(),
                     }
-                    RifeMode::Fps30To60 if self.player.rife_mode() == RifeMode::Fps30To60 => {
-                        text.rife_30_enabled.to_string()
+                } else {
+                    match self.requested_rife_mode {
+                        RifeMode::Off => text.rife_disabled.to_string(),
+                        RifeMode::Fps24To48 if self.player.rife_mode() == RifeMode::Fps24To48 => {
+                            text.rife_enabled.to_string()
+                        }
+                        RifeMode::Fps30To60 if self.player.rife_mode() == RifeMode::Fps30To60 => {
+                            text.rife_30_enabled.to_string()
+                        }
+                        RifeMode::Fps24To48 => text.rife_source_fallback.to_string(),
+                        RifeMode::Fps30To60 => text.rife_30_source_fallback.to_string(),
                     }
-                    RifeMode::Fps24To48 => text.rife_source_fallback.to_string(),
-                    RifeMode::Fps30To60 => text.rife_30_source_fallback.to_string(),
                 };
                 if self.player.rife_compatibility_bridge_active() {
                     status.push_str(" · ");
@@ -2910,7 +3025,12 @@ impl Window {
                 WS_EX_APPWINDOW | WS_EX_ACCEPTFILES,
                 class_name.as_ptr(),
                 title.as_ptr(),
-                WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU,
+                WS_POPUP
+                    | WS_THICKFRAME
+                    | WS_MINIMIZEBOX
+                    | WS_MAXIMIZEBOX
+                    | WS_SYSMENU
+                    | WS_CLIPCHILDREN,
                 x,
                 y,
                 width,
@@ -3092,24 +3212,72 @@ unsafe extern "system" fn window_proc(
         WM_APP_MPV_EVENT => {
             if let Some(app) = app {
                 let events = app.player.drain_events();
+                if !events.keep_running {
+                    app.fail("The libmpv playback core stopped unexpectedly.".to_string());
+                    return 0;
+                }
+                if let Some(error) = events.rife_error {
+                    app.rife_failed_for_file = true;
+                    app.playback_start.mark("rife-preparation-failed");
+                    app.record_error(&format!(
+                        "Smooth playback returned to source frames: {error}"
+                    ));
+                }
+                // Replacement requests are coalesced while an older filter is
+                // being removed. Its late events must not restore old subtitles
+                // or mark the newest request ready.
+                if app.pending_load.is_some() {
+                    app.poll_playback_start();
+                    return 0;
+                }
+                if events.file_started {
+                    app.playback_start.file_started = true;
+                    app.playback_start.mark("file-started");
+                }
+                app.deferred_loaded |= events.file_loaded;
+                app.deferred_ready |= events.media_ready;
+                app.deferred_restart |= events.playback_restarted;
+                app.deferred_end |= events.reached_end;
                 if let Some(error) = events.playback_error {
                     app.show_playback_error(error);
-                } else {
-                    if events.file_loaded {
+                } else if !app.player.is_busy() {
+                    if mem::take(&mut app.deferred_loaded) && app.playback_start.file_started {
+                        app.playback_start.mark("file-loaded");
                         app.restore_pending_subtitle_selection();
                         app.apply_pending_resume();
                     }
-                    if events.media_ready && app.has_media {
+                    if mem::take(&mut app.deferred_ready)
+                        && app.has_media
+                        && app.playback_start.file_started
+                    {
+                        app.playback_start.mark("video-configured");
                         app.clear_playback_error();
-                        app.refresh_rife_mode_for_current_media();
                         app.resize_to_pending_media(hwnd);
                         if app.control_panel_visible {
                             app.sync_control_panel();
                         }
                     }
-                    if events.reached_end {
+                    if mem::take(&mut app.deferred_restart) {
+                        let was_ready = app.playback_start.is_ready();
+                        app.playback_start.ready();
+                        if !was_ready && app.playback_start.is_ready() {
+                            app.rife_refresh_due =
+                                Some(Instant::now() + Duration::from_millis(200));
+                        }
+                    }
+                    if events.operation_completed {
+                        app.playback_start.mark("core-transition-completed");
+                        if app.playback_start.is_ready() && !app.rife_failed_for_file {
+                            app.rife_refresh_due
+                                .get_or_insert(Instant::now() + Duration::from_millis(200));
+                        }
+                        app.sync_rife_media_info();
+                        app.sync_control_panel();
+                    }
+                    if mem::take(&mut app.deferred_end) {
                         app.save_resume_progress();
                         if !app.next_video() {
+                            app.playback_start.finish("end-of-file");
                             app.has_media = false;
                             app.set_control_panel_visible(false);
                             app.pending_media_resize = false;
@@ -3117,9 +3285,7 @@ unsafe extern "system" fn window_proc(
                         }
                     }
                 }
-                if !events.keep_running {
-                    app.fail("The libmpv playback core stopped unexpectedly.".to_string());
-                }
+                app.poll_playback_start();
             }
             0
         }
@@ -3146,6 +3312,7 @@ unsafe extern "system" fn window_proc(
                     app.update_scale(hwnd);
                     app.request_render(hwnd, true);
                     app.resize_to_pending_media(hwnd);
+                    app.update_loading_notice();
                 }
             }
             0
@@ -3465,6 +3632,11 @@ unsafe extern "system" fn window_proc(
         WM_TIMER => {
             unsafe { KillTimer(hwnd, wparam) };
             match wparam {
+                TIMER_PLAYBACK_START => {
+                    if let Some(app) = app {
+                        app.poll_playback_start();
+                    }
+                }
                 TIMER_SINGLE_CLICK => {
                     if let Some(app) = app {
                         let should_toggle = !app.context_menu_open
@@ -3880,7 +4052,9 @@ fn handle_key(app: &mut App, hwnd: HWND, key: u16) {
             app.toggle_mute(); // M
         }
         0x50 => app.set_control_panel_visible(!app.control_panel_visible), // P
-        0x52 if app.playback_error_visible => app.retry_video(),           // R
+        0x52 if app.playback_error_visible || app.playback_start.notice() == Notice::Slow => {
+            app.retry_video()
+        } // R
         0x54 => app.toggle_always_on_top(hwnd),                            // T
         0x56 => app.cycle_subtitle(),                                      // V
         VK_S => {
